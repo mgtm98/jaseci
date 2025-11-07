@@ -1,0 +1,34 @@
+{
+  "name": "jac-client",
+  "version": "0.1.0",
+  "description": "Utility functions for Jac Client runtime - spawn walkers, call functions, and handle authentication",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "jac",
+    "jaseci",
+    "client",
+    "runtime",
+    "walker",
+    "authentication"
+  ],
+  "author": "Jason Mars <jason@mars.ninja>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jaseci-Labs/jaseci.git",
+    "directory": "jac-client/jac-client-npm"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
+
