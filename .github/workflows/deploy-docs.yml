@@ -166,7 +166,7 @@ jobs:
 
           # Copy git repository for real-time contributor data
           COPY .git/ ./.git/
-          
+
           # Copy documentation files
           COPY docs/ ./docs/
           COPY jac/ ./jac/
