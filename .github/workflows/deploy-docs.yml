@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-      - top_contributors
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-docs.yml'
