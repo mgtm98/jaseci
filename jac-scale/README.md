@@ -132,3 +132,29 @@ The plugin automatically:
 - Auto creation of dockerfile using base image if not found
 - Auto deletion of created k8 resources
 
+## Things completed
+
+- Deploy jac application using jac serve from jac core not jac-cloud
+- Running jac application by
+  1. by creating docker container and pushing to docker hub and then pull it and deploy it
+  2. build pods at runtime using kubectl copy by using base image python3.12
+- Auto spawning and connecting Databases like Redis and mongodb and connecting to jac deployment
+- Populating env variables to jac application pods
+- Files required for auto horizontal scaling
+
+## Things ongoing
+
+- Implementing memory hierachy by overriding Memory class using Redis and Mongodb similar to shelf storage used in Jac core(jusail)
+- Converting walkers to api fastapi endpoints like server.py (walker)
+- Implementation of fastapi implementation similar to server.py in Jac core
+- Implementing execution contet in jac scale to support memory hierachy 
+
+## Things todo
+
+- Support JWT token in jac scale
+- Merging running fastapi application and also deploying jac application in k8
+- Current implementation uses parent folder of  file to deploy the jac application.It should be converted to identify only modules required to run jac application
+- Enable horizontal autoscaling
+
+## Testcases missed
+- Test cases to test docker image build.currently we are only testing the k8 deploy part
