@@ -19,6 +19,72 @@ class JacAPIServer(JServer):
         super().__init__(module_name, session_path, port, base_path)
         self.server_impl = JFastApiServer([])
 
+    def login(self, username: str, password: str) -> tuple[int, JsonValue]:
+        res = self.auth_handler.login(username, password)
+        return res.status, res.body
+
+    def register_login_endpoint(self) -> None:
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path="/user/login",
+                callback=self.login,
+                parameters=[
+                    APIParameter(
+                        name="username",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Username for login",
+                    ),
+                    APIParameter(
+                        name="password",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Password for login",
+                    ),
+                ],
+                response_model=None,
+                tags=["User APIs"],
+                summary="User login",
+                description="Endpoint for user authentication and token generation",
+            )
+        )
+
+    def create_user(self, username: str, password: str) -> tuple[int, JsonValue]:
+        res = self.auth_handler.create_user(username, password)
+        return res.status, res.body
+
+    def register_create_user_endpoint(self) -> None:
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path="/user/create",
+                callback=self.create_user,
+                parameters=[
+                    APIParameter(
+                        name="username",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Username for new user",
+                    ),
+                    APIParameter(
+                        name="password",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Password for new user",
+                    ),
+                ],
+                response_model=None,
+                tags=["User APIs"],
+                summary="Register user API.",
+                description="Endpoint for creating a new user account",
+            )
+        )
+
     def create_walker_callback(
         self, walker_name: str
     ) -> Callable[..., dict[str, JsonValue]]:
@@ -76,6 +142,10 @@ class JacAPIServer(JServer):
         return parameters
 
     def start(self) -> None:
+
+        self.register_create_user_endpoint()
+        self.register_login_endpoint()
+
         # Register endpoints for each walker
         for walker_name in self.get_walkers():
             self.server_impl.add_endpoint(
@@ -85,9 +155,9 @@ class JacAPIServer(JServer):
                     callback=self.create_walker_callback(walker_name),
                     parameters=self.create_walker_parameters(walker_name),
                     response_model=None,
-                    tags=["walker"],
-                    summary="This is a summary",
-                    description="This is a description",
+                    tags=["Walkers"],
+                    summary="API Root",
+                    description="API Root",
                 )
             )
 
@@ -100,7 +170,7 @@ class JacAPIServer(JServer):
                     callback=self.create_function_callback(func_name),
                     parameters=self.create_function_parameters(func_name),
                     response_model=None,
-                    tags=["function"],
+                    tags=["Functions"],
                     summary="This is a summary",
                     description="This is a description",
                 )
