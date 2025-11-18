@@ -89,190 +89,190 @@ class Memory(Generic[ID, TANCH]):
         """Commit all data from memory to datasource."""
 
 
-# BA = TypeVar("BA", bound="BaseAnchor")
+BA = TypeVar("BA", bound="BaseAnchor")
 
 
-# @dataclass
-# class MongoDB(Memory[UUID, BA]):
-#     """MongoDB handler storing Python objects (pickled) with behavior exactly like ShelfStorage."""
+@dataclass
+class MongoDB(Memory[UUID, BA]):
+    """MongoDB handler storing Python objects (pickled) with behavior exactly like ShelfStorage."""
 
-#     client: MongoClient | None = field(default=None)
-#     db_name: str = "jac_db"
-#     collection_name: str = "anchors"
+    client: MongoClient | None = field(default=None)
+    db_name: str = "jac_db"
+    collection_name: str = "anchors"
 
-#     def __post_init__(self):
-#         if self.client is None:
-#             self.client = MongoClient(
-#                 "mongodb+srv://juzailmlwork_db_user:e5OTI7p2DkaaGHnL@cluster0.e8eqk4i.mongodb.net/?appName=Cluster0/"
-#             )
-#         self.db = self.client[self.db_name]
-#         self.collection = self.db[self.collection_name]
+    def __post_init__(self):
+        if self.client is None:
+            self.client = MongoClient(
+                "mongodb+srv://juzailmlwork_db_user:e5OTI7p2DkaaGHnL@cluster0.e8eqk4i.mongodb.net/?appName=Cluster0/"
+            )
+        self.db = self.client[self.db_name]
+        self.collection = self.db[self.collection_name]
 
-#     # -------------------
-#     # UTILITY
-#     # -------------------
-#     def _to_uuid(self, id: UUID | str) -> UUID:
-#         if not isinstance(id, UUID):
-#             return UUID(str(id))
-#         return id
+    # -------------------
+    # UTILITY
+    # -------------------
+    def _to_uuid(self, id: UUID | str) -> UUID:
+        if not isinstance(id, UUID):
+            return UUID(str(id))
+        return id
 
-#     def _load_anchor(self, raw: dict[str, Any]):
-#         try:
-#             return pickle.loads(raw["data"])
-#         except Exception:
-#             return None
+    def _load_anchor(self, raw: dict[str, Any]):
+        try:
+            return pickle.loads(raw["data"])
+        except Exception:
+            return None
 
-#     # -------------------
-#     # FIND
-#     # -------------------
-#     def find(
-#         self,
-#         ids: UUID | Iterable[UUID],
-#         filter: callable | None = None,
-#     ) -> Generator[BA, None, None]:
-#         if not isinstance(ids, Iterable) or isinstance(ids, (str, bytes)):
-#             ids = [ids]
+    # -------------------
+    # FIND
+    # -------------------
+    def find(
+        self,
+        ids: UUID | Iterable[UUID],
+        filter: callable | None = None,
+    ) -> Generator[BA, None, None]:
+        if not isinstance(ids, Iterable) or isinstance(ids, (str, bytes)):
+            ids = [ids]
 
-#         for id in ids:
-#             _id = self._to_uuid(id)
+        for id in ids:
+            _id = self._to_uuid(id)
 
-#             # check memory first
-#             obj = self.__mem__.get(_id)
-#             if obj:
-#                 if not filter or filter(obj):
-#                     yield obj
-#                 continue
+            # check memory first
+            obj = self.__mem__.get(_id)
+            if obj:
+                if not filter or filter(obj):
+                    yield obj
+                continue
 
-#             # fetch from DB
-#             db_doc = self.collection.find_one({"_id": str(_id)})
-#             if db_doc:
-#                 anchor = self._load_anchor(db_doc)
-#                 if anchor is None:
-#                     continue
-#                 self.__mem__[_id] = anchor
-#                 yield anchor
+            # fetch from DB
+            db_doc = self.collection.find_one({"_id": str(_id)})
+            if db_doc:
+                anchor = self._load_anchor(db_doc)
+                if anchor is None:
+                    continue
+                self.__mem__[_id] = anchor
+                yield anchor
 
-#     # -------------------
-#     # FIND ONE / BY ID
-#     # -------------------
-#     def find_one(self, id: UUID):
-#         return next(self.find(id), None)
+    # -------------------
+    # FIND ONE / BY ID
+    # -------------------
+    def find_one(self, id: UUID):
+        return next(self.find(id), None)
 
-#     def find_by_id(self, id: UUID):
-#         _id = self._to_uuid(id)
-#         obj = self.__mem__.get(_id)
-#         if obj:
-#             return obj
+    def find_by_id(self, id: UUID):
+        _id = self._to_uuid(id)
+        obj = self.__mem__.get(_id)
+        if obj:
+            return obj
 
-#         db_obj = self.collection.find_one({"_id": str(_id)})
-#         if db_obj:
-#             anchor = self._load_anchor(db_obj)
-#             if anchor:
-#                 self.__mem__[_id] = anchor
-#                 return anchor
-#         return None
+        db_obj = self.collection.find_one({"_id": str(_id)})
+        if db_obj:
+            anchor = self._load_anchor(db_obj)
+            if anchor:
+                self.__mem__[_id] = anchor
+                return anchor
+        return None
 
-#     # -------------------
-#     # COMMIT
-#     # -------------------
-#     def commit(self, anchor: BA | None = None) -> None:
-#         if anchor:
-#             if anchor in self.__gc__:
-#                 self._delete_anchor(anchor)
-#             else:
-#                 self._save_anchor(anchor)
-#             return
+    # -------------------
+    # COMMIT
+    # -------------------
+    def commit(self, anchor: BA | None = None) -> None:
+        if anchor:
+            if anchor in self.__gc__:
+                self._delete_anchor(anchor)
+            else:
+                self._save_anchor(anchor)
+            return
 
-#         for anc in list(self.__gc__):
-#             self._delete_anchor(anc)
+        for anc in list(self.__gc__):
+            self._delete_anchor(anc)
 
-#         for anc in list(self.__mem__.values()):
-#             self._save_anchor(anc)
+        for anc in list(self.__mem__.values()):
+            self._save_anchor(anc)
 
-#     # -------------------
-#     # INTERNAL SAVE / DELETE
-#     # -------------------
-#     def _save_anchor(self, anchor: BA) -> None:
-#         """
-#         Save anchor to MongoDB, exactly like ShelfStorage:
-#         - Save all anchors (no empty NodeAnchor skipping)
-#         - Update NodeAnchor edges
-#         - Respect write and connect access
-#         """
-#         from jaclang.runtimelib.machine import JacMachineInterface as Jac
-#         from .archetype import NodeAnchor
+    # -------------------
+    # INTERNAL SAVE / DELETE
+    # -------------------
+    def _save_anchor(self, anchor: BA) -> None:
+        """
+        Save anchor to MongoDB, exactly like ShelfStorage:
+        - Save all anchors (no empty NodeAnchor skipping)
+        - Update NodeAnchor edges
+        - Respect write and connect access
+        """
+        from jaclang.runtimelib.machine import JacMachineInterface as Jac
+        from .archetype import NodeAnchor
 
-#         _id = self._to_uuid(anchor.id)
+        _id = self._to_uuid(anchor.id)
 
-#         try:
-#             current_hash = hash(pickle.dumps(anchor))
-#         except Exception:
-#             return
+        try:
+            current_hash = hash(pickle.dumps(anchor))
+        except Exception:
+            return
 
-#         if getattr(anchor, "hash", None) == current_hash:
-#             return
+        if getattr(anchor, "hash", None) == current_hash:
+            return
 
-#         # fetch existing
-#         db_doc = self.collection.find_one({"_id": str(_id)})
-#         stored_anchor = self._load_anchor(db_doc) if db_doc else None
+        # fetch existing
+        db_doc = self.collection.find_one({"_id": str(_id)})
+        stored_anchor = self._load_anchor(db_doc) if db_doc else None
 
-#         # update edges if NodeAnchor
-#         if (
-#             stored_anchor
-#             and isinstance(stored_anchor, NodeAnchor)
-#             and isinstance(anchor, NodeAnchor)
-#             and getattr(stored_anchor, "edges", None) != getattr(anchor, "edges", None)
-#             and Jac.check_connect_access(anchor)
-#         ):
-#             stored_anchor.edges = anchor.edges
-#             base_anchor = stored_anchor
-#         else:
-#             base_anchor = anchor
+        # update edges if NodeAnchor
+        if (
+            stored_anchor
+            and isinstance(stored_anchor, NodeAnchor)
+            and isinstance(anchor, NodeAnchor)
+            and getattr(stored_anchor, "edges", None) != getattr(anchor, "edges", None)
+            and Jac.check_connect_access(anchor)
+        ):
+            stored_anchor.edges = anchor.edges
+            base_anchor = stored_anchor
+        else:
+            base_anchor = anchor
 
-#         # update access/archetype if allowed
-#         if stored_anchor and Jac.check_write_access(anchor):
-#             try:
-#                 if hash(pickle.dumps(stored_anchor.access)) != hash(
-#                     pickle.dumps(anchor.access)
-#                 ):
-#                     stored_anchor.access = anchor.access
-#                 if hash(pickle.dumps(stored_anchor.archetype)) != hash(
-#                     pickle.dumps(anchor.archetype)
-#                 ):
-#                     stored_anchor.archetype = anchor.archetype
-#                 final_anchor = stored_anchor
-#             except Exception:
-#                 final_anchor = anchor
-#         else:
-#             final_anchor = base_anchor
+        # update access/archetype if allowed
+        if stored_anchor and Jac.check_write_access(anchor):
+            try:
+                if hash(pickle.dumps(stored_anchor.access)) != hash(
+                    pickle.dumps(anchor.access)
+                ):
+                    stored_anchor.access = anchor.access
+                if hash(pickle.dumps(stored_anchor.archetype)) != hash(
+                    pickle.dumps(anchor.archetype)
+                ):
+                    stored_anchor.archetype = anchor.archetype
+                final_anchor = stored_anchor
+            except Exception:
+                final_anchor = anchor
+        else:
+            final_anchor = base_anchor
 
-#         # save to MongoDB
-#         try:
-#             data_blob = pickle.dumps(final_anchor)
-#         except Exception:
-#             return
+        # save to MongoDB
+        try:
+            data_blob = pickle.dumps(final_anchor)
+        except Exception:
+            return
 
-#         self.collection.update_one(
-#             {"_id": str(_id)},
-#             {"$set": {"data": data_blob, "type": type(final_anchor).__name__}},
-#             upsert=True,
-#         )
+        self.collection.update_one(
+            {"_id": str(_id)},
+            {"$set": {"data": data_blob, "type": type(final_anchor).__name__}},
+            upsert=True,
+        )
 
-#         self.__mem__[_id] = final_anchor
-#         final_anchor.hash = current_hash
+        self.__mem__[_id] = final_anchor
+        final_anchor.hash = current_hash
 
-#     def _delete_anchor(self, anchor: BA) -> None:
-#         _id = self._to_uuid(anchor.id)
-#         self.collection.delete_one({"_id": str(_id)})
-#         self.__mem__.pop(_id, None)
-#         self.__gc__.discard(anchor)
+    def _delete_anchor(self, anchor: BA) -> None:
+        _id = self._to_uuid(anchor.id)
+        self.collection.delete_one({"_id": str(_id)})
+        self.__mem__.pop(_id, None)
+        self.__gc__.discard(anchor)
 
-#     # -------------------
-#     # CLOSE
-#     # -------------------
-#     def close(self) -> None:
-#         self.commit()
-#         super().close()
+    # -------------------
+    # CLOSE
+    # -------------------
+    def close(self) -> None:
+        self.commit()
+        super().close()
 
 
 @dataclass
