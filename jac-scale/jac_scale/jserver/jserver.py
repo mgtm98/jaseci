@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Callable, Generic, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -22,6 +22,16 @@ class ParameterType(str, Enum):
     PATH = "path"
     BODY = "body"
     HEADER = "header"
+
+
+@dataclass
+class APIParameter:
+    name: str
+    type: ParameterType = ParameterType.QUERY
+    data_type: str = "str"
+    required: bool = True
+    default: Any = None
+    description: str = ""
 
 
 @dataclass
@@ -46,7 +56,7 @@ class JEndPoint:
     method: HTTPMethod
     path: str
     callback: Callable[..., Any]
-    parameters: Optional[List[Dict[str, Any]]] = None
+    parameters: Optional[List[APIParameter]] = None
     response_model: Optional[Type[BaseModel]] = None
     tags: Optional[List[str]] = None
     summary: Optional[str] = None

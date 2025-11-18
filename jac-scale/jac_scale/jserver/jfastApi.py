@@ -23,10 +23,11 @@ from typing import Any, Callable, Dict, List, Optional, Type
 from fastapi import Body, FastAPI, HTTPException, Header, Path, Query
 
 from pydantic import BaseModel, Field, create_model
+
 import uvicorn
 
 # Import from the separated jserver module
-from .jserver import HTTPMethod, JEndPoint, JServer, ParameterType
+from .jserver import APIParameter, HTTPMethod, JEndPoint, JServer, ParameterType
 
 
 class JFastApiServer(JServer[FastAPI]):
@@ -233,7 +234,7 @@ class JFastApiServer(JServer[FastAPI]):
     def _create_endpoint_function(
         self,
         callback: Callable[..., Any],
-        parameters: List[Dict[str, Any]],
+        parameters: List[APIParameter],
         dependencies: List[Any],
     ) -> Callable[..., Any]:
         """Create the actual endpoint function with parameter injection."""
@@ -260,13 +261,13 @@ class JFastApiServer(JServer[FastAPI]):
                 return sync_endpoint_wrapper
 
         # Group parameters by location
-        body_params: List[Dict[str, Any]] = []
-        path_params: List[Dict[str, Any]] = []
-        query_params: List[Dict[str, Any]] = []
-        header_params: List[Dict[str, Any]] = []
+        body_params: List[APIParameter] = []
+        path_params: List[APIParameter] = []
+        query_params: List[APIParameter] = []
+        header_params: List[APIParameter] = []
 
         for param in parameters:
-            param_location = param.get("in", ParameterType.QUERY)
+            param_location = param.type
             if param_location == ParameterType.BODY:
                 body_params.append(param)
             elif param_location == ParameterType.PATH:
@@ -287,12 +288,12 @@ class JFastApiServer(JServer[FastAPI]):
             # Create a dynamic Pydantic model for multiple body parameters
             model_fields: Dict[str, Any] = {}
             for param in body_params:
-                param_name = param.get("name")
+                param_name = param.name
                 if not param_name:
                     continue
-                param_type = self._get_python_type(param.get("type", "str"))
-                required = param.get("required", True)
-                description = param.get("description", "")
+                param_type = self._get_python_type(param.data_type)
+                required = param.required
+                description = param.description
 
                 if required:
                     model_fields[param_name] = (
@@ -300,7 +301,7 @@ class JFastApiServer(JServer[FastAPI]):
                         Field(..., description=description),
                     )
                 else:
-                    default_value = param.get("default")
+                    default_value = param.default
                     model_fields[param_name] = (
                         Optional[param_type],
                         Field(default_value, description=description),
@@ -314,11 +315,11 @@ class JFastApiServer(JServer[FastAPI]):
         elif len(body_params) == 1:
             # Single body parameter
             param = body_params[0]
-            param_name = param.get("name")
-            param_type = param.get("type", "str")
-            required = param.get("required", True)
-            default_value = param.get("default")
-            description = param.get("description", "")
+            param_name = param.name
+            param_type = param.data_type
+            required = param.required
+            default_value = param.default
+            description = param.description
 
             actual_type = self._get_python_type(param_type)
             type_name = actual_type.__name__
@@ -347,18 +348,14 @@ class JFastApiServer(JServer[FastAPI]):
 
         for param_list, param_type_enum in param_type_mapping:
             for param in param_list:
-                param_name = param.get("name")
+                param_name = param.name
                 if not param_name:
                     continue
 
-                # Ensure param_name is a string
-                if not isinstance(param_name, str):
-                    continue
-
-                param_type = param.get("type", "str")
-                required = param.get("required", True)
-                default_value = param.get("default")
-                description = param.get("description", "")
+                param_type = param.data_type
+                required = param.required
+                default_value = param.default
+                description = param.description
 
                 # Convert string type to actual type
                 actual_type = self._get_python_type(param_type)
@@ -412,7 +409,7 @@ class JFastApiServer(JServer[FastAPI]):
         if body_model:
             # Handle body model case
             for param in body_params:
-                param_name = param.get("name")
+                param_name = param.name
                 if param_name:
                     callback_args_lines.append(
                         f"        callback_args['{param_name}'] = body_data.{param_name}"
@@ -546,7 +543,7 @@ def endpoint_wrapper({params}) -> Any:
         Get the underlying FastAPI application instance.
         """
         return self.app
-    
+
     def run_server(self, host: str = "localhost", port: int = 8000) -> None:
         """Run the FastAPI server using Uvicorn."""
         app = self.create_server()
