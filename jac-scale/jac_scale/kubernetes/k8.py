@@ -1,8 +1,8 @@
 """File covering k8 automation."""
 
 import os
-import subprocess
 import time
+from typing import Any, Dict, List
 
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
@@ -11,6 +11,8 @@ from .database.mongo import mongo_db
 from .database.redis import redis_db
 from .utils import (
     check_k8_status,
+    create_or_update_configmap,
+    create_tarball,
     delete_if_exists,
     ensure_namespace_exists,
     load_env_variables,
@@ -28,6 +30,7 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     repository_name = f"{docker_username}/{image_name}"
     mongodb_enabled = os.getenv("K8_MONGODB", "false").lower() == "true"
     redis_enabled = os.getenv("K8_REDIS", "false").lower() == "true"
+    mongodb_enabled = False
     if not build:
         repository_name = "python:3.12-slim"
     # -------------------
@@ -45,7 +48,7 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     # -------------------
     # Define MongoDB deployment/service (if needed)
     # -------------------
-    init_containers = []
+    init_containers: List[Dict[str, Any]] = []
 
     if mongodb_enabled:
         mongodb_name = f"{app_name}-mongodb"
@@ -79,6 +82,7 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
             }
         )
 
+    volumes = []
     container_config = {
         "name": app_name,
         "image": repository_name,
@@ -87,23 +91,54 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     }
 
     if not build:
-        container_config["command"] = ["sleep", "infinity"]
-    deployment = {
-        "apiVersion": "apps/v1",
-        "kind": "Deployment",
-        "metadata": {"name": app_name},
-        "spec": {
-            "replicas": 1,
-            "selector": {"matchLabels": {"app": app_name}},
-            "template": {
-                "metadata": {"labels": {"app": app_name}},
-                "spec": {
-                    "initContainers": init_containers,
-                    "containers": [container_config],
+        # container_config["command"] = ["sleep", "infinity"]
+        build_container = {
+            "name": "build-app",
+            "image": "python:3.12-slim",
+            "command": [
+                "sh",
+                "-c",
+                "mkdir -p /app && tar -xzf /code/jaseci-code.tar.gz -C /app",
+            ],
+            "volumeMounts": [
+                {"name": "app-code", "mountPath": "/app"},
+                {"name": "code-source", "mountPath": "/code"},
+            ],
+        }
+        volumes = [
+            {"name": "app-code", "emptyDir": {}},
+            {
+                "name": "code-source",
+                "configMap": {
+                    "name": "jaseci-code",
+                    "items": [
+                        {"key": "jaseci-code.tar.gz", "path": "jaseci-code.tar.gz"}
+                    ],
                 },
             },
-        },
-    }
+        ]
+        init_containers.append(build_container)
+        if "requirements.txt" in os.listdir(code_folder):
+            command = [
+                "bash",
+                "-c",
+                f"pip install -r /app/requirements.txt && jac serve {file_name}",
+            ]
+        else:
+            command = ["bash", "-c", f"pip install jaclang && jac serve {file_name}"]
+        container_config = {
+            "name": app_name,
+            "image": "python:3.12-slim",
+            "command": command,
+            "workingDir": "/app",
+            "volumeMounts": [{"name": "app-code", "mountPath": "/app"}],
+            "ports": [{"containerPort": container_port}],
+            "env": env_list,
+        }
+
+    create_tarball(code_folder, "jaseci-code.tar.gz")
+    create_or_update_configmap(namespace, "jaseci-code", "jaseci-code.tar.gz")
+    os.remove("jaseci-code.tar.gz")
 
     # -------------------
     # Define Service for Jaseci-app
@@ -123,6 +158,24 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
                 }
             ],
             "type": "NodePort",
+        },
+    }
+
+    deployment = {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {"name": app_name, "labels": {"app": app_name}},
+        "spec": {
+            "replicas": 3,
+            "selector": {"matchLabels": {"app": app_name}},
+            "template": {
+                "metadata": {"labels": {"app": app_name}},
+                "spec": {
+                    "initContainers": init_containers,
+                    "containers": [container_config],
+                    "volumes": volumes,
+                },
+            },
         },
     }
 
@@ -224,55 +277,57 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     print("Deploying Jaseci-app app...")
     apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
     core_v1.create_namespaced_service(namespace=namespace, body=service)
-    if not build:
-        pod_name = None
-        for _ in range(60):
-            pods = core_v1.list_namespaced_pod(
-                namespace, label_selector=f"app={app_name}"
-            )
-            if pods.items and pods.items[0].status.phase == "Running":
-                pod_name = pods.items[0].metadata.name
-                break
-            time.sleep(3)
+    time.sleep(30)
+    # The below code is kept to be used in future if the confiigmap didnt work for larger file size
+    # if not build:
+    #     pod_name = None
+    #     for _ in range(60):
+    #         pods = core_v1.list_namespaced_pod(
+    #             namespace, label_selector=f"app={app_name}"
+    #         )
+    #         if pods.items and pods.items[0].status.phase == "Running":
+    #             pod_name = pods.items[0].metadata.name
+    #             break
+    #         time.sleep(3)
 
-        if not pod_name:
-            raise RuntimeError("Pod did not become ready in time.")
+    #     if not pod_name:
+    #         raise RuntimeError("Pod did not become ready in time.")
 
-        # print(f"Pod '{pod_name}' is running. Copying project folder...")
-        subprocess.run(
-            ["kubectl", "cp", f"{code_folder}", f"{pod_name}:/app", "-n", namespace],
-            check=True,
-        )
+    #     print(f"Pod '{pod_name}' is running. Copying project folder...")
+    #     subprocess.run(
+    #         ["kubectl", "cp", f"{code_folder}", f"{pod_name}:/app", "-n", namespace],
+    #         check=True,
+    #     )
 
-        # --- Build command dynamically ---
-        exec_parts = ["cd /app"]
+    #     # --- Build command dynamically ---
+    #     exec_parts = ["cd /app"]
 
-        # Check if requirements.txt exists locally
-        requirements_path = os.path.join(code_folder, "requirements.txt")
-        if os.path.exists(requirements_path):
-            exec_parts.append(
-                "pip install --no-cache-dir --progress-bar off -r requirements.txt >/tmp/pip_install.log 2>&1"
-            )
+    #     # Check if requirements.txt exists locally
+    #     requirements_path = os.path.join(code_folder, "requirements.txt")
+    #     if os.path.exists(requirements_path):
+    #         exec_parts.append(
+    #             "pip install --no-cache-dir --progress-bar off -r requirements.txt >/tmp/pip_install.log 2>&1"
+    #         )
 
-        # Always add the Jaseci serve command
-        exec_parts.append(f"nohup bash -c 'jac serve {file_name} > server.log 2>&1 &'")
+    #     # Always add the Jaseci serve command
+    #     exec_parts.append(f"nohup bash -c 'jac serve {file_name} > server.log 2>&1 &'")
 
-        # Combine all parts into one shell command
-        exec_command = " && ".join(exec_parts)
+    #     # Combine all parts into one shell command
+    #     exec_command = " && ".join(exec_parts)
 
-        subprocess.run(
-            [
-                "kubectl",
-                "exec",
-                pod_name,
-                "-n",
-                namespace,
-                "--",
-                "bash",
-                "-c",
-                exec_command,
-            ],
-            check=True,
-        )
+    # subprocess.run(
+    #     [
+    #         "kubectl",
+    #         "exec",
+    #         pod_name,
+    #         "-n",
+    #         namespace,
+    #         "--",
+    #         "bash",
+    #         "-c",
+    #         exec_command,
+    #     ],
+    #     check=True,
+    # )
 
     print(f"Deployment complete! Access Jaseci-app at http://localhost:{node_port}")

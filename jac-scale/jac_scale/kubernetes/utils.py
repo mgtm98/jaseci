@@ -1,11 +1,15 @@
+import base64
 import os
+import tarfile
 from typing import Callable
+
 
 from dotenv import dotenv_values
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from kubernetes.config.config_exception import ConfigException
+
 
 import urllib3
 
@@ -127,5 +131,62 @@ def ensure_namespace_exists(namespace: str) -> None:
                 }
             )
             print(f"Namespace '{namespace}' created successfully.")
+        else:
+            raise
+
+
+def create_tarball(source_dir: str, tar_path: str) -> None:
+    """
+    Create a tar.gz file from the source directory using only os module.
+    """
+    if not os.path.exists(source_dir):
+        raise FileNotFoundError(f"Source directory not found: {source_dir}")
+
+    # Ensure parent directory of tar file exists
+    os.makedirs(os.path.dirname(tar_path) or ".", exist_ok=True)
+
+    with tarfile.open(tar_path, "w:gz") as tar:
+        # arcname="." ensures the extracted folder becomes root contents
+        tar.add(source_dir, arcname=".")
+
+    # print(f"[✔] Created tarball: {tar_path}")
+
+
+def create_or_update_configmap(
+    namespace: str, configmap_name: str, tar_path: str
+) -> None:
+    """Create or update ConfigMap with binary tar.gz using Kubernetes API."""
+
+    # Load kubeconfig
+    config.load_kube_config()
+    v1 = client.CoreV1Api()
+
+    # Read tar.gz as binary and encode using base64
+    with open(tar_path, "rb") as f:
+        encoded_data = base64.b64encode(f.read()).decode("utf-8")
+
+    body = client.V1ConfigMap(
+        metadata=client.V1ObjectMeta(name=configmap_name),
+        binary_data={"jaseci-code.tar.gz": encoded_data},
+    )
+
+    try:
+        # Try updating ConfigMap
+        existing = v1.read_namespaced_config_map(configmap_name, namespace)
+        # print("[i] ConfigMap exists — updating ...")
+
+        body.metadata.resource_version = existing.metadata.resource_version
+        v1.patch_namespaced_config_map(
+            name=configmap_name, namespace=namespace, body=body
+        )
+
+        # print(f"[✔] ConfigMap '{configmap_name}' updated")
+
+    except ApiException as e:
+        if e.status == 404:
+            # Create new ConfigMap if not found
+            # print("[i] ConfigMap does not exist — creating ...")
+            v1.create_namespaced_config_map(namespace, body)
+            # print(f"[✔] ConfigMap '{configmap_name}' created")
         else:
             raise
