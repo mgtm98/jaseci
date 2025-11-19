@@ -151,9 +151,21 @@ class JacAPIServer(JServer):
             self.server_impl.add_endpoint(
                 JEndPoint(
                     method=HTTPMethod.POST,
-                    path=f"/walker/{walker_name}",
+                    path=f"/walker/{walker_name}/{{node}}",
                     callback=self.create_walker_callback(walker_name),
                     parameters=self.create_walker_parameters(walker_name),
+                    response_model=None,
+                    tags=["Walkers"],
+                    summary="API Entry",
+                    description="API Entry",
+                )
+            )
+            self.server_impl.add_endpoint(
+                JEndPoint(
+                    method=HTTPMethod.POST,
+                    path=f"/walker/{walker_name}",
+                    callback=self.create_walker_callback(walker_name),
+                    parameters=None,
                     response_model=None,
                     tags=["Walkers"],
                     summary="API Root",
