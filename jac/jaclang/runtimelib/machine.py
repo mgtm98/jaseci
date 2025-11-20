@@ -57,7 +57,7 @@ from jaclang.runtimelib.constructs import (
     WalkerAnchor,
     WalkerArchetype,
 )
-from jaclang.runtimelib.memory import Memory, Shelf, ShelfStorage
+from jaclang.runtimelib.memory import Memory, Shelf, ShelfStorage  # ,RedisDB
 from jaclang.runtimelib.mtp import MTIR
 from jaclang.runtimelib.utils import (
     all_issubclass,
@@ -89,7 +89,7 @@ class ExecutionContext:
         root: Optional[str] = None,
     ) -> None:
         """Initialize JacMachine."""
-        self.mem: Memory = ShelfStorage(session)
+        self.mem: Memory = ShelfStorage(session)  # RedisDB()#ShelfStorage(session)
         self.reports: list[Any] = []
         self.custom: Any = MISSING
         self.system_root = self.mem.find_by_id(UUID(Con.SUPER_ROOT_UUID))
