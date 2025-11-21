@@ -103,7 +103,7 @@ class ExecutionContext:
         if not isinstance(self.system_root, NodeAnchor):
             self.system_root = cast(NodeAnchor, Root().__jac__)
             self.system_root.id = UUID(Con.SUPER_ROOT_UUID)
-            self.mem.set(self.system_root.id, self.system_root)
+            self.mem.set(self.system_root)
         self.entry_node = self.root_state = (
             self._get_anchor(root) if root else self.system_root
         )
@@ -1407,7 +1407,7 @@ class JacBasics:
             anchor.persistent = True
             anchor.root = jctx.root_state.id
 
-        jctx.mem.set(anchor.id, anchor)
+        jctx.mem.set(anchor)
 
         match anchor:
             case NodeAnchor():
