@@ -97,6 +97,7 @@ class ExecutionContext:
         self.entry_node = self.root_state = (
             self._get_anchor(root) if root else self.system_root
         )
+        # Removed: print("ExecutionContext initialized")
 
     def _get_anchor(self, anchor_id: str) -> NodeAnchor:
         """Get anchor by ID or raise error."""
@@ -816,6 +817,8 @@ class JacBasics:
     @staticmethod
     def get_context() -> ExecutionContext:
         """Get current execution context."""
+        if JacMachine.exec_ctx is None:
+            JacMachine.exec_ctx = JacMachineInterface.CreateJContext()
         return JacMachine.exec_ctx
 
     @staticmethod
@@ -1534,6 +1537,13 @@ class JacUtils:
     """Jac Machine Utilities."""
 
     @staticmethod
+    def CreateJContext(
+        session: Optional[str] = None, root: Optional[str] = None
+    ) -> ExecutionContext:
+        """Hook for initialization or custom greeting logic."""
+        return ExecutionContext(session=session, root=root)
+
+    @staticmethod
     def attach_program(jac_program: JacProgram) -> None:
         """Attach a JacProgram to the machine."""
         JacMachine.program = jac_program
@@ -1872,7 +1882,7 @@ class JacMachine(JacMachineInterface):
     base_path_dir: str = os.getcwd()
     program: JacProgram = JacProgram()
     pool: ThreadPoolExecutor = ThreadPoolExecutor()
-    exec_ctx: ExecutionContext = ExecutionContext()
+    exec_ctx: ExecutionContext | None = None
 
     @staticmethod
     def set_base_path(base_path: str) -> None:
@@ -1900,5 +1910,6 @@ class JacMachine(JacMachineInterface):
         JacMachine.base_path_dir = os.getcwd()
         JacMachine.program = JacProgram()
         JacMachine.pool = ThreadPoolExecutor()
-        JacMachine.exec_ctx.mem.close()
-        JacMachine.exec_ctx = ExecutionContext()
+        if JacMachine.exec_ctx is not None:
+            JacMachine.exec_ctx.mem.close()
+        JacMachine.exec_ctx = JacMachineInterface.CreateJContext()

@@ -4,14 +4,18 @@ import os
 import pathlib
 import pickle
 import sys
+from typing import Optional
 
 from dotenv import load_dotenv
 
 from jaclang.cli.cli import proc_file_sess
 from jaclang.cli.cmdreg import cmd_registry
+from jaclang.runtimelib.machine import ExecutionContext
 from jaclang.runtimelib.machine import JacMachine as Jac
-from jaclang.runtimelib.machine import hookimpl
+from jaclang.runtimelib.machine import hookimpl, plugin_manager
 
+
+from .context import JScaleExecutionContext
 from .kubernetes.docker_impl import build_and_push_docker
 from .kubernetes.k8 import deploy_k8
 from .kubernetes.utils import cleanup_k8_resources
@@ -49,7 +53,7 @@ class JacCmd:
 
 
 @cmd_registry.register
-def serve(
+def serve2(
     filename: str,
     session: str = "",
     port: int = 8000,
@@ -145,3 +149,19 @@ def serve(
         print(f"Server error: {e}", file=sys.stderr)
         mach.close()
         exit(1)
+
+
+# Plugin implementation for overriding JacMachine hooks
+class JacScalePlugin:
+    """Jac Scale Plugin Implementation."""
+
+    @staticmethod
+    @hookimpl
+    def CreateJContext(
+        session: Optional[str] = None, root: Optional[str] = None
+    ) -> ExecutionContext:
+        return JScaleExecutionContext(session=session, root=root)
+
+
+# Register the plugin
+plugin_manager.register(JacScalePlugin())
