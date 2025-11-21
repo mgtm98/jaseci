@@ -179,40 +179,6 @@ class MongoDB:  # Memory[UUID, Anchor]):
         _id = self._to_uuid(anchor.id)
         self.collection.delete_one({"_id": str(_id)})
 
-    # def find(
-    #     self,
-    #     ids: UUID | Iterable[UUID],
-    #     filter: Callable | None = None,
-    # ) -> Generator[Anchor, None, None]:
-    #     if not isinstance(ids, Iterable) or isinstance(ids, (str, bytes)):
-    #         ids = [ids]
-
-    #     for id in ids:
-    #         _id = self._to_uuid(id)
-
-    #         # check memory first
-    #         obj = self.__mem__.get(_id)
-    #         if obj:
-    #             if not filter or filter(obj):
-    #                 yield obj
-    #             continue
-
-    #         # fetch from DB
-    #         db_doc = self.collection.find_one({"_id": str(_id)})
-    #         if db_doc:
-    #             anchor = self._load_anchor(db_doc)
-    #             if anchor is None:
-    #                 continue
-    #             self.__mem__[_id] = anchor
-    #             yield anchor
-
-    # def find_one(
-    #     self,
-    #     ids: UUID | Iterable[UUID],
-    #     filter: Callable[[TANCH], TANCH] | None = None,
-    # ) -> Anchor | None:
-    #     return next(self.find(ids, filter), None)
-
     def find_by_id(self, id: UUID) -> Anchor | None:
         _id = self._to_uuid(id)
         db_obj = self.collection.find_one({"_id": str(_id)})
@@ -347,30 +313,6 @@ class RedisDB:  # Memory[UUID, Anchor]):
             return None
         self.redis_client.delete(self._redis_key(anchor.id))
 
-    # def find(
-    #     self,
-    #     ids: UUID | Iterable[UUID],
-    #     filter: Callable[[Anchor], bool] | None = None,
-    # ) -> Generator[Anchor, None, None]:
-
-    #     if not isinstance(ids, Iterable):
-    #         ids = [ids]
-
-    #     for id in ids:
-    #         _id = self._to_uuid(id)
-    #         anchor = self.__mem__.get(_id)
-    #         if (
-    #             not anchor
-    #             and id not in self.__gc__
-    #             and (_anchor := self._load_anchor_from_redis(_id))
-    #         ):
-    #             self.__mem__[id] = anchor = _anchor
-
-    #         if anchor and (not filter or filter(anchor)):
-    #             yield anchor
-
-    #         else:
-    #             yield from super().find(ids, filter)
 
     def find_by_id(self, id: UUID) -> Anchor | None:
         _id = self._to_uuid(id)
