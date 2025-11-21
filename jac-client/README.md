@@ -1,60 +1,167 @@
-Jac Client
-==========
+# Jac Client
 
-Lightweight plugin that adds Vite-powered client bundling to Jac programs. It provides a `ClientBundleBuilder` implementation discovered by the Jac runtime via entry-points, so you can generate optimized browser bundles from Jac client code automatically.
+Build full-stack web applications with Jac - one language for frontend and backend.
 
-Requirements
-------------
-- Python: 3.12+
-- Python deps: `jaclang==0.8.10` (installed transitively)
-- Node.js tooling available on PATH:
-  - `node`/`npm` (or `pnpm`/`yarn` if `npx` can execute Vite)
-  - `npx` and Vite present in your frontend project (`devDependencies`)
+Jac Client enables you to write React-like components, manage state, and build interactive UIs all in Jac. No need for separate frontend frameworks, HTTP clients, or complex build configurations.
 
-Install
--------
-Using pip:
+---
+
+## ✨ Features
+
+- **Single Language**: Write frontend and backend in Jac
+- **No HTTP Client**: Use `jacSpawn()` instead of fetch/axios
+- **React Hooks**: Use standard React `useState` and `useEffect` hooks
+- **Component-Based**: Build reusable UI components with JSX
+- **Graph Database**: Built-in graph data model eliminates need for SQL/NoSQL
+- **Type Safety**: Type checking across frontend and backend
+- **Vite-Powered**: Optimized production bundles with Vite
+
+---
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
 pip install jac-client
 ```
 
-Using Poetry inside a project:
+### Create a New App
 
 ```bash
-poetry add jac-client
+jac create_jac_app my-app
+cd my-app
+jac serve app.jac
 ```
 
+Visit `http://localhost:8000/page/app` to see your app!
+
+---
+
+## 📚 Documentation
+
+For detailed guides and tutorials, see the **[docs folder](jac_client/docs/)**:
+
+- **[Getting Started Guide](jac_client/docs/README.md)** - Complete beginner's guide
+- **[Routing](jac_client/docs/routing.md)** - Multi-page applications with declarative routing (`<Router>`, `<Routes>`, `<Route>`)
+- **[Lifecycle Hooks](jac_client/docs/lifecycle-hooks.md)** - Using React hooks (`useState`, `useEffect`)
+- **[Advanced State](jac_client/docs/advanced-state.md)** - Managing complex state with React hooks
+- **[Imports](jac_client/docs/imports.md)** - Importing third-party libraries (React, Ant Design, Lodash), Jac files, and JavaScript modules
+
+---
+
+## 💡 Example
+
+### Simple Counter with React Hooks
+
+```jac
+cl import from react { useState, useEffect }
+
+cl {
+    def Counter() -> any {
+        let [count, setCount] = useState(0);
+
+        useEffect(lambda -> None {
+            console.log("Count changed:", count);
+        }, [count]);
+
+        return <div>
+            <h1>Count: {count}</h1>
+            <button onClick={lambda e: any -> None {
+                setCount(count + 1);
+            }}>
+                Increment
+            </button>
+        </div>;
+    }
+
+    def app() -> any {
+        return Counter();
+    }
+}
 ```
-your_app/
-  package.json           # contains vite in devDependencies
-  node_modules/
-  static/
-    client/
-      js/                # Vite output will be written here
-  your_program.jac       # your Jac source
+
+### Full-Stack Todo App
+
+```jac
+cl import from react { useState, useEffect }
+cl import from '@jac-client/utils' { jacSpawn }
+
+# Backend: Jac nodes and walkers
+node Todo {
+    has text: str;
+    has done: bool = False;
+}
+
+walker create_todo {
+    has text: str;
+    can create with `root entry {
+        new_todo = here ++> Todo(text=self.text);
+        report new_todo;
+    }
+}
+
+walker read_todos {
+    can read with `root entry {
+        visit [-->(`?Todo)];
+    }
+}
+
+# Frontend: React component
+cl {
+    def app() -> any {
+        let [todos, setTodos] = useState([]);
+
+        useEffect(lambda -> None {
+            async def loadTodos() -> None {
+                result = await jacSpawn("read_todos", "", {});
+                setTodos(result.reports);
+            }
+            loadTodos();
+        }, []);
+
+        return <div>
+            <h1>My Todos</h1>
+            {todos.map(lambda todo: any -> any {
+                return <div key={todo._jac_id}>{todo.text}</div>;
+            })}
+        </div>;
+    }
+}
 ```
 
-How it works
-------------
-At runtime, Jac discovers the `JacClient` plugin and calls its builder:
+---
 
-- `jac_client.plugin.client.JacClient.get_client_bundle_builder()` returns `ViteClientBundleBuilder` configured with paths resolved from `JacMachine.base_path_dir`.
-- The builder compiles `.jac` client code to JS, stitches any client imports, injects an init script that registers exports with the Jac runtime, then runs Vite to produce an optimized IIFE bundle named `client.[hash].js`.
+## 🔧 Requirements
 
-Troubleshooting
----------------
-- npx/vite not found: ensure Node.js is installed and that `package.json` has Vite in `devDependencies` (so `npx vite` works in your app root).
-- Build completes but no bundle found: the builder expects Vite to emit `client.[hash].js`; check custom Vite configs or permissions in the output directory.
-- Output directory missing: the plugin will create the directory if needed, but verify the process has write permissions to `<base_path_dir>/static/client/js`.
+- Python: 3.12+
+- Node.js: For npm and Vite
+- Jac Language: `jaclang` (installed automatically)
 
-Contributing
-------------
-- See `jac-client/TODO.md` for improvements and `jac-client/ROADMAP.md` for direction.
-- PRs to enhance cross-platform path handling, dev HMR, and caching are welcome.
+---
 
-License
--------
-MIT (see repository root `LICENSE`).
+## 🛠️ How It Works
 
+Jac Client is a plugin that:
+1. Compiles your `.jac` client code to JavaScript
+2. Bundles dependencies with Vite for optimal performance
+3. Provides a runtime for reactive state and components
+4. Integrates seamlessly with Jac's backend graph operations
 
+---
+
+## 📖 Learn More
+
+- **Full Documentation**: See [docs/](jac_client/docs/) for comprehensive guides
+- **Examples**: Check `jac_client/examples/` for working examples
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/Jaseci-Labs/jaseci/issues)
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](../LICENSE) file.
+
+---
+
+**Happy coding with Jac!** 🎉

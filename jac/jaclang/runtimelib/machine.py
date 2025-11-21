@@ -14,12 +14,15 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import MISSING, dataclass, field
 from functools import wraps
+from http.server import BaseHTTPRequestHandler
 from inspect import getfile
 from logging import getLogger
+from pathlib import Path
 from typing import (
     Any,
     Callable,
     Coroutine,
+    Literal,
     Optional,
     ParamSpec,
     TYPE_CHECKING,
@@ -67,6 +70,9 @@ from jaclang.utils import infer_language
 
 import pluggy
 
+if TYPE_CHECKING:
+    from jaclang.runtimelib.server import ModuleIntrospector
+
 
 plugin_manager = pluggy.PluginManager("jac")
 hookspec = pluggy.HookspecMarker("jac")
@@ -75,6 +81,10 @@ logger = getLogger(__name__)
 
 T = TypeVar("T")
 P = ParamSpec("P")
+JsonValue: TypeAlias = (
+    None | str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"]
+)
+StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 503]
 
 
 class ExecutionContext:
@@ -93,7 +103,7 @@ class ExecutionContext:
         if not isinstance(self.system_root, NodeAnchor):
             self.system_root = cast(NodeAnchor, Root().__jac__)
             self.system_root.id = UUID(Con.SUPER_ROOT_UUID)
-            self.mem.set(self.system_root.id, self.system_root)
+            self.mem.set(self.system_root)
         self.entry_node = self.root_state = (
             self._get_anchor(root) if root else self.system_root
         )
@@ -682,7 +692,6 @@ class JacClassReferences:
     """Default Classes References."""
 
     TYPE_CHECKING: bool = TYPE_CHECKING
-    EdgeDir: TypeAlias = EdgeDir
     DSFunc: TypeAlias = ObjectSpatialFunction
 
     Obj: TypeAlias = Archetype
@@ -1401,7 +1410,7 @@ class JacBasics:
             anchor.persistent = True
             anchor.root = jctx.root_state.id
 
-        jctx.mem.set(anchor.id, anchor)
+        jctx.mem.set(anchor)
 
         match anchor:
             case NodeAnchor():
@@ -1466,6 +1475,62 @@ class JacClientBundle:
         """Build a client bundle for the supplied module."""
         builder = JacMachineInterface.get_client_bundle_builder()
         return builder.build(module, force=force)
+
+
+class JacAPIServer:
+    """Jac API Server Operations - Generic interface for API server."""
+
+    @staticmethod
+    def get_module_introspector(
+        module_name: str,
+        base_path: str | None = None,
+    ) -> "ModuleIntrospector":
+        from jaclang.runtimelib.server import ModuleIntrospector
+
+        """Get the module introspector instance."""
+        return ModuleIntrospector(module_name, base_path)
+
+
+class JacResponseBuilder:
+    """Jac Response Builder."""
+
+    @staticmethod
+    def send_json(
+        handler: BaseHTTPRequestHandler, status: StatusCode, data: dict[str, JsonValue]
+    ) -> None:
+        """Send JSON response."""
+        # Raise not implemented error
+        raise NotImplementedError("send_json method is not implemented")
+
+    @staticmethod
+    def send_html(
+        handler: BaseHTTPRequestHandler, status: StatusCode, body: str
+    ) -> None:
+        """Send HTML response with CORS headers."""
+        # Raise not implemented error
+        raise NotImplementedError("send_html method is not implemented")
+
+    @staticmethod
+    def send_javascript(handler: BaseHTTPRequestHandler, code: str) -> None:
+        """Send JavaScript response."""
+        # Raise not implemented error
+        raise NotImplementedError("send_javascript method is not implemented")
+
+    @staticmethod
+    def _add_cors_headers(handler: BaseHTTPRequestHandler) -> None:
+        """Add CORS headers to response."""
+        # Raise not implemented error
+        raise NotImplementedError("_add_cors_headers method is not implemented")
+
+    @staticmethod
+    def send_static_file(
+        handler: BaseHTTPRequestHandler,
+        file_path: Path,
+        content_type: str | None = None,
+    ) -> None:
+        """Send static file response (images, fonts, etc.)."""
+        # Raise not implemented error
+        raise NotImplementedError("send_static_file method is not implemented")
 
 
 class JacByLLM:
@@ -1762,7 +1827,9 @@ class JacMachineInterface(
     JacCmd,
     JacBasics,
     JacClientBundle,
+    JacAPIServer,
     JacByLLM,
+    JacResponseBuilder,
     JacUtils,
 ):
     """Jac Feature."""
@@ -1887,7 +1954,6 @@ class JacMachine(JacMachineInterface):
     @staticmethod
     def set_base_path(base_path: str) -> None:
         """Set the base path for the machine."""
-        JacMachine.reset_machine()
         JacMachine.base_path_dir = (
             base_path if os.path.isdir(base_path) else os.path.dirname(base_path)
         )

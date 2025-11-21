@@ -3,6 +3,7 @@
 import asyncio;
 import sys;
 import time;
+import logging;
 
 import from typing { Optional }
 
@@ -17,74 +18,33 @@ import from jaclang.settings { settings }
 import lsprotocol.types as lspt;
 
 
-with entry {
-    server = JacLangServer();
-}
-
-
-def debug(ls: JacLangServer, msg: str) -> None {
-    ls.log_py(f"[DEBUG] " + ("-" * 80));
-    ls.log_py(f"[DEBUG]' {msg} ");
-    ls.log_py(f"[DEBUG] " + ("-" * 80));
+def debug(msg: str) -> None {
+    print(f"[SERVER] {msg}", file=sys.stderr);
 }
 
 
 """Check syntax on change."""
-@server.feature(lspt.TEXT_DOCUMENT_DID_OPEN)
 async def did_open(ls: JacLangServer, params: lspt.DidOpenTextDocumentParams) -> None {
-    await ls.type_check(params.text_document.uri);
-    ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
+    ls.type_check(params.text_document.uri);
 }
 
 
 """Check syntax on change."""
-@server.feature(lspt.TEXT_DOCUMENT_DID_SAVE)
 async def did_save(ls: JacLangServer, params: lspt.DidOpenTextDocumentParams) -> None {
-
-    file_path = params.text_document.uri;
-    await ls.type_check(file_path);
-    ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
+    ls.type_check(params.text_document.uri);
 }
-
-
-glob still_compiling = False;
 
 
 """Check syntax on change with debouncing."""
-@server.feature(lspt.TEXT_DOCUMENT_DID_CHANGE)
 async def did_change(
     ls: JacLangServer, params: lspt.DidChangeTextDocumentParams
 ) -> None {
-    print("********* ->", time.time(), file=sys.stderr);
-
-    global still_compiling;
-    still_compiling = True;
-    file_path = params.text_document.uri;
-    try {
-        document = ls.workspace.get_text_document(file_path);
-        lines = document.source.splitlines();
-        fs_path :str= document.path;
-        fs_path;
-        if (fs_path in ls.sem_managers) {
-            sem_manager = ls.sem_managers[fs_path];
-            sem_manager.update_sem_tokens(params, sem_manager.sem_tokens, lines);
-            ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
-        }
-    } except Exception as e {
-        ls.log_py(f" 'Failed to update semantic tokens: ' {e} ");
-    }
-    debug(ls, "Type checking started...");
-    ls.log_py(f" 'Launching type check for ' {file_path} ");
-    await ls.type_check(file_path);
-    ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
-
-    still_compiling = False;
-    debug(ls, "Type checking finished...");
+    debug("Did change: Type checking started...");
+    ls.type_check(params.text_document.uri);
 }
 
 
 """Format the given document."""
-@server.feature(lspt.TEXT_DOCUMENT_FORMATTING)
 def formatting(
     ls: JacLangServer, params: lspt.DocumentFormattingParams
 ) -> list[lspt.TextEdit] {
@@ -93,26 +53,10 @@ def formatting(
 
 
 """Check syntax on file creation."""
-@server.feature(
-    lspt.WORKSPACE_DID_CREATE_FILES,
-    lspt.FileOperationRegistrationOptions(
-        filters=[
-            lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
-        ]
-    )
-)
 def did_create_files(ls: JacLangServer, params: lspt.CreateFilesParams) -> None { }
 
 
 """Check syntax on file rename."""
-@server.feature(
-    lspt.WORKSPACE_DID_RENAME_FILES,
-    lspt.FileOperationRegistrationOptions(
-        filters=[
-            lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
-        ]
-    )
-)
 def did_rename_files(ls: JacLangServer, params: lspt.RenameFilesParams) -> None {
     new_uris = [file.new_uri for file in params.files];
     old_uris = [file.old_uri for file in params.files];
@@ -123,14 +67,6 @@ def did_rename_files(ls: JacLangServer, params: lspt.RenameFilesParams) -> None 
 
 
 """Check syntax on file delete."""
-@server.feature(
-    lspt.WORKSPACE_DID_DELETE_FILES,
-    lspt.FileOperationRegistrationOptions(
-        filters=[
-            lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
-        ]
-    )
-)
 def did_delete_files(ls: JacLangServer, params: lspt.DeleteFilesParams) -> None {
     for file in params.files {
         ls.delete_module(file.uri);
@@ -139,30 +75,12 @@ def did_delete_files(ls: JacLangServer, params: lspt.DeleteFilesParams) -> None 
 
 
 """Provide completion."""
-@server.feature(
-    lspt.TEXT_DOCUMENT_COMPLETION,
-    lspt.CompletionOptions(trigger_characters=['.', ':', 'a-zA-Z0-9'])
-)
 async def completion(
     ls: JacLangServer, params: lspt.CompletionParams
 ) -> lspt.CompletionList{
     file_path = params.text_document.uri;
-    debug(ls, f"Waiting for any pending debounce or type check for {file_path}...");
-
-    while True{
-        debounce_active = ls.is_debounce_active(file_path);
-        thread_active = ls.is_type_check_thread_active(file_path);
-
-        # Break only when both debounce and type-check threads are done
-        if (not debounce_active) and (not thread_active) {
-            break;
-        }
-
-        await asyncio.sleep(0.1);
-    }
-
-    debug(ls, f"All checks done for {file_path}, providing completions...");
-    return ls.get_completion(
+    debug("Completion requested");
+    return await ls.get_completion(
         params.text_document.uri,
         params.position,
         (params.context.trigger_character if params.context else None)
@@ -171,7 +89,6 @@ async def completion(
 
 
 """Provide hover information for the given hover request."""
-@server.feature(lspt.TEXT_DOCUMENT_HOVER, lspt.HoverOptions(work_done_progress=True))
 def hover(
     ls: JacLangServer, params: lspt.TextDocumentPositionParams
 ) -> Optional[lspt.Hover] {
@@ -180,7 +97,6 @@ def hover(
 
 
 """Provide document symbols."""
-@server.feature(lspt.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(
     ls: JacLangServer, params: lspt.DocumentSymbolParams
 ) -> list[lspt.DocumentSymbol] {
@@ -189,7 +105,6 @@ def document_symbol(
 
 
 """Provide definition."""
-@server.feature(lspt.TEXT_DOCUMENT_DEFINITION)
 def definition(
     ls: JacLangServer, params: lspt.TextDocumentPositionParams
 ) -> Optional[lspt.Location] {
@@ -198,14 +113,12 @@ def definition(
 
 
 """Provide references."""
-@server.feature(lspt.TEXT_DOCUMENT_REFERENCES)
 def references(ls: JacLangServer, params: lspt.ReferenceParams) -> list[lspt.Location] {
     return ls.get_references(params.text_document.uri, params.position);
 }
 
 
 """Rename symbol."""
-@server.feature(lspt.TEXT_DOCUMENT_RENAME)
 def rename(
     ls: JacLangServer, params: lspt.RenameParams
 ) -> Optional[lspt.WorkspaceEdit] {
@@ -215,12 +128,6 @@ def rename(
 
 
 """Provide semantic tokens."""
-@server.feature(
-    lspt.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
-    lspt.SemanticTokensLegend(
-        token_types=SemTokType.as_str_list(), token_modifiers=SemTokMod.as_str_list()
-    )
-)
 def semantic_tokens_full(
     ls: JacLangServer, params: lspt.SemanticTokensParams
 ) -> lspt.SemanticTokens {
@@ -230,13 +137,63 @@ def semantic_tokens_full(
 
 """Run the language server."""
 def run_lang_server()  -> None {
-    settings.pass_timer = True;
+    server = JacLangServer();
+
+    # Register all features
+    server.feature(lspt.TEXT_DOCUMENT_DID_OPEN)(did_open);
+    server.feature(lspt.TEXT_DOCUMENT_DID_SAVE)(did_save);
+    server.feature(lspt.TEXT_DOCUMENT_DID_CHANGE)(did_change);
+    server.feature(lspt.TEXT_DOCUMENT_FORMATTING)(formatting);
+
+    server.feature(
+        lspt.WORKSPACE_DID_CREATE_FILES,
+        lspt.FileOperationRegistrationOptions(
+            filters=[
+                lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
+            ]
+        )
+    )(did_create_files);
+
+    server.feature(
+        lspt.WORKSPACE_DID_RENAME_FILES,
+        lspt.FileOperationRegistrationOptions(
+            filters=[
+                lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
+            ]
+        )
+    )(did_rename_files);
+
+    server.feature(
+        lspt.WORKSPACE_DID_DELETE_FILES,
+        lspt.FileOperationRegistrationOptions(
+            filters=[
+                lspt.FileOperationFilter(pattern=lspt.FileOperationPattern('**/*.jac'))
+            ]
+        )
+    )(did_delete_files);
+
+    server.feature(
+        lspt.TEXT_DOCUMENT_COMPLETION,
+        lspt.CompletionOptions(trigger_characters=['.', ':', 'a-zA-Z0-9'])
+    )(completion);
+
+    server.feature(lspt.TEXT_DOCUMENT_HOVER, lspt.HoverOptions(work_done_progress=True))(hover);
+    server.feature(lspt.TEXT_DOCUMENT_DOCUMENT_SYMBOL)(document_symbol);
+    server.feature(lspt.TEXT_DOCUMENT_DEFINITION)(definition);
+    server.feature(lspt.TEXT_DOCUMENT_REFERENCES)(references);
+    server.feature(lspt.TEXT_DOCUMENT_RENAME)(rename);
+
+    server.feature(
+        lspt.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL,
+        lspt.SemanticTokensLegend(
+            token_types=SemTokType.as_str_list(), token_modifiers=SemTokMod.as_str_list()
+        )
+    )(semantic_tokens_full);
+
     server.start_io();
 }
 
 
-with entry {
-    if __name__ == '__main__' {
+with entry:__main__ {
         run_lang_server();
-    }
 }

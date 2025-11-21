@@ -33,11 +33,12 @@ class JacCmd:
         @cmd_registry.register
         def scale(file_path: str, build: bool = False) -> None:
             """Jac Scale functionality."""
-            load_dotenv()
 
             if not os.path.exists(file_path):
                 raise FileNotFoundError(f"File not found: '{file_path}'")
             code_folder = os.path.dirname(file_path) or "."
+            dotenv_path = os.path.join(code_folder, ".env")
+            load_dotenv(dotenv_path)
             code_folder = os.path.relpath(code_folder)
             code_folder = pathlib.Path(code_folder).as_posix()
             base_file_path = os.path.basename(file_path)
@@ -46,9 +47,14 @@ class JacCmd:
             deploy_k8(code_folder, base_file_path, build)
 
         @cmd_registry.register
-        def destroy() -> None:
+        def destroy(file_path: str) -> None:
             """Jac Destroys functionality."""
-            load_dotenv()
+
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: '{file_path}'")
+            code_folder = os.path.dirname(file_path) or "."
+            dotenv_path = os.path.join(code_folder, ".env")
+            load_dotenv(dotenv_path)
             cleanup_k8_resources()
 
 

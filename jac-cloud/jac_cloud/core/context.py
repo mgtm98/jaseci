@@ -82,7 +82,7 @@ class JaseciContext(ExecutionContext):
             system_root.persistent = True
             NodeAnchor.Collection.insert_one(system_root.serialize())
             system_root.sync_hash()
-            ctx.mem.set(system_root.id, system_root)
+            ctx.mem.set(system_root)
 
         ctx.system_root = system_root
 
@@ -90,7 +90,7 @@ class JaseciContext(ExecutionContext):
             ctx.root_state = system_root
         elif _root := getattr(connection, "_root", None):
             ctx.root_state = _root
-            ctx.mem.set(_root.id, _root)
+            ctx.mem.set(_root)
         else:
             if not isinstance(
                 public_root := ctx.mem.find_by_id(PUBLIC_ROOT), NodeAnchor
@@ -99,7 +99,7 @@ class JaseciContext(ExecutionContext):
                 public_root.id = PUBLIC_ROOT_ID
                 public_root.access.all = AccessLevel.WRITE
                 public_root.persistent = True
-                ctx.mem.set(public_root.id, public_root)
+                ctx.mem.set(public_root)
 
             ctx.root_state = public_root
 

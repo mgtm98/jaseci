@@ -51,11 +51,21 @@ def _candidate_from(base: str, parts: list[str]) -> Optional[Tuple[str, str]]:
         return candidate + ".jac", "jac"
     if os.path.isfile(candidate + ".py"):
         return candidate + ".py", "py"
+    if os.path.isfile(candidate + ".js"):
+        return candidate + ".js", "js"
     return None
 
 
 def resolve_module(target: str, base_path: str) -> Tuple[str, str]:
     """Resolve module path and infer language."""
+    base_dir = os.path.dirname(base_path)
+    if target.startswith("."):
+        other_target = os.path.join(base_dir, target.lstrip("."))
+    else:
+        other_target = os.path.join(base_dir, target)
+    if os.path.exists(other_target) and os.path.isfile(other_target):
+        return other_target, "other"
+
     parts = target.split(".")
     level = 0
     while level < len(parts) and parts[level] == "":
@@ -93,11 +103,14 @@ def resolve_module(target: str, base_path: str) -> Tuple[str, str]:
             return res
         target_jac = actual_parts[-1] + ".jac"
         target_py = actual_parts[-1] + ".py"
+        target_js = actual_parts[-1] + ".js"
         for root, _, files in os.walk(jacpath):
             if target_jac in files:
                 return os.path.join(root, target_jac), "jac"
             if target_py in files:
                 return os.path.join(root, target_py), "py"
+            if target_js in files:
+                return os.path.join(root, target_js), "js"
 
     return os.path.join(base_dir, *actual_parts), "py"
 
@@ -157,10 +170,19 @@ def convert_to_js_import_path(path: str) -> str:
         # Skip adding .js for special paths like "." or ".."
         if js_path in (".", ".."):
             return js_path
-
         # Check if the path already ends with a file extension
         # Common JavaScript module extensions
-        common_extensions = (".js", ".mjs", ".cjs", ".json", ".css", ".wasm")
+        common_extensions = (
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".css",
+            ".scss",
+            ".sass",
+            ".less",
+            ".wasm",
+            ".json",
+        )
         if not js_path.endswith(common_extensions):
             # No recognized extension found, add .js
             js_path += ".js"

@@ -6,6 +6,7 @@ from ..k8 import deploy_k8
 from ..utils import cleanup_k8_resources
 import pytest
 
+
 def test_deploy_k8_only_littlex():
     """
     This test runs deploy_k8() against a live Kubernetes cluster.
@@ -20,27 +21,27 @@ def test_deploy_k8_only_littlex():
     namespace = os.getenv("K8_NAMESPACE", "default")
 
     # Set environment
-    os.environ.update({
-        "APP_NAME": "littlex",
-        "DOCKER_IMAGE_NAME": "littlex:latest",
-        "DOCKER_USERNAME": "juzailmlwork",
-        "K8_MONGODB": "false",
-        "K8_REDIS": "false",
-        "K8_NAMESPACE": namespace,
-        "K8_CONTAINER_PORT": "8000",
-        "K8_NODE_PORT": "30050",
-    })
+    os.environ.update(
+        {
+            "APP_NAME": "littlex",
+            "DOCKER_IMAGE_NAME": "littlex:latest",
+            "DOCKER_USERNAME": "juzailmlwork",
+            "K8_MONGODB": "false",
+            "K8_REDIS": "false",
+            "K8_NAMESPACE": namespace,
+            "K8_CONTAINER_PORT": "8000",
+            "K8_NODE_PORT": "30050",
+        }
+    )
 
     # Run deploy
-    deploy_k8(code_folder=".")
+    deploy_k8(code_folder=".", build=True)
 
     # Wait for deployment to be created
     time.sleep(30)
 
     # Validate the deployment exists
-    deployment = apps_v1.read_namespaced_deployment(
-        name="littlex", namespace=namespace
-    )
+    deployment = apps_v1.read_namespaced_deployment(name="littlex", namespace=namespace)
     assert deployment.metadata.name == "littlex"
     assert deployment.spec.replicas == 3
 
@@ -53,6 +54,7 @@ def test_deploy_k8_only_littlex():
     # Cleanup (optional)
     apps_v1.delete_namespaced_deployment("littlex", namespace)
     core_v1.delete_namespaced_service("littlex-service", namespace)
+
 
 def test_deploy_k8_with_mongodb_and_redis():
     """
@@ -69,27 +71,27 @@ def test_deploy_k8_with_mongodb_and_redis():
     namespace = os.getenv("K8_NAMESPACE", "default")
 
     # Set environment for MongoDB + Redis test
-    os.environ.update({
-        "APP_NAME": "littlex",
-        "DOCKER_IMAGE_NAME": "littlex:latest",
-        "DOCKER_USERNAME": "juzailmlwork",
-        "K8_MONGODB": "true",
-        "K8_REDIS": "true",
-        "K8_NAMESPACE": namespace,
-        "K8_CONTAINER_PORT": "8000",
-        "K8_NODE_PORT": "30051",  # Different port to avoid conflict
-    })
+    os.environ.update(
+        {
+            "APP_NAME": "littlex",
+            "DOCKER_IMAGE_NAME": "littlex:latest",
+            "DOCKER_USERNAME": "juzailmlwork",
+            "K8_MONGODB": "true",
+            "K8_REDIS": "true",
+            "K8_NAMESPACE": namespace,
+            "K8_CONTAINER_PORT": "8000",
+            "K8_NODE_PORT": "30051",  # Different port to avoid conflict
+        }
+    )
 
     # Run deploy
-    deploy_k8(code_folder=".")
+    deploy_k8(code_folder=".", build=True)
 
     # Wait for resources to be ready
     time.sleep(20)
 
     # --- Validate main deployment ---
-    deployment = apps_v1.read_namespaced_deployment(
-        name="littlex", namespace=namespace
-    )
+    deployment = apps_v1.read_namespaced_deployment(name="littlex", namespace=namespace)
     assert deployment.metadata.name == "littlex"
     assert deployment.spec.replicas == 3
 
@@ -128,7 +130,7 @@ def test_deploy_k8_with_mongodb_and_redis():
     core_v1.delete_namespaced_service("littlex-service", namespace)
     core_v1.delete_namespaced_service("littlex-redis-service", namespace)
     core_v1.delete_namespaced_service("littlex-mongodb-service", namespace)
-    
+
 
 def test_deploy_k8_with_mongodb_and_redis_different_namespace():
     """
@@ -145,27 +147,27 @@ def test_deploy_k8_with_mongodb_and_redis_different_namespace():
     namespace = "mock-test"
 
     # Set environment for MongoDB + Redis test
-    os.environ.update({
-        "APP_NAME": "littlex",
-        "DOCKER_IMAGE_NAME": "littlex:latest",
-        "DOCKER_USERNAME": "juzailmlwork",
-        "K8_MONGODB": "true",
-        "K8_REDIS": "true",
-        "K8_NAMESPACE": namespace,
-        "K8_CONTAINER_PORT": "8000",
-        "K8_NODE_PORT": "30051",  # Different port to avoid conflict
-    })
+    os.environ.update(
+        {
+            "APP_NAME": "littlex",
+            "DOCKER_IMAGE_NAME": "littlex:latest",
+            "DOCKER_USERNAME": "juzailmlwork",
+            "K8_MONGODB": "true",
+            "K8_REDIS": "true",
+            "K8_NAMESPACE": namespace,
+            "K8_CONTAINER_PORT": "8000",
+            "K8_NODE_PORT": "30051",  # Different port to avoid conflict
+        }
+    )
 
     # Run deploy
-    deploy_k8(code_folder=".")
+    deploy_k8(code_folder=".", build=True)
 
     # Wait for resources to be ready
     time.sleep(30)
 
     # --- Validate main deployment ---
-    deployment = apps_v1.read_namespaced_deployment(
-        name="littlex", namespace=namespace
-    )
+    deployment = apps_v1.read_namespaced_deployment(name="littlex", namespace=namespace)
     assert deployment.metadata.name == "littlex"
     assert deployment.spec.replicas == 3
 
@@ -204,31 +206,31 @@ def test_deploy_k8_with_mongodb_and_redis_different_namespace():
     core_v1.delete_namespaced_service("littlex-service", namespace)
     core_v1.delete_namespaced_service("littlex-redis-service", namespace)
     core_v1.delete_namespaced_service("littlex-mongodb-service", namespace)
-    
-import pytest
 
 
 def test_deploy_and_cleanup_k8_resources():
     """Test deploy_k8() with MongoDB and Redis, then cleanup_k8_resources()."""
-    
+
     config.load_kube_config()
     apps_v1 = client.AppsV1Api()
     core_v1 = client.CoreV1Api()
     namespace = "default"
 
-    os.environ.update({
-        "APP_NAME": "littlex",
-        "DOCKER_IMAGE_NAME": "littlex:latest",
-        "DOCKER_USERNAME": "juzailmlwork",
-        "K8_MONGODB": "true",
-        "K8_REDIS": "true",
-        "K8_NAMESPACE": namespace,
-        "K8_CONTAINER_PORT": "8000",
-        "K8_NODE_PORT": "30051",
-    })
+    os.environ.update(
+        {
+            "APP_NAME": "littlex",
+            "DOCKER_IMAGE_NAME": "littlex:latest",
+            "DOCKER_USERNAME": "juzailmlwork",
+            "K8_MONGODB": "true",
+            "K8_REDIS": "true",
+            "K8_NAMESPACE": namespace,
+            "K8_CONTAINER_PORT": "8000",
+            "K8_NODE_PORT": "30051",
+        }
+    )
 
     # Deploy resources
-    deploy_k8(code_folder=".")
+    deploy_k8(code_folder=".", build=True)
 
     # Wait for resources to be ready
     time.sleep(20)
@@ -242,7 +244,9 @@ def test_deploy_and_cleanup_k8_resources():
     service = core_v1.read_namespaced_service("littlex-service", namespace)
     assert service.spec.type == "NodePort"
 
-    mongodb_stateful = apps_v1.read_namespaced_stateful_set("littlex-mongodb", namespace)
+    mongodb_stateful = apps_v1.read_namespaced_stateful_set(
+        "littlex-mongodb", namespace
+    )
     assert mongodb_stateful.spec.service_name == "littlex-mongodb-service"
 
     redis_deploy = apps_v1.read_namespaced_deployment("littlex-redis", namespace)
@@ -269,5 +273,3 @@ def test_deploy_and_cleanup_k8_resources():
         core_v1.read_namespaced_service("littlex-redis-service", namespace)
     with pytest.raises(ApiException):
         core_v1.read_namespaced_service("littlex-mongodb-service", namespace)
-
-    

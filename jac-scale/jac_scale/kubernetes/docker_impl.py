@@ -5,10 +5,6 @@ import os
 import docker
 from docker.errors import APIError, BuildError
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 
 def build_docker_image(
     image_name: str, code_folder: str, dockerfile: str = "Dockerfile"

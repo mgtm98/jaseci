@@ -84,7 +84,8 @@ let __jacReactiveContext = {
     "rootComponent": None,      # Root function to re-render
     "currentComponent": None,   # Current component ID being rendered
     "currentEffect": None,      # Current effect for dependency tracking
-    "router": None             # Global router instance
+    "router": None,            # Global router instance
+    "mountedComponents": {}     # Track which components have mounted (for onMount)
 };
 
 # Create a reactive signal (primitive value)
@@ -142,6 +143,39 @@ def createState(initialState: dict) -> list {
 # Executes effectFn and re-runs when tracked signals change
 def createEffect(effectFn: any) -> None {
     __jacRunEffect(effectFn);
+}
+
+# Run effect once when component mounts (similar to useEffect with empty deps)
+# Executes mountFn once when the component first renders
+def onMount(mountFn: any) -> None {
+    currentComponent = __jacReactiveContext.currentComponent;
+    if not currentComponent {
+        # Not in a component context, run immediately
+        __jacRunEffect(mountFn);
+        return;
+    }
+
+    # Track mounted components
+    if not __jacReactiveContext.mountedComponents {
+        __jacReactiveContext.mountedComponents = {};
+    }
+
+    # Check if this component has already mounted
+    componentId = f"{currentComponent}";
+    if not __jacHasOwn(__jacReactiveContext.mountedComponents, componentId) {
+        # Mark as mounted and run the effect
+        __jacReactiveContext.mountedComponents[componentId] = True;
+
+        # Run in next tick to ensure component is fully rendered
+        try {
+            setTimeout(lambda -> None {
+                __jacRunEffect(mountFn);
+            }, 0);
+        } except Exception {
+            # Fallback if setTimeout not available
+            __jacRunEffect(mountFn);
+        }
+    }
 }
 
 # Internal: Track component dependencies
@@ -395,27 +429,30 @@ def __jacGetHashPath() -> str {
 # Walker spawn function
 # ============================================================================
 
-async def __jacSpawn(walker: str, fields: dict = {}) -> any {
+async def __jacSpawn(left: str, right: str = "", fields: dict = {}) -> any {
     token = __getLocalStorage("jac_token");
-
-    response = await fetch(
-        f"/walker/{walker}",
+    url =  f"/walker/{left}";
+    if right != "" {
+        url =  f"/walker/{left}/{right}";
+    }
+    response = await fetch(url,
         {
             "method": "POST",
+            "accept": "application/json",
             "headers": {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {token}" if token else ""
             },
-            "body": JSON.stringify({"nd": "root", **fields})
+            "body": JSON.stringify({"fields": fields})
         }
     );
 
     if not response.ok {
-        error_text = await response.text();
+        error_text = await response.json();
         raise Exception(f"Walker {walker} failed: {error_text}");
     }
 
-    return JSON.parse(await response.text());
+    return await response.json();
 }
 
 # Function call function - calls server-side functions from client

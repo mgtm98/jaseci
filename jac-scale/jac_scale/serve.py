@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -103,20 +103,15 @@ class JacAPIServer(JServer):
     def create_walker_callback(
         self, walker_name: str, has_node_param: bool = False
     ) -> Callable[..., dict[str, JsonValue]]:
-        if has_node_param:
 
-            def callback(node: str, **kwargs: JsonValue) -> dict[str, JsonValue]:
+        def callback(
+            node: Optional[str] = None, **kwargs: JsonValue
+        ) -> dict[str, JsonValue]:
+            if node:
                 kwargs["_jac_spawn_node"] = node
-                return self.execution_manager.spawn_walker(
-                    self.get_walkers()[walker_name], kwargs, "__guest__"
-                )
-
-        else:
-
-            def callback(**kwargs: JsonValue) -> dict[str, JsonValue]:
-                return self.execution_manager.spawn_walker(
-                    self.get_walkers()[walker_name], kwargs, "__guest__"
-                )
+            return self.execution_manager.spawn_walker(
+                self.get_walkers()[walker_name], kwargs, "__guest__"
+            )
 
         return callback
 
