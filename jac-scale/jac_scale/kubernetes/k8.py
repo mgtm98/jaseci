@@ -30,7 +30,6 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     repository_name = f"{docker_username}/{image_name}"
     mongodb_enabled = os.getenv("K8_MONGODB", "false").lower() == "true"
     redis_enabled = os.getenv("K8_REDIS", "false").lower() == "true"
-    mongodb_enabled = False
     if not build:
         repository_name = "python:3.12-slim"
     # -------------------
@@ -277,7 +276,7 @@ def deploy_k8(code_folder: str, file_name: str = "none", build: bool = False) ->
     print("Deploying Jaseci-app app...")
     apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
     core_v1.create_namespaced_service(namespace=namespace, body=service)
-    time.sleep(30)
+    time.sleep(60)
     # The below code is kept to be used in future if the confiigmap didnt work for larger file size
     # if not build:
     #     pod_name = None
