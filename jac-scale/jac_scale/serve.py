@@ -82,6 +82,7 @@ class JacAPIServer(JServer):
                         required=True,
                         default=None,
                         description="Username for new user",
+                        type=ParameterType.BODY,
                     ),
                     APIParameter(
                         name="password",
@@ -89,6 +90,7 @@ class JacAPIServer(JServer):
                         required=True,
                         default=None,
                         description="Password for new user",
+                        type=ParameterType.BODY,
                     ),
                 ],
                 response_model=None,
