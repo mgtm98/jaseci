@@ -125,8 +125,6 @@ class MongoDB:  # Memory[UUID, Anchor]):
         _id = self._to_uuid(anchor.id)
         try:
             current_hash = hash(dumps(anchor))
-            print("anchor hash in mongodb is ", anchor.hash)
-            print("current hash in mongodb is", current_hash)
 
         except Exception:
             return
@@ -176,7 +174,6 @@ class MongoDB:  # Memory[UUID, Anchor]):
             {"$set": {"data": data_blob, "type": type(final_anchor).__name__}},
             upsert=True,
         )
-        # print("uploaded anchor to item to mongodb ")
 
     def remove(self, anchor: TANCH) -> None:
         _id = self._to_uuid(anchor.id)
@@ -245,8 +242,6 @@ class MongoDB:  # Memory[UUID, Anchor]):
                 current_hash = hash(dumps(anc))
             except Exception:
                 continue
-            print("anchor hash in mongodb is ", anc.hash)
-            print("current hash in mongodb is", current_hash)
             # Skip if hash unchanged → no need to save
             if getattr(anc, "hash", None) == current_hash:
                 continue
@@ -295,7 +290,6 @@ class MongoDB:  # Memory[UUID, Anchor]):
             )
 
         if ops:
-            print(f"Performing bulk write with {len(ops)} operations...")
             self.collection.bulk_write(ops)
 
     def commit(self, anchor: TANCH | None = None, keys: Iterable[Anchor] = []) -> None:
