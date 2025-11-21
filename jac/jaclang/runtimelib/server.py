@@ -21,13 +21,17 @@ from jaclang.runtimelib.constructs import (
     Root,
     WalkerArchetype,
 )
-from jaclang.runtimelib.machine import ExecutionContext, JacMachine as Jac
+from jaclang.runtimelib.machine import (
+    ExecutionContext,
+    JacMachine as Jac,
+    JacResponseBuilder,
+)
 
 # Type Aliases
 JsonValue: TypeAlias = (
     None | str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"]
 )
-StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 503]
+StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 500, 503]
 
 
 # Response Models
@@ -592,7 +596,7 @@ class ModuleIntrospector:
 
 
 # HTTP Response Builder
-class ResponseBuilder:
+class ResponseBuilder(JacResponseBuilder):
     """Build and send HTTP responses."""
 
     @staticmethod
@@ -625,6 +629,18 @@ class ResponseBuilder:
         payload = code.encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "application/javascript; charset=utf-8")
+        handler.send_header("Content-Length", str(len(payload)))
+        handler.send_header("Cache-Control", "no-cache")
+        ResponseBuilder._add_cors_headers(handler)
+        handler.end_headers()
+        handler.wfile.write(payload)
+
+    @staticmethod
+    def send_css(handler: BaseHTTPRequestHandler, css: str) -> None:
+        """Send CSS response."""
+        payload = css.encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/css; charset=utf-8")
         handler.send_header("Content-Length", str(len(payload)))
         handler.send_header("Cache-Control", "no-cache")
         ResponseBuilder._add_cors_headers(handler)
@@ -770,7 +786,7 @@ class JacAPIServer:
 
         # Core components
         self.user_manager = UserManager(session_path)
-        self.introspector = ModuleIntrospector(module_name, base_path)
+        self.introspector = Jac.get_module_introspector(module_name, base_path)
         self.execution_manager = ExecutionManager(session_path, self.user_manager)
 
         # Route handlers
@@ -840,6 +856,27 @@ class JacAPIServer:
                         )
                     except RuntimeError as exc:
                         ResponseBuilder.send_json(self, 503, {"error": str(exc)})
+                    return
+
+                # CSS files from dist directory
+                if path.startswith("/static/") and path.endswith(".css"):
+                    try:
+                        from pathlib import Path
+
+                        base_path = (
+                            Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd()
+                        )
+                        css_file = base_path / "dist" / Path(path).name
+
+                        if css_file.exists():
+                            css_content = css_file.read_text(encoding="utf-8")
+                            ResponseBuilder.send_css(self, css_content)
+                        else:
+                            ResponseBuilder.send_json(
+                                self, 404, {"error": "CSS file not found"}
+                            )
+                    except Exception as exc:
+                        ResponseBuilder.send_json(self, 500, {"error": str(exc)})
                     return
 
                 # Root endpoint
@@ -997,7 +1034,9 @@ class JacAPIServer:
                     )
                     self._send_response(response)
                 elif path.startswith("/walker/"):
-                    name = path.split("/")[-1]
+                    name_parts = path.split("/")
+                    name = name_parts[-2] if len(name_parts) > 3 else name_parts[-1]
+                    node_id = name_parts[-1] if len(name_parts) > 3 else ""
                     # Check if this walker requires authentication
                     server.introspector.load()
                     if server.introspector.is_auth_required_for_walker(name):
@@ -1017,9 +1056,10 @@ class JacAPIServer:
                                 server.user_manager.create_user(
                                     username, "__no_password__"
                                 )
-
+                    # add two dict to fields to include _jac_spawn_node
+                    fields = data.get("fields", {}) | {"_jac_spawn_node": node_id}
                     response = server.execution_handler.spawn_walker(
-                        name, data.get("fields", {}), username
+                        name, fields, username
                     )
                     self._send_response(response)
                 else:

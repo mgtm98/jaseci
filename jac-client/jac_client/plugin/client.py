@@ -1,13 +1,77 @@
+import hashlib
+import html
 import types
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from typing import Any, Literal, TypeAlias
 
 from jaclang.runtimelib.client_bundle import ClientBundle
 from jaclang.runtimelib.machine import (
     JacMachine as Jac,
     hookimpl,
 )
+from jaclang.runtimelib.server import ModuleIntrospector
 
 from .vite_client_bundle import ViteClientBundleBuilder
+
+JsonValue: TypeAlias = (
+    None | str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"]
+)
+StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 503]
+
+
+class JacClientModuleIntrospector(ModuleIntrospector):
+    """Jac Client Module Introspector."""
+
+    def render_page(
+        self, function_name: str, args: dict[str, Any], username: str
+    ) -> dict[str, Any]:
+        """Render HTML page for client function using the Vite bundle."""
+        self.load()
+
+        available_exports = set(self._client_manifest.get("exports", [])) or set(
+            self.get_client_functions().keys()
+        )
+        if function_name not in available_exports:
+            raise ValueError(f"Client function '{function_name}' not found")
+
+        bundle_hash = self.ensure_bundle()
+
+        # Find CSS file in dist directory
+        base_path = Path(Jac.base_path_dir)
+        dist_dir = base_path / "dist"
+        css_link = ""
+
+        # Try to find CSS file (main.css is the default Vite output)
+        css_file = dist_dir / "main.css"
+        if css_file.exists():
+            css_hash = hashlib.sha256(css_file.read_bytes()).hexdigest()[:8]
+            css_link = (
+                f'<link rel="stylesheet" href="/static/main.css?hash={css_hash}"/>'
+            )
+
+        head_content = f'<meta charset="utf-8"/>\n            <title>{html.escape(function_name)}</title>'
+        if css_link:
+            head_content += f"\n            {css_link}"
+
+        page = (
+            "<!DOCTYPE html>"
+            '<html lang="en">'
+            "<head>"
+            f"{head_content}"
+            "</head>"
+            "<body>"
+            '<div id="root"></div>'
+            f'<script src="/static/client.js?hash={bundle_hash}" defer></script>'
+            "</body>"
+            "</html>"
+        )
+
+        return {
+            "html": page,
+            "bundle_hash": bundle_hash,
+            "bundle_code": self._bundle.code,
+        }
 
 
 class JacClient:
@@ -19,15 +83,14 @@ class JacClient:
         """Get the client bundle builder instance."""
         base_path = Path(Jac.base_path_dir)
         package_json_path = base_path / "package.json"
-        output_dir = base_path / "static" / "client" / "js"
+        output_dir = base_path / "dist"
         # Use the plugin's client_runtime.jac file
         runtime_path = Path(__file__).with_name("client_runtime.jac")
-        print(f"Runtime path: {runtime_path}")
         return ViteClientBundleBuilder(
             runtime_path=runtime_path,
             vite_package_json=package_json_path,
             vite_output_dir=output_dir,
-            vite_minify=True,
+            vite_minify=False,
         )
 
     @staticmethod
@@ -39,3 +102,31 @@ class JacClient:
         """Build a client bundle for the supplied module."""
         builder = JacClient.get_client_bundle_builder()
         return builder.build(module, force=force)
+
+    @staticmethod
+    @hookimpl
+    def get_module_introspector(
+        module_name: str, base_path: str | None
+    ) -> ModuleIntrospector:
+        """Get a module introspector for the supplied module."""
+        return JacClientModuleIntrospector(module_name, base_path)
+
+    @staticmethod
+    @hookimpl
+    def _add_cors_headers(handler: BaseHTTPRequestHandler) -> None:
+        """Add CORS headers to response."""
+        # Custom add cors handlers can be implemented here. and remove the implementation below
+        from jaclang.runtimelib.server import ResponseBuilder
+
+        ResponseBuilder._add_cors_headers(handler)
+
+    @staticmethod
+    @hookimpl
+    def send_static_file(
+        handler: BaseHTTPRequestHandler,
+        file_path: Path,
+        content_type: str | None = None,
+    ) -> None:
+        """Send static file response (images, fonts, etc.)."""
+        # Raise not implemented error
+        raise NotImplementedError("send_static_file method is not implemented")

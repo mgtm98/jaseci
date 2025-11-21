@@ -4,18 +4,20 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import json
 import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from jaclang.runtimelib.client_bundle import (
     ClientBundle,
     ClientBundleBuilder,
     ClientBundleError,
 )
+
+if TYPE_CHECKING:
+    from jaclang.compiler.codeinfo import ClientManifest
 
 
 class ViteClientBundleBuilder(ClientBundleBuilder):
@@ -41,64 +43,204 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         self.vite_package_json = vite_package_json
         self.vite_minify = vite_minify
 
+    def _process_imports(
+        self, manifest: ClientManifest | None, module_path: Path
+    ) -> list[Path | None]:  # type: ignore[override]
+        """Process client imports for Vite bundling.
+
+        Only mark modules as bundled when we actually inline their code (.jac files we compile
+        and local .js files we embed). Bare package specifiers (e.g., "antd") are left as real
+        ES imports so Vite can resolve and bundle them.
+        """
+        imported_js_modules: list[Path | None] = []
+
+        if manifest and manifest.imports:
+            for _, import_path in manifest.imports.items():
+                import_path_obj = Path(import_path)
+
+                if import_path_obj.suffix == ".js":
+                    # Inline local JS files and mark as bundled
+                    try:
+
+                        imported_js_modules.append(import_path_obj)
+                    except FileNotFoundError:
+                        imported_js_modules.append(None)
+
+                elif import_path_obj.suffix == ".jac":
+                    # Compile .jac imports and include transitive .jac imports
+                    try:
+                        imported_js_modules.append(import_path_obj)
+                    except ClientBundleError:
+                        imported_js_modules.append(None)
+
+                else:
+                    # Non .jac/.js entries (likely bare specifiers) should be handled by Vite.
+                    # Do not inline or mark as bundled so their import lines are preserved.
+                    pass
+
+        return imported_js_modules
+
+    def _compile_dependencies_recursively(
+        self,
+        module_path: Path,
+        visited: set[Path] | None = None,
+        collected_exports: set[str] | None = None,
+        collected_globals: dict[str, Any] | None = None,
+    ) -> None:
+        """Recursively compile/copy .jac/.js imports to temp, skipping bundling.
+
+        Only prepares dependency JS artifacts for Vite by writing compiled JS (.jac)
+        or copying local JS (.js) into the temp directory. Bare specifiers are left
+        untouched for Vite to resolve.
+        """
+        if visited is None:
+            visited = set()
+        if collected_exports is None:
+            collected_exports = set()
+        if collected_globals is None:
+            collected_globals = {}
+
+        module_path = module_path.resolve()
+        if module_path in visited:
+            return
+        visited.add(module_path)
+        manifest = None
+
+        # Compile current module to JS and append registration
+        module_js, mod = self._compile_to_js(module_path)
+        manifest = mod.gen.client_manifest if mod else None
+
+        # Extract exports from manifest
+        exports_list = self._extract_client_exports(manifest)
+        collected_exports.update(exports_list)
+
+        # Build globals map using manifest.globals_values only for non-root
+        non_root_globals: dict[str, Any] = {}
+        if manifest:
+            for name in manifest.globals:
+                non_root_globals[name] = manifest.globals_values.get(name)
+        collected_globals.update(non_root_globals)
+        export_block = (
+            f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
+        )
+
+        # inport jacJsx from client_runtime_utils.jac
+        jac_jsx_path = 'import {__jacJsx, __jacSpawn} from "@jac-client/utils";'
+
+        combined_js = f"{jac_jsx_path}\n{module_js}\n{export_block}"
+        if self.vite_package_json is not None:
+            (
+                self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
+            ).write_text(combined_js, encoding="utf-8")
+
+        if not manifest or not manifest.imports:
+            return
+
+        for _name, import_path in manifest.imports.items():
+            path_obj = Path(import_path).resolve()
+            # Avoid re-processing
+            if path_obj in visited:
+                continue
+            if path_obj.suffix == ".jac":
+                # Recurse into transitive deps
+                self._compile_dependencies_recursively(
+                    path_obj,
+                    visited,
+                    collected_exports=collected_exports,
+                    collected_globals=collected_globals,
+                )
+            elif path_obj.suffix == ".js":
+                try:
+                    js_code = path_obj.read_text(encoding="utf-8")
+                    if self.vite_package_json is not None:
+                        (
+                            self.vite_package_json.parent / "src" / path_obj.name
+                        ).write_text(js_code, encoding="utf-8")
+                except FileNotFoundError:
+                    pass
+            else:
+                # Bare specifiers or other assets handled by Vite
+                if self.vite_package_json is not None and path_obj.is_file():
+                    (self.vite_package_json.parent / "src" / path_obj.name).write_text(
+                        path_obj.read_text(encoding="utf-8"), encoding="utf-8"
+                    )
+                continue
+
     def _compile_bundle(
         self,
         module: ModuleType,
         module_path: Path,
     ) -> ClientBundle:
         """Override to use Vite bundling instead of simple concatenation."""
+
+        # Check if package.json exists before proceeding
+        if not self.vite_package_json or not self.vite_package_json.exists():
+            raise ClientBundleError(
+                "Vite package.json not found. Set vite_package_json when using ViteClientBundleBuilder"
+            )
+
+        # client_runtime for jac client utils
+        runtime_utils_path = self.runtime_path.parent / "client_runtime.jac"
+        runtimeutils_js, mod = self._compile_to_js(runtime_utils_path)
+        runtimeutils_manifest = mod.gen.client_manifest if mod else None
+        runtimeutils_exports_list = self._extract_client_exports(runtimeutils_manifest)
+
+        # Add React Router exports that are variable declarations (not functions)
+        # These need to be manually added since they're 'let' declarations, not 'def' functions
+        router_exports = [
+            "Router",
+            "Routes",
+            "Route",
+            "Link",
+            "Navigate",
+            "useNavigate",
+            "useLocation",
+            "useParams",
+        ]
+
+        # Combine manifest exports with router exports
+        all_exports = sorted(set(runtimeutils_exports_list + router_exports))
+
+        export_block = (
+            f"export {{ {', '.join(all_exports)} }};\n" if all_exports else ""
+        )
+
+        combined_runtime_utils_js = f"{runtimeutils_js}\n{export_block}"
+        (self.vite_package_json.parent / "src" / "client_runtime.js").write_text(
+            combined_runtime_utils_js, encoding="utf-8"
+        )
+
         # Get manifest from JacProgram first to check for imports
-        from jaclang.runtimelib.machine import JacMachine as Jac
+        # Collect exports/globals across root and recursive deps
+        module_js, mod = self._compile_to_js(module_path)
+        module_manifest = mod.gen.client_manifest if mod else None
+        collected_exports: set[str] = set(self._extract_client_exports(module_manifest))
+        client_globals_map = self._extract_client_globals(module_manifest, module)
+        collected_globals: dict[str, Any] = dict(client_globals_map)
 
-        mod = Jac.program.mod.hub.get(str(module_path))
-        manifest = mod.gen.client_manifest if mod else None
-
-        # Use base class method to process imports
-        import_pieces, bundled_module_names = self._process_imports(
-            manifest, module_path
+        # Recursively prepare dependencies and accumulate symbols
+        self._compile_dependencies_recursively(
+            module_path,
+            collected_exports=collected_exports,
+            collected_globals=collected_globals,
         )
 
-        # Compile main module and strip import statements for bundled modules
-        module_js, _ = self._compile_to_js(module_path)
-        module_js = self._strip_import_statements(module_js, bundled_module_names)
+        client_exports = sorted(collected_exports)
+        client_globals_map = collected_globals
 
-        # compile runtime to js and add to import_pieces
-        runtime_js, _ = self._compile_to_js(self.runtime_path)
-        import_pieces.append(f"// Imported runtime module: {self.runtime_path}")
-        import_pieces.append(runtime_js)
-        import_pieces.append("")
+        entry_file = self.vite_package_json.parent / "src" / "main.js"
 
-        # Use base class methods to extract exports and globals
-        client_exports = self._extract_client_exports(manifest)
-        client_globals_map = self._extract_client_globals(manifest, module)
+        entry_content = """import React from "react";
+import { createRoot } from "react-dom/client";
+import { app as App } from "./app.js";
 
-        bundle_pieces = []
+const root = createRoot(document.getElementById("root"));
+root.render(<App />);
+"""
+        entry_file.write_text(entry_content, encoding="utf-8")
 
-        # Add imported modules (which may include client_runtime if explicitly imported)
-        if import_pieces:
-            bundle_pieces.extend(import_pieces)
-
-        # Add main module (without registration_js - we'll handle that in Jac init script)
-        bundle_pieces.extend(
-            [
-                f"// Client module: {module.__name__}",
-                module_js,
-                "",
-            ]
-        )
-        # Add global exposure code first (before Jac initialization)
-        global_exposure_code = self._generate_global_exposure_code(client_exports)
-        bundle_pieces.append(global_exposure_code)
-
-        # Add Jac runtime initialization script (includes globals)
-        jac_init_script = self._generate_jac_init_script(
-            module.__name__, client_exports, client_globals_map
-        )
-        bundle_pieces.append(jac_init_script)
-
-        # Use Vite bundling instead of simple concatenation
         bundle_code, bundle_hash = self._bundle_with_vite(
-            bundle_pieces, module.__name__, client_exports
+            module.__name__, client_exports
         )
 
         return ClientBundle(
@@ -110,12 +252,11 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         )
 
     def _bundle_with_vite(
-        self, bundle_pieces: list[str], module_name: str, client_functions: list[str]
+        self, module_name: str, client_functions: list[str]
     ) -> tuple[str, str]:
         """Bundle JavaScript code using Vite for optimization.
 
         Args:
-            bundle_pieces: List of JavaScript code pieces to bundle
             module_name: Name of the module being bundled
             client_functions: List of client function names
 
@@ -132,26 +273,25 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         # Create temp directory for Vite build
         project_dir = self.vite_package_json.parent
-        temp_dir = project_dir / "temp"
-        temp_dir.mkdir(exist_ok=True)
+        src_dir = project_dir / "src"
+        src_dir.mkdir(exist_ok=True)
 
-        # Create entry file with stitched content
-        entry_file = temp_dir / "main_entry.js"
-        entry_content = "\n".join(piece for piece in bundle_pieces if piece is not None)
-        entry_file.write_text(entry_content, encoding="utf-8")
-
-        # Create Vite config in the project directory (where node_modules exists)
-        vite_config = project_dir / "temp_vite.config.js"
-        output_dir = self.vite_output_dir or temp_dir / "dist"
-        output_dir.mkdir(exist_ok=True)
-
-        config_content = self._generate_vite_config(entry_file, output_dir)
-        vite_config.write_text(config_content, encoding="utf-8")
+        output_dir = self.vite_output_dir or src_dir / "dist" / "assets"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             # Run Vite build from project directory
             # need to install packages you told in package.json inside here
-            command = ["npx", "vite", "build", "--config", str(vite_config)]
+            # first compile the code
+            command = ["npm", "run", "compile"]
+            subprocess.run(
+                command, cwd=project_dir, check=True, capture_output=True, text=True
+            )
+            # Copy CSS and other asset files from src/ to build/ after Babel compilation
+            # Babel only transpiles JS, so we need to manually copy assets
+            self._copy_asset_files(project_dir / "src", project_dir / "build")
+            # then build the code
+            command = ["npm", "run", "build"]
             subprocess.run(
                 command, cwd=project_dir, check=True, capture_output=True, text=True
             )
@@ -161,11 +301,6 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             raise ClientBundleError(
                 "npx or vite command not found. Ensure Node.js and npm are installed."
             )
-        finally:
-            # Clean up temp config file
-            if vite_config.exists():
-                vite_config.unlink()
-
         # Find the generated bundle file
         bundle_file = self._find_vite_bundle(output_dir)
         if not bundle_file:
@@ -202,9 +337,43 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                 }},
                 }},
                 minify: {minify_setting}, // Configurable minification
+            }},
+            resolve: {{
             }}
             }});
         """
+
+    def _copy_asset_files(self, src_dir: Path, build_dir: Path) -> None:
+        """Copy CSS and other asset files from src/ to build/ directory.
+
+        Babel only transpiles JavaScript files, so CSS and other assets need to be
+        manually copied to the build directory for Vite to resolve them.
+        """
+        if not src_dir.exists():
+            return
+
+        # Ensure build directory exists
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        # Asset file extensions to copy
+        asset_extensions = {
+            ".css",
+            ".scss",
+            ".sass",
+            ".less",
+            ".svg",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+        }
+
+        for src_file in src_dir.iterdir():
+            if src_file.is_file() and src_file.suffix in asset_extensions:
+                dest_file = build_dir / src_file.name
+                with contextlib.suppress(OSError, shutil.Error):
+                    shutil.copy2(src_file, dest_file)
 
     def _find_vite_bundle(self, output_dir: Path) -> Path | None:
         """Find the generated Vite bundle file."""
@@ -212,91 +381,26 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             return file
         return None
 
-    def _generate_jac_init_script(
-        self,
-        module_name: str,
-        client_functions: list[str],
-        client_globals: dict[str, Any],
-    ) -> str:
-        """Generate Jac runtime initialization script."""
-        if not client_functions:
-            return ""
-
-        # Generate function map dynamically
-        map_entries = []
-        for func_name in client_functions:
-            map_entries.append(f'    "{func_name}": {func_name}')
-        function_map_str = "{\n" + ",\n".join(map_entries) + "\n}"
-
-        # Generate globals map
-        globals_entries = []
-        for name, value in client_globals.items():
-            identifier = json.dumps(name)
-            try:
-                value_literal = json.dumps(value)
-            except TypeError:
-                value_literal = "null"
-            globals_entries.append(f"{identifier}: {value_literal}")
-        globals_literal = (
-            "{ " + ", ".join(globals_entries) + " }" if globals_entries else "{}"
-        )
-
-        # Find the main app function (usually the last function or one ending with '_app')
-        main_app_func = (
-            "jac_app"  # this need to be always same and defined by our run time
-        )
-        # for func_name in reversed(client_functions):
-        #     if func_name.endswith('_app') or func_name == 'App':
-        #         main_app_func = func_name
-        #         break
-
-        return f"""
-            // --- JAC CLIENT INITIALIZATION SCRIPT ---
-            // Expose functions globally for Jac runtime registration
-            const clientFunctions = {client_functions};
-            const functionMap = {function_map_str};
-            for (const funcName of clientFunctions) {{
-                globalThis[funcName] = functionMap[funcName];
-            }}
-            __jacRegisterClientModule("{module_name}", clientFunctions, {globals_literal});
-            globalThis.start_app = {main_app_func};
-            // Call the start function immediately if we're not hydrating from the server
-            if (!document.getElementById('__jac_init__')) {{
-                globalThis.start_app();
-            }}
-            // --- END JAC CLIENT INITIALIZATION SCRIPT ---
-        """
-
-    def _generate_global_exposure_code(self, client_functions: list[str]) -> str:
-        """Generate code to expose functions globally for Vite IIFE."""
-        if not client_functions:
-            return ""
-
-        # Generate function map dynamically
-        map_entries = []
-        for func_name in client_functions:
-            map_entries.append(f'    "{func_name}": {func_name}')
-        function_map_str = "{\n" + ",\n".join(map_entries) + "\n}"
-
-        return f"""
-            // --- GLOBAL EXPOSURE FOR VITE IIFE ---
-            // Expose functions globally so they're available on globalThis
-            const globalClientFunctions = {client_functions};
-            const globalFunctionMap = {function_map_str};
-            for (const funcName of globalClientFunctions) {{
-                globalThis[funcName] = globalFunctionMap[funcName];
-            }}
-            // --- END GLOBAL EXPOSURE ---
-        """
+    def _find_vite_css(self, output_dir: Path) -> Path | None:
+        """Find the generated Vite CSS file."""
+        # Vite typically outputs CSS as main.css or with a hash
+        # Try main.css first (most common), then any .css file
+        css_file = output_dir / "main.css"
+        if css_file.exists():
+            return css_file
+        # Fallback: find any CSS file
+        for file in output_dir.glob("*.css"):
+            return file
+        return None
 
     def cleanup_temp_dir(self) -> None:
-        """Clean up the temp directory and its contents."""
+        """Clean up the src directory and its contents."""
         if not self.vite_package_json or not self.vite_package_json.exists():
             return
 
         project_dir = self.vite_package_json.parent
-        temp_dir = project_dir / "temp"
+        temp_dir = project_dir / "src"
 
         if temp_dir.exists():
-            with contextlib.suppress(OSError):
+            with contextlib.suppress(OSError, shutil.Error):
                 shutil.rmtree(temp_dir)
