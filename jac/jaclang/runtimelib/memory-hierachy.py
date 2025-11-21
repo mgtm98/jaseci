@@ -216,14 +216,14 @@ class MongoDB:  # Memory[UUID, Anchor]):
     # ) -> Anchor | None:
     #     return next(self.find(ids, filter), None)
 
-    # def find_by_id(self, id: UUID) -> Anchor | None:
-    #     _id = self._to_uuid(id)
-    #     db_obj = self.collection.find_one({"_id": str(_id)})
-    #     if db_obj:
-    #         anchor = self._load_anchor(db_obj)
-    #         if anchor:
-    #             return anchor
-    #     return None
+    def find_by_id(self, id: UUID) -> Anchor | None:
+        _id = self._to_uuid(id)
+        db_obj = self.collection.find_one({"_id": str(_id)})
+        if db_obj:
+            anchor = self._load_anchor(db_obj)
+            if anchor:
+                return anchor
+        return None
 
     def commit_bulk(self, anchors) -> None:
         """
