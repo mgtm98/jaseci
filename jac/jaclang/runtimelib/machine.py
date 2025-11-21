@@ -96,9 +96,7 @@ class ExecutionContext:
         root: Optional[str] = None,
     ) -> None:
         """Initialize JacMachine."""
-        self.mem: Memory = ShelfStorage(
-            session
-        )  # RedisDB()#ShelfStorage(session)  # RedisDB()#ShelfStorage(session)
+        self.mem: Memory = ShelfStorage(session)
         self.reports: list[Any] = []
         self.custom: Any = MISSING
         self.system_root = self.mem.find_by_id(UUID(Con.SUPER_ROOT_UUID))
