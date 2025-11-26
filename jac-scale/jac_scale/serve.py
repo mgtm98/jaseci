@@ -1,6 +1,7 @@
 from typing import Callable, Optional
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, Response
 
 from jac_scale.jserver.jfastApi import JFastApiServer
 from jac_scale.jserver.jserver import APIParameter, HTTPMethod, JEndPoint, ParameterType
@@ -172,10 +173,82 @@ class JacAPIServer(JServer):
             )
         return parameters
 
+    def render_page_callback(self) -> Callable[..., HTMLResponse]:
+        """Create callback that extracts all query parameters from FastAPI Request."""
+
+        def callback(page_name: str, **kwargs: JsonValue) -> HTMLResponse:
+            """Render a page by name with all query parameters."""
+            render_payload = self.introspector.render_page(
+                page_name, kwargs, "__guest__"
+            )
+            return HTMLResponse(content=render_payload["html"])
+
+        return callback
+
+    def register_page_endpoint(self) -> None:
+        """Register the page rendering endpoint using JEndPoint."""
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path="/page/{page_name}",
+                callback=self.render_page_callback(),
+                parameters=[
+                    APIParameter(
+                        name="page_name",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Name of the page to render",
+                        type=ParameterType.PATH,
+                    )
+                ],
+                response_model=None,
+                tags=["Pages"],
+                summary="Render a page",
+                description="Endpoint to render and retrieve a specific page by name. ",
+            )
+        )
+
+    def serve_client_js_callback(self) -> Callable[..., Response]:
+        """Create callback to serve the client.js file."""
+
+        def callback() -> Response:
+            try:
+                self.introspector.load()
+                self.introspector.ensure_bundle()
+                return Response(
+                    content=self.introspector._bundle.code,
+                    media_type="application/javascript",
+                )
+            except RuntimeError as exc:
+                return Response(
+                    content=str(exc), status_code=503, media_type="text/plain"
+                )
+
+        return callback
+
+    def register_client_js_endpoint(self) -> None:
+        """Register the client.js serving endpoint using JEndPoint."""
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path="/static/client.js",
+                callback=self.serve_client_js_callback(),
+                parameters=[],
+                response_model=None,
+                tags=["Static Files"],
+                summary="Serve client.js",
+                description="Endpoint to serve the client-side JavaScript file.",
+            )
+        )
+
     def start(self) -> None:
+        self.introspector.load()
 
         self.register_create_user_endpoint()
         self.register_login_endpoint()
+        self.register_page_endpoint()
+        self.register_client_js_endpoint()
 
         # Register endpoints for each walker
         for walker_name in self.get_walkers():

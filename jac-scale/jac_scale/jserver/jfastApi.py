@@ -18,9 +18,10 @@ Advanced Features:
 """
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type, get_type_hints
 
-from fastapi import Body, FastAPI, HTTPException, Header, Path, Query
+from fastapi import Body, FastAPI, HTTPException, Header, Path, Query, Request
+from fastapi.responses import Response
 
 from pydantic import BaseModel, Field, create_model
 
@@ -208,6 +209,18 @@ class JFastApiServer(JServer[FastAPI]):
             "tags": endpoint.tags or [],
         }
 
+        # Auto-detect response_class from callback return type annotation
+        try:
+            hints = get_type_hints(endpoint.callback)
+            return_type = hints.get("return")
+            if return_type:
+                # Check if return type is a Response subclass
+                if isinstance(return_type, type) and issubclass(return_type, Response):
+                    route_kwargs["response_class"] = return_type
+        except Exception:
+            # If we can't get type hints, that's okay - just skip auto-detection
+            pass
+
         # Register the route with FastAPI
         if method == HTTPMethod.GET:
             self.app.get(endpoint.path, **route_kwargs)(endpoint_func)
@@ -239,26 +252,58 @@ class JFastApiServer(JServer[FastAPI]):
     ) -> Callable[..., Any]:
         """Create the actual endpoint function with parameter injection."""
 
-        # If no parameters, create a simple wrapper
+        # Check if callback accepts **kwargs
+        sig = inspect.signature(callback)
+        accepts_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+
+        # If no parameters, check if we should inject Request for query params
         if not parameters:
-            if inspect.iscoroutinefunction(callback):
+            if accepts_kwargs:
+                # Callback accepts **kwargs, so inject Request to capture query params
+                if inspect.iscoroutinefunction(callback):
 
-                async def async_endpoint_wrapper() -> None:
-                    try:
-                        await callback()
-                    except Exception as e:
-                        raise HTTPException(status_code=500, detail=str(e))
+                    async def async_endpoint_wrapper(request: Request):
+                        try:
+                            # Extract all query parameters and pass as kwargs
+                            query_params = dict(request.query_params)
+                            return await callback(**query_params)
+                        except Exception as e:
+                            raise HTTPException(status_code=500, detail=str(e))
 
-                return async_endpoint_wrapper
+                    return async_endpoint_wrapper
+                else:
+
+                    def sync_endpoint_wrapper(request: Request):
+                        try:
+                            # Extract all query parameters and pass as kwargs
+                            query_params = dict(request.query_params)
+                            return callback(**query_params)
+                        except Exception as e:
+                            raise HTTPException(status_code=500, detail=str(e))
+
+                    return sync_endpoint_wrapper
             else:
+                # No parameters and doesn't accept kwargs, simple wrapper
+                if inspect.iscoroutinefunction(callback):
 
-                def sync_endpoint_wrapper() -> None:
-                    try:
-                        callback()
-                    except Exception as e:
-                        raise HTTPException(status_code=500, detail=str(e))
+                    async def async_endpoint_wrapper__1():
+                        try:
+                            return await callback()
+                        except Exception as e:
+                            raise HTTPException(status_code=500, detail=str(e))
 
-                return sync_endpoint_wrapper
+                    return async_endpoint_wrapper__1
+                else:
+
+                    def sync_endpoint_wrapper__1():
+                        try:
+                            return callback()
+                        except Exception as e:
+                            raise HTTPException(status_code=500, detail=str(e))
+
+                    return sync_endpoint_wrapper__1
 
         # Group parameters by location
         body_params: List[APIParameter] = []
@@ -280,6 +325,11 @@ class JFastApiServer(JServer[FastAPI]):
         # Build parameter strings and their FastAPI annotations
         param_strs: List[str] = []
         param_mapping: Dict[str, str] = {}
+
+        # If callback accepts **kwargs, add Request parameter first (before any optional params)
+        if accepts_kwargs:
+            param_strs.append("request: Request")
+            param_mapping["__request__"] = "request"
 
         # Handle body parameters - if multiple, create a single Body model
         body_model: Optional[Type[BaseModel]] = None
@@ -405,28 +455,43 @@ class JFastApiServer(JServer[FastAPI]):
                         f"        callback_args['{param_name}'] = body_data.{param_name}"
                     )
 
-            # Add other parameters
+            # Add other parameters (except __request__ which is used for query extraction)
             for name in param_mapping.keys():
-                if name != "body_data":
+                if name not in ("body_data", "__request__"):
                     callback_args_lines.append(
                         f"        callback_args['{name}'] = {name}"
                     )
         else:
-            # Handle normal case
+            # Handle normal case (except __request__ which is used for query extraction)
             callback_args_lines = [
                 f"        callback_args['{name}'] = {name}"
                 for name in param_mapping.keys()
+                if name != "__request__"
             ]
 
         callback_args_str = "\n".join(callback_args_lines)
 
+        # If callback accepts kwargs, add code to extract and merge query params
+        extra_query_params_code = ""
+        if accepts_kwargs:
+            # Get the list of explicitly declared parameter names
+            declared_params = [p.name for p in parameters if p.name]
+            declared_params_str = repr(declared_params)
+            extra_query_params_code = f"""
+        # Extract additional query parameters not explicitly declared
+        declared_params = set({declared_params_str})
+        for key, value in request.query_params.items():
+            if key not in declared_params:
+                callback_args[key] = value
+"""
+
         # Create function code
         if inspect.iscoroutinefunction(callback):
             func_code = f"""
-async def endpoint_wrapper({params}) -> Any:
+async def endpoint_wrapper({params}):
     try:
         callback_args: Dict[str, Any] = {{}}
-{callback_args_str}
+{callback_args_str}{extra_query_params_code}
         result = await callback(**callback_args)
         return result
     except Exception as e:
@@ -434,10 +499,10 @@ async def endpoint_wrapper({params}) -> Any:
 """
         else:
             func_code = f"""
-def endpoint_wrapper({params}) -> Any:
+def endpoint_wrapper({params}):
     try:
         callback_args: Dict[str, Any] = {{}}
-{callback_args_str}
+{callback_args_str}{extra_query_params_code}
         result = callback(**callback_args)
         return result
     except Exception as e:
@@ -452,6 +517,7 @@ def endpoint_wrapper({params}) -> Any:
             "Path": Path,
             "Body": Body,
             "Header": Header,
+            "Request": Request,
             "Optional": Optional,
             "Field": Field,
             "create_model": create_model,
