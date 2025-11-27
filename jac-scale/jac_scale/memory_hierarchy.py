@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pickle import dumps, loads
-from typing import MutableMapping, cast
 import os
 import shelve
-from collections.abc import Iterable
+from collections.abc import Iterable, MutableMapping
 from dataclasses import dataclass, field
 from pickle import dumps, loads
 from threading import RLock
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from uuid import UUID
 
 import redis

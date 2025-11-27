@@ -18,15 +18,12 @@ Advanced Features:
 """
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Type, get_type_hints
-
-from fastapi import Body, FastAPI, HTTPException, Header, Path, Query, Request
-from fastapi.responses import Response
-
-from pydantic import BaseModel, Field, create_model
+from collections.abc import Callable
+from typing import Any, Optional, get_type_hints
 
 import uvicorn
-from fastapi import Body, FastAPI, Header, HTTPException, Path, Query
+from fastapi import Body, FastAPI, Header, HTTPException, Path, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, create_model
 
 # Import from the separated jserver module
@@ -215,10 +212,13 @@ class JFastApiServer(JServer[FastAPI]):
         try:
             hints = get_type_hints(endpoint.callback)
             return_type = hints.get("return")
-            if return_type:
-                # Check if return type is a Response subclass
-                if isinstance(return_type, type) and issubclass(return_type, Response):
-                    route_kwargs["response_class"] = return_type
+            # Check if return type is a Response subclass
+            if (
+                return_type
+                and isinstance(return_type, type)
+                and issubclass(return_type, Response)
+            ):
+                route_kwargs["response_class"] = return_type
         except Exception:
             # If we can't get type hints, that's okay - just skip auto-detection
             pass
@@ -272,7 +272,7 @@ class JFastApiServer(JServer[FastAPI]):
                             query_params = dict(request.query_params)
                             return await callback(**query_params)
                         except Exception as e:
-                            raise HTTPException(status_code=500, detail=str(e))
+                            raise HTTPException(status_code=500, detail=str(e)) from e
 
                     return async_endpoint_wrapper
                 else:
@@ -283,7 +283,7 @@ class JFastApiServer(JServer[FastAPI]):
                             query_params = dict(request.query_params)
                             return callback(**query_params)
                         except Exception as e:
-                            raise HTTPException(status_code=500, detail=str(e))
+                            raise HTTPException(status_code=500, detail=str(e)) from e
 
                     return sync_endpoint_wrapper
             else:
@@ -294,7 +294,7 @@ class JFastApiServer(JServer[FastAPI]):
                         try:
                             return await callback()
                         except Exception as e:
-                            raise HTTPException(status_code=500, detail=str(e))
+                            raise HTTPException(status_code=500, detail=str(e)) from e
 
                     return async_endpoint_wrapper__1
                 else:
@@ -303,7 +303,7 @@ class JFastApiServer(JServer[FastAPI]):
                         try:
                             return callback()
                         except Exception as e:
-                            raise HTTPException(status_code=500, detail=str(e))
+                            raise HTTPException(status_code=500, detail=str(e)) from e
 
                     return sync_endpoint_wrapper__1
 
@@ -443,7 +443,7 @@ class JFastApiServer(JServer[FastAPI]):
                     )
 
             # Add other parameters (except __request__ which is used for query extraction)
-            for name in param_mapping.keys():
+            for name in param_mapping:
                 if name not in ("body_data", "__request__"):
                     callback_args_lines.append(
                         f"        callback_args['{name}'] = {name}"
@@ -452,7 +452,7 @@ class JFastApiServer(JServer[FastAPI]):
             # Handle normal case (except __request__ which is used for query extraction)
             callback_args_lines = [
                 f"        callback_args['{name}'] = {name}"
-                for name in param_mapping.keys()
+                for name in param_mapping
                 if name != "__request__"
             ]
 
@@ -533,7 +533,7 @@ def endpoint_wrapper({params}):
         if type_string.startswith("<class '") and type_string.endswith("'>"):
             # Extract the type name from "<class 'int'>" format
             type_string = type_string[8:-2]  # Remove "<class '" and "'>"
-        type_mapping: Dict[str, Type[Any]] = {
+        type_mapping: dict[str, type[Any]] = {
             "str": str,
             "string": str,
             "int": int,
