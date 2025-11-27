@@ -542,6 +542,10 @@ def endpoint_wrapper({params}):
 
     def _get_python_type(self, type_string: str) -> Type[Any]:
         """Convert string type to Python type."""
+        # Handle actual type objects that were converted to strings like "<class 'int'>"
+        if type_string.startswith("<class '") and type_string.endswith("'>"):
+            # Extract the type name from "<class 'int'>" format
+            type_string = type_string[8:-2]  # Remove "<class '" and "'>"
         type_mapping: Dict[str, Type[Any]] = {
             "str": str,
             "string": str,

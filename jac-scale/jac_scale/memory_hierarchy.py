@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pickle import dumps, loads
+from typing import MutableMapping, cast
 import os
 import shelve
 from threading import RLock
@@ -362,25 +363,32 @@ class RedisDB:  # Memory[UUID, Anchor]):
 
 @dataclass
 class ShelfDB:
-    """Shelf-based Memory Handler — file-backed key/value storage."""
+    """Shelf-based Memory Handler — file-backed key/value storage.
+    Uses dbm.dumb on all platforms to avoid gdbm locking issues in Linux.
+    """
 
     shelf_path: str = field(default=os.environ.get("SHELF_DB_PATH", "anchor_store.db"))
-    # _shelf: shelve.Shelf = field(init=False, default=None)
     _shelf: Optional[shelve.Shelf] = field(init=False, default=None)
     _lock: RLock = field(default_factory=RLock, init=False)
 
     def __post_init__(self):
-        """Lazy initialize shelf DB."""
+        """Initialize shelf DB on startup."""
         self._open_shelf()
 
-    def _open_shelf(self):
+    def _open_shelf(self) -> shelve.Shelf:
+        """Always use dbm.dumb backend to avoid Linux gdbm locking."""
+        import dbm.dumb
+
         if self._shelf is None:
-            # writeback=True caches objects for mutation support
-            self._shelf = shelve.open(self.shelf_path, writeback=False)
+            # dbm.dumb creates two files: .dat and .dir
+            raw_db = dbm.dumb.open(self.shelf_path, "c")
+            db_as_mapping = cast(MutableMapping[bytes, bytes], raw_db)
+            self._shelf = shelve.Shelf(db_as_mapping, writeback=False)
+        return self._shelf
 
     def _ensure_shelf(self) -> shelve.Shelf:
         if self._shelf is None:
-            raise RuntimeError("Shelf not initialized")
+            self._shelf = self._open_shelf()
         return self._shelf
 
     def close(self):
@@ -391,7 +399,7 @@ class ShelfDB:
             self._shelf = None
 
     def _redis_key(self, id: UUID) -> str:
-        """Match key format used in RedisDB for consistency."""
+        """Match key format used by Redis for consistency."""
         return f"anchor:{str(id)}"
 
     def _to_uuid(self, id: UUID | str) -> UUID:
@@ -401,28 +409,31 @@ class ShelfDB:
 
     def _load_anchor_from_shelf(self, id: UUID) -> Optional[Anchor]:
         key = self._redis_key(id)
-        self._shelf = self._ensure_shelf()
+        shelf = self._ensure_shelf()
+
         with self._lock:
-            if key not in self._shelf:
+            if key not in shelf:
                 return None
-            return self._shelf[key]
+            return shelf[key]
 
     def set(self, anchor: Anchor) -> None:
-        """Store anchor in shelf."""
+        """Save anchor to shelf."""
         key = self._redis_key(anchor.id)
-        self._shelf = self._ensure_shelf()
+        shelf = self._ensure_shelf()
+
         with self._lock:
-            self._shelf[key] = anchor
-            self._shelf.sync()
+            shelf[key] = anchor
+            shelf.sync()  # flush changes to disk
 
     def remove(self, anchor: Anchor) -> None:
-        """Delete anchor from shelf."""
+        """Remove anchor from shelf."""
         key = self._redis_key(anchor.id)
-        self._shelf = self._ensure_shelf()
+        shelf = self._ensure_shelf()
+
         with self._lock:
-            if key in self._shelf:
-                del self._shelf[key]
-                self._shelf.sync()
+            if key in shelf:
+                del shelf[key]
+                shelf.sync()
 
     def find_by_id(self, id: UUID) -> Optional[Anchor]:
         _id = self._to_uuid(id)
@@ -431,9 +442,10 @@ class ShelfDB:
     def commit(
         self, anchor: Optional[Anchor] = None, keys: Iterable[Anchor] = []
     ) -> None:
-        """Commit behaves like Redis version — supports single or batch writes."""
+        """Commit one or many anchors."""
         if anchor:
             self.set(anchor)
             return
+
         for anc in keys:
             self.set(anc)
