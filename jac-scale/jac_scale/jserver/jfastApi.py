@@ -26,6 +26,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, create_model
 
 import uvicorn
+from fastapi import Body, FastAPI, Header, HTTPException, Path, Query
+from pydantic import BaseModel, Field, create_model
 
 # Import from the separated jserver module
 from .jserver import APIParameter, HTTPMethod, JEndPoint, JServer, ParameterType
@@ -60,12 +62,12 @@ class JFastApiServer(JServer[FastAPI]):
     """
 
     def __init__(
-        self, endpoints: Optional[List[JEndPoint]] = None, app: Optional[FastAPI] = None
+        self, endpoints: list[JEndPoint] | None = None, app: FastAPI | None = None
     ) -> None:
         # Initialize with endpoints (empty list if none provided)
         super().__init__(endpoints or [])
         self.app = app or FastAPI()
-        self._models: Dict[str, Type[BaseModel]] = {}
+        self._models: dict[str, type[BaseModel]] = {}
         self.__server_created = False
 
     def _get(self, endpoint: JEndPoint) -> "JFastApiServer":
@@ -200,7 +202,7 @@ class JFastApiServer(JServer[FastAPI]):
         )
 
         # Set up route options with proper typing
-        route_kwargs: Dict[str, Any] = {
+        route_kwargs: dict[str, Any] = {
             "response_model": endpoint.response_model,
             "status_code": self._get_default_status_code(method),
             "summary": endpoint.summary or f"{method.value} {endpoint.path}",
@@ -247,8 +249,8 @@ class JFastApiServer(JServer[FastAPI]):
     def _create_endpoint_function(
         self,
         callback: Callable[..., Any],
-        parameters: List[APIParameter],
-        dependencies: List[Any],
+        parameters: list[APIParameter],
+        dependencies: list[Any],
     ) -> Callable[..., Any]:
         """Create the actual endpoint function with parameter injection."""
 
@@ -306,10 +308,10 @@ class JFastApiServer(JServer[FastAPI]):
                     return sync_endpoint_wrapper__1
 
         # Group parameters by location
-        body_params: List[APIParameter] = []
-        path_params: List[APIParameter] = []
-        query_params: List[APIParameter] = []
-        header_params: List[APIParameter] = []
+        body_params: list[APIParameter] = []
+        path_params: list[APIParameter] = []
+        query_params: list[APIParameter] = []
+        header_params: list[APIParameter] = []
 
         for param in parameters:
             param_location = param.type
@@ -323,8 +325,8 @@ class JFastApiServer(JServer[FastAPI]):
                 header_params.append(param)
 
         # Build parameter strings and their FastAPI annotations
-        param_strs: List[str] = []
-        param_mapping: Dict[str, str] = {}
+        param_strs: list[str] = []
+        param_mapping: dict[str, str] = {}
 
         # If callback accepts **kwargs, add Request parameter first (before any optional params)
         if accepts_kwargs:
@@ -332,11 +334,11 @@ class JFastApiServer(JServer[FastAPI]):
             param_mapping["__request__"] = "request"
 
         # Handle body parameters - if multiple, create a single Body model
-        body_model: Optional[Type[BaseModel]] = None
+        body_model: type[BaseModel] | None = None
 
         if len(body_params) >= 1:
             # Always create a dynamic Pydantic model for body parameters
-            model_fields: Dict[str, Any] = {}
+            model_fields: dict[str, Any] = {}
             for param in body_params:
                 param_name = param.name
                 if not param_name:
@@ -395,23 +397,14 @@ class JFastApiServer(JServer[FastAPI]):
                 # Create parameter definition
                 if param_type_enum == ParameterType.PATH:
                     # Path parameters cannot have defaults, so always required
-                    param_str = (
-                        f"{param_name}: {type_name} = "
-                        f"Path(..., description='{description}')"
-                    )
+                    param_str = f"{param_name}: {type_name} = Path(..., description='{description}')"
                 elif param_type_enum == ParameterType.QUERY:
                     if required:
-                        param_str = (
-                            f"{param_name}: {type_name} = "
-                            f"Query(..., description='{description}')"
-                        )
+                        param_str = f"{param_name}: {type_name} = Query(..., description='{description}')"
                     else:
                         # Don't use None as default, treat as optional without default
                         if default_value is None:
-                            param_str = (
-                                f"{param_name}: Optional[{type_name}] = "
-                                f"Query(description='{description}')"
-                            )
+                            param_str = f"{param_name}: Optional[{type_name}] = Query(description='{description}')"
                         else:
                             param_str = (
                                 f"{param_name}: Optional[{type_name}] = "
@@ -419,17 +412,11 @@ class JFastApiServer(JServer[FastAPI]):
                             )
                 elif param_type_enum == ParameterType.HEADER:
                     if required:
-                        param_str = (
-                            f"{param_name}: {type_name} = "
-                            f"Header(..., description='{description}')"
-                        )
+                        param_str = f"{param_name}: {type_name} = Header(..., description='{description}')"
                     else:
                         # Don't use None as default, treat as optional without default
                         if default_value is None:
-                            param_str = (
-                                f"{param_name}: Optional[{type_name}] = "
-                                f"Header(description='{description}')"
-                            )
+                            param_str = f"{param_name}: Optional[{type_name}] = Header(description='{description}')"
                         else:
                             param_str = (
                                 f"{param_name}: Optional[{type_name}] = "
@@ -445,7 +432,7 @@ class JFastApiServer(JServer[FastAPI]):
         params = ", ".join(param_strs)
 
         # Build callback arguments assignment
-        callback_args_lines: List[str] = []
+        callback_args_lines: list[str] = []
         if body_model:
             # Handle body model case
             for param in body_params:
@@ -510,7 +497,7 @@ def endpoint_wrapper({params}):
 """
 
         # Prepare execution context
-        exec_globals: Dict[str, Any] = {
+        exec_globals: dict[str, Any] = {
             "callback": callback,
             "HTTPException": HTTPException,
             "Query": Query,
@@ -521,7 +508,7 @@ def endpoint_wrapper({params}):
             "Optional": Optional,
             "Field": Field,
             "create_model": create_model,
-            "Dict": Dict,
+            "Dict": dict,
             "Any": Any,
             "int": int,
             "str": str,
@@ -540,7 +527,7 @@ def endpoint_wrapper({params}):
 
         return exec_globals["endpoint_wrapper"]
 
-    def _get_python_type(self, type_string: str) -> Type[Any]:
+    def _get_python_type(self, type_string: str) -> type[Any]:
         """Convert string type to Python type."""
         # Handle actual type objects that were converted to strings like "<class 'int'>"
         if type_string.startswith("<class '") and type_string.endswith("'>"):
@@ -562,8 +549,8 @@ def endpoint_wrapper({params}):
         return type_mapping.get(type_string.lower(), str)
 
     def _create_response_model(
-        self, response_config: Optional[Dict[str, Any]] = None
-    ) -> Optional[Type[BaseModel]]:
+        self, response_config: dict[str, Any] | None = None
+    ) -> type[BaseModel] | None:
         """Create a Pydantic response model from configuration."""
         if not response_config:
             return None
@@ -575,7 +562,7 @@ def endpoint_wrapper({params}):
             return None
 
         # Convert field definitions to Pydantic field format
-        pydantic_fields: Dict[str, Any] = {}
+        pydantic_fields: dict[str, Any] = {}
         for field_name, field_config in fields.items():
             field_type = self._get_python_type(field_config.get("type", "str"))
             required = field_config.get("required", True)

@@ -121,8 +121,7 @@ def _type_to_schema(ty: type, title: str = "", desc: str = "") -> dict {
         enum_desc += " the names are [" + ", ".join([e.name for e in ty]) + "].";
         if enum_type not in (int, str) {
             raise ValueError(
-                f"Enum {ty.__name__} has unsupported type {enum_type}. "
-                "Only int and str enums are supported for schema generation."
+                f"Enum {ty.__name__} has unsupported type {enum_type}. ""Only int and str enums are supported for schema generation."
             ) ;
         }
         return {
@@ -151,8 +150,7 @@ def _type_to_schema(ty: type, title: str = "", desc: str = "") -> dict {
     }
 
     raise ValueError(
-        f"Unsupported type for schema generation: {ty}. "
-        "Only primitive types, dataclasses, and Union types are supported."
+        f"Unsupported type for schema generation: {ty}. ""Only primitive types, dataclasses, and Union types are supported."
     );
 }
 
@@ -265,11 +263,8 @@ def tool_to_schema(
                 "properties": properties,
                 "required": required,
                 "additionalProperties": False,
-
             },
-
         },
-
     };
 }
 
