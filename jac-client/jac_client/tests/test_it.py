@@ -315,9 +315,7 @@ class ServeIntegrationTests(TestCase):
                             "[DEBUG] Sending POST request to /walker/create_todo endpoint"
                         )
                         payload = {
-                            "fields": {
-                                "text": "Sample todo from all-in-one app",
-                            }
+                            "text": "Sample todo from all-in-one app",
                         }
                         req = Request(
                             "http://127.0.0.1:8000/walker/create_todo",

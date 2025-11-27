@@ -407,7 +407,7 @@ class TestServeCommand(TestCase):
         result = self._request(
             "POST",
             "/walker/CreateTask",
-            {"fields": {"title": "Test Task", "priority": 2}},
+            {"title": "Test Task", "priority": 2},
             token=token,
         )
         jid = result["reports"][0]["_jac_id"]
@@ -422,16 +422,12 @@ class TestServeCommand(TestCase):
         self.assertIn("reports", result)
 
         # Spawn ListTasks walker to verify task was created
-        result2 = self._request(
-            "POST", "/walker/ListTasks", {"fields": {}}, token=token
-        )
+        result2 = self._request("POST", "/walker/ListTasks", {}, token=token)
 
         self.assertIn("result", result2)
 
         # Get Task node using new GetTask walker
-        result3 = self._request(
-            "POST", "/walker/GetTask/" + str(jid), {"fields": {}}, token=token
-        )
+        result3 = self._request("POST", "/walker/GetTask/" + str(jid), {}, token=token)
         self.assertIn("result", result3)
 
     def test_server_user_isolation(self) -> None:
@@ -678,7 +674,7 @@ class TestServeCommand(TestCase):
         task1_result = self._request(
             "POST",
             "/walker/CreateTask",
-            {"fields": {"title": "Persistent Task 1", "priority": 1}},
+            {"title": "Persistent Task 1", "priority": 1},
             token=token,
         )
         self.assertIn("result", task1_result)
@@ -686,7 +682,7 @@ class TestServeCommand(TestCase):
         task2_result = self._request(
             "POST",
             "/walker/CreateTask",
-            {"fields": {"title": "Persistent Task 2", "priority": 2}},
+            {"title": "Persistent Task 2", "priority": 2},
             token=token,
         )
         self.assertIn("result", task2_result)
@@ -694,15 +690,13 @@ class TestServeCommand(TestCase):
         task3_result = self._request(
             "POST",
             "/walker/CreateTask",
-            {"fields": {"title": "Persistent Task 3", "priority": 3}},
+            {"title": "Persistent Task 3", "priority": 3},
             token=token,
         )
         self.assertIn("result", task3_result)
 
         # List tasks to verify they were created
-        list_before = self._request(
-            "POST", "/walker/ListTasks", {"fields": {}}, token=token
-        )
+        list_before = self._request("POST", "/walker/ListTasks", {}, token=token)
         self.assertIn("result", list_before)
 
         # Shutdown first server instance
@@ -745,9 +739,7 @@ class TestServeCommand(TestCase):
         self.assertEqual(new_token, token)
 
         # List tasks again to verify they persisted
-        list_after = self._request(
-            "POST", "/walker/ListTasks", {"fields": {}}, token=new_token
-        )
+        list_after = self._request("POST", "/walker/ListTasks", {}, token=new_token)
 
         # The ListTasks walker should successfully run
         self.assertIn("result", list_after)
@@ -756,7 +748,7 @@ class TestServeCommand(TestCase):
         complete_result = self._request(
             "POST",
             "/walker/CompleteTask",
-            {"fields": {"title": "Persistent Task 2"}},
+            {"title": "Persistent Task 2"},
             token=new_token,
         )
         self.assertIn("result", complete_result)
@@ -1211,9 +1203,7 @@ class TestAccessLevelAuthentication(TestCase):
         self._start_server()
 
         # Spawn public walker without authentication
-        result = self._request(
-            "POST", "/walker/PublicWalker", {"fields": {"message": "hello"}}
-        )
+        result = self._request("POST", "/walker/PublicWalker", {"message": "hello"})
 
         self.assertIn("result", result)
         self.assertIn("reports", result)
@@ -1223,9 +1213,7 @@ class TestAccessLevelAuthentication(TestCase):
         self._start_server()
 
         # Try to spawn protected walker without authentication - should fail
-        result = self._request(
-            "POST", "/walker/ProtectedWalker", {"fields": {"data": "test"}}
-        )
+        result = self._request("POST", "/walker/ProtectedWalker", {"data": "test"})
 
         self.assertIn("error", result)
         self.assertIn("Unauthorized", result["error"])
@@ -1244,7 +1232,7 @@ class TestAccessLevelAuthentication(TestCase):
         result = self._request(
             "POST",
             "/walker/ProtectedWalker",
-            {"fields": {"data": "mydata"}},
+            {"data": "mydata"},
             token=token,
         )
 
@@ -1256,9 +1244,7 @@ class TestAccessLevelAuthentication(TestCase):
         self._start_server()
 
         # Try to spawn private walker without authentication - should fail
-        result = self._request(
-            "POST", "/walker/PrivateWalker", {"fields": {"secret": "test"}}
-        )
+        result = self._request("POST", "/walker/PrivateWalker", {"secret": "test"})
 
         self.assertIn("error", result)
         self.assertIn("Unauthorized", result["error"])
@@ -1277,7 +1263,7 @@ class TestAccessLevelAuthentication(TestCase):
         result = self._request(
             "POST",
             "/walker/PrivateWalker",
-            {"fields": {"secret": "verysecret"}},
+            {"secret": "verysecret"},
             token=token,
         )
 
