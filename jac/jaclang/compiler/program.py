@@ -183,8 +183,26 @@ class JacProgram:
             formatted_str = prse.ir_out.gen.jac
             formatted_checksum = hashlib.md5(formatted_str.encode()).hexdigest()
             if original_checksum != formatted_checksum:
-                print(f"reformatted {file_path}")
-            return formatted_str
+                try:
+                    if JacProgram.ensure_ast_similarity(
+                        source_str, formatted_str, file_path
+                    ):
+                        print(f"reformatted {file_path}")
+                        return formatted_str
+                    else:
+                        print(
+                            f"Warning: Formatting changed AST structure for {file_path}",
+                            flush=True,
+                        )
+                        return source_str
+                except Exception:
+                    print(
+                        f"Warning: Exception during AST similarity check for {file_path}",
+                        flush=True,
+                    )
+                    return source_str
+            else:
+                return source_str
         else:
             return source_str
 
@@ -199,3 +217,18 @@ class JacProgram:
         prse.errors_had = prog.errors_had
         prse.warnings_had = prog.warnings_had
         return prse.ir_out.gen.jac if not prse.errors_had else source_str
+
+    @staticmethod
+    def ensure_ast_similarity(
+        original_code: str, formatted_code: str, file_path: str
+    ) -> bool:
+        """Ensure that the ASTs of the original and formatted code are similar."""
+        formatted_mod = JacProgram().compile(
+            use_str=formatted_code, file_path=file_path
+        )
+        original_mod = JacProgram().compile(use_str=original_code, file_path=file_path)
+
+        orig_ast = py_ast.dump(original_mod.gen.py_ast[0], indent=2)
+        form_ast = py_ast.dump(formatted_mod.gen.py_ast[0], indent=2)
+
+        return orig_ast == form_ast
