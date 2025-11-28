@@ -316,6 +316,109 @@ class JacAPIServer(JServer):
             status_code=404, content="Static file not found", media_type="text/plain"
         )
 
+    def register_root_asset_endpoint(self) -> None:
+        """Register root-level asset serving endpoint for files like /img.png, /logo.svg"""
+        # This endpoint matches any path with common asset file extensions
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path="/{file_path:path}",
+                callback=self.serve_root_asset,
+                parameters=[
+                    APIParameter(
+                        name="file_path",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Path to asset file (e.g., img.png, icons/logo.svg)",
+                        type=ParameterType.PATH,
+                    )
+                ],
+                response_model=None,
+                tags=["Static Files"],
+                summary="Serve root-level assets",
+                description="Endpoint to serve assets from root path with common extensions (.png, .jpg, .svg, etc.)",
+            )
+        )
+
+    def serve_root_asset(self, file_path: str) -> Response:
+        """Serve root-level assets like /img.png, /icons/logo.svg, etc."""
+
+        allowed_extensions = {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp",
+            ".svg",
+            ".ico",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".otf",
+            ".eot",
+            ".mp4",
+            ".webm",
+            ".mp3",
+            ".wav",
+            ".css",
+            ".js",
+            ".json",
+            ".pdf",
+            ".txt",
+            ".xml",
+        }
+
+        file_ext = Path(file_path).suffix.lower()
+
+        if not file_ext or file_ext not in allowed_extensions:
+            return Response(
+                status_code=404,
+                content="Not found",
+                media_type="text/plain",
+            )
+
+        if file_path.startswith(("page/", "walker/", "function/", "user/", "static/")):
+            return Response(
+                status_code=404,
+                content="Not found",
+                media_type="text/plain",
+            )
+
+        base_path = Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd()
+        file_name = Path(file_path).name
+
+        candidates = [
+            base_path / "dist" / file_path,  # dist/img.png or dist/icons/img.png
+            base_path / "dist" / file_name,  # dist/img.png (just filename)
+            base_path / "assets" / file_path,  # assets/img.png or assets/icons/img.png
+            base_path / "assets" / file_name,  # assets/img.png (just filename)
+            base_path / "public" / file_path,  # public/img.png (common convention)
+            base_path / file_path,  # ./img.png (project root)
+        ]
+
+        for candidate_file in candidates:
+            if candidate_file.exists() and candidate_file.is_file():
+                file_content = candidate_file.read_bytes()
+                content_type, _ = mimetypes.guess_type(str(candidate_file))
+                if content_type is None:
+                    content_type = "application/octet-stream"
+
+                # Add cache headers for static assets (1 year cache)
+                headers = {"Cache-Control": "public, max-age=31536000"}
+
+                return Response(
+                    content=file_content,
+                    media_type=content_type,
+                    headers=headers,
+                )
+
+        return Response(
+            status_code=404,
+            content=f"Asset not found: {file_path}",
+            media_type="text/plain",
+        )
+
     def start(self) -> None:
         self.introspector.load()
 
@@ -377,4 +480,9 @@ class JacAPIServer(JServer):
 
         if "__guest__" not in self.user_manager._users:
             self.user_manager.create_user("__guest__", "__no_password__")
+
+        # Register root asset endpoint LAST (catch-all for files like /img.png)
+        # Must be registered after all other endpoints to avoid conflicts
+        self.register_root_asset_endpoint()
+
         self.server_impl.run_server()
