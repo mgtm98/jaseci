@@ -132,14 +132,13 @@ def deploy_k8(
             "-c",
             "export DEBIAN_FRONTEND=noninteractive && "
             "apt-get update && apt-get install -y git && "
-            "git clone --branch release-fix-3066 --single-branch --depth 1 "
-            "https://github.com/juzailmlwork/jaseci.git && "
-            "cd jaseci/jac && "
-            "pip install -e . && "
-            "cd ../.. && "
-            "cd jaseci/jac-scale && "
-            "pip install -e . && "
-            "cd ../.. && "
+            "git clone --depth 1 https://github.com/juzailmlwork/jaseci.git && "
+            "cd jaseci && "
+            "pip install pluggy &&"
+            "pip install -e ./jac && "
+            "pip install -e ./jac-scale && "
+            "pip install -e ./jac-client && "
+            "cd ../ && "
             f"{install_part}",
         ]
 
