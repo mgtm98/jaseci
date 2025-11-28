@@ -1,10 +1,13 @@
+import mimetypes
 from collections.abc import Callable
+from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 
 from jac_scale.jserver.jfastApi import JFastApiServer
 from jac_scale.jserver.jserver import APIParameter, HTTPMethod, JEndPoint, ParameterType
+from jaclang.runtimelib.machine import JacMachine as Jac
 from jaclang.runtimelib.server import JacAPIServer as JServer
 from jaclang.runtimelib.server import JsonValue
 
@@ -238,6 +241,81 @@ class JacAPIServer(JServer):
             )
         )
 
+    def register_static_file_endpoint(self) -> None:
+        """Register the static file serving endpoint using JEndPoint."""
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.GET,
+                path="/static/{file_path:path}",
+                callback=self.serve_static_file,
+                parameters=[
+                    APIParameter(
+                        name="file_path",
+                        data_type="string",
+                        required=True,
+                        default=None,
+                        description="Path of the static file to serve",
+                        type=ParameterType.PATH,
+                    )
+                ],
+                response_model=None,
+                tags=["Static Files"],
+                summary="Serve static files",
+                description="Endpoint to serve static files from the server.",
+            )
+        )
+
+    def serve_static_file(self, file_path: str) -> Response:
+        """Serve a static file given its path."""
+
+        base_path = Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd()
+        file_name = Path(file_path).name
+
+        dist_file = base_path / "dist" / file_path
+        dist_file_simple = base_path / "dist" / file_name
+        assets_file = base_path / "assets" / file_path
+        assets_file_simple = base_path / "assets" / file_name
+
+        if file_name.endswith(".css"):
+            if dist_file.exists():
+                css_content = dist_file.read_text(encoding="utf-8")
+                return Response(content=css_content, media_type="text/css")
+            elif dist_file_simple.exists():
+                css_content = dist_file_simple.read_text(encoding="utf-8")
+                return Response(content=css_content, media_type="text/css")
+            elif assets_file.exists():
+                css_content = assets_file.read_text(encoding="utf-8")
+                return Response(content=css_content, media_type="text/css")
+            elif assets_file_simple.exists():
+                css_content = assets_file_simple.read_text(encoding="utf-8")
+                return Response(content=css_content, media_type="text/css")
+            else:
+                return Response(
+                    status_code=404,
+                    content="CSS file not found",
+                    media_type="text/plain",
+                )
+
+        for candidate_file in [
+            dist_file,
+            dist_file_simple,
+            assets_file,
+            assets_file_simple,
+        ]:
+            if candidate_file.exists() and candidate_file.is_file():
+                file_content = candidate_file.read_bytes()
+                content_type, _ = mimetypes.guess_type(str(candidate_file))
+                if content_type is None:
+                    content_type = "application/octet-stream"
+                return Response(
+                    content=file_content,
+                    media_type=content_type,
+                )
+
+        return Response(
+            status_code=404, content="Static file not found", media_type="text/plain"
+        )
+
     def start(self) -> None:
         self.introspector.load()
 
@@ -245,6 +323,7 @@ class JacAPIServer(JServer):
         self.register_login_endpoint()
         self.register_page_endpoint()
         self.register_client_js_endpoint()
+        self.register_static_file_endpoint()
 
         # Register endpoints for each walker
         for walker_name in self.get_walkers():
