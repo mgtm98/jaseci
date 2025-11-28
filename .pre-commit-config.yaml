@@ -35,6 +35,15 @@ repos:
         exclude: /fixtures/
   - repo: local
     hooks:
+      - id: jac-format
+        name: Format Jac files
+        entry: jac format
+        language: system
+        types: [file]
+        files: \.jac$
+        pass_filenames: true
+        require_serial: true
+        verbose: true
       - id: check-no-binary-files
         name: Check for binary files
         entry: Binary files are not allowed

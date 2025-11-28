@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast as py_ast
+import hashlib
 import marshal
 import types
 from threading import Event
@@ -171,13 +172,21 @@ class JacProgram:
         """Convert a Jac file to an AST."""
         prog = JacProgram()
         source_str = read_file_with_encoding(file_path)
+        original_checksum = hashlib.md5(source_str.encode()).hexdigest()
         source = uni.Source(source_str, mod_path=file_path)
         prse: Transform = JacParser(root_ir=source, prog=prog)
         for i in format_sched:
             prse = i(ir_in=prse.ir_out, prog=prog)
         prse.errors_had = prog.errors_had
         prse.warnings_had = prog.warnings_had
-        return prse.ir_out.gen.jac
+        if not prse.errors_had:
+            formatted_str = prse.ir_out.gen.jac
+            formatted_checksum = hashlib.md5(formatted_str.encode()).hexdigest()
+            if original_checksum != formatted_checksum:
+                print(f"reformatted {file_path}")
+            return formatted_str
+        else:
+            return source_str
 
     @staticmethod
     def jac_str_formatter(source_str: str, file_path: str) -> str:
