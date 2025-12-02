@@ -3,8 +3,9 @@
 # ============================================================================
 # Test Functions
 # ============================================================================
-
-def add_numbers(a: int, b: int) -> int {
+def add_numbers(
+    a: int, b: int
+) -> int {
     return a + b;
 }
 
@@ -19,7 +20,6 @@ def multiply(x: int, y: int) -> int {
 # ============================================================================
 # Test Data Models
 # ============================================================================
-
 node Task {
     has title: str;
     has priority: int = 1;
@@ -33,21 +33,20 @@ node TaskList {
 # ============================================================================
 # Test Walkers
 # ============================================================================
-
 walker CreateTask {
     has title: str;
     has priority: int = 1;
 
     can create with `root entry {
         new_task = here ++> Task(title=self.title, priority=self.priority);
-        report new_task;
+        report new_task ;
     }
 }
 
 walker ListTasks {
     can list with `root entry {
         tasks = [-->];
-        report tasks;
+        report tasks ;
     }
 }
 
@@ -64,12 +63,12 @@ walker CompleteTask {
 
     can mark_done with Task entry {
         here.completed = True;
-        report here;
+        report here ;
     }
 }
 
 walker GetTask {
     can get with Task entry {
-        report here;
+        report here ;
     }
 }
