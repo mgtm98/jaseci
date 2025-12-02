@@ -313,43 +313,6 @@ class TestJacScaleServe:
         assert "result" in result
         assert "reports" in result
 
-    # TODO: Re-enable after checking the error
-    # def test_spawn_walker_list_tasks(self) -> None:
-    #     """Test spawning a ListTasks walker."""
-    #     # Create user
-    #     create_result = self._request(
-    #         "POST",
-    #         "/user/create",
-    #         {"username": "listuser", "password": "pass"},
-    #     )
-    #     token = create_result["token"]
-
-    #     # Create a task first
-    #     self._request(
-    #         "POST",
-    #         "/walker/CreateTask",
-    #         {"title": "Task to List", "priority": 1},
-    #         token=token,
-    #     )
-
-    #     # List tasks
-    #     result = self._request(
-    #         "POST",
-    #         "/walker/ListTasks",
-    #         {},
-    #         token=token,
-    #     )
-
-    #     assert "result" in result
-
-    # TODO: Re-enable after implementing authenticated endpoints
-    # def test_authentication_required(self) -> None:
-    #     """Test that protected endpoints require authentication."""
-    #     # Try to access protected endpoint without token
-    #     result = self._request("GET", "/protected")
-
-    #     assert "error" in result
-
     def test_user_isolation(self) -> None:
         """Test that users have isolated graph spaces."""
         # Create two users
