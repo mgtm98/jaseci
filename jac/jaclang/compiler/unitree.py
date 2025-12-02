@@ -7,7 +7,7 @@ import builtins
 import os
 from collections.abc import Callable, Sequence
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from hashlib import md5
 from types import EllipsisType
@@ -53,26 +53,45 @@ class UniNode:
         """Initialize ast."""
         self.parent: UniNode | None = None
         self.kid: list[UniNode] = [x.set_parent(self) for x in kid]
-        self._sub_node_tab: dict[type, list[UniNode]] = {}
-        self.construct_sub_node_tab()
+        self.__sub_node_tab: dict[type, list[UniNode]] | None = None
         self._in_mod_nodes: list[UniNode] = []
-        self.gen: CodeGenTarget = CodeGenTarget()
+        self._gen: CodeGenTarget | None = None
         self.loc: CodeLocInfo = CodeLocInfo(*self.resolve_tok_range())
 
-    def construct_sub_node_tab(self) -> None:
+    @property
+    def gen(self) -> CodeGenTarget:
+        """Lazy initialization of CodeGenTarget."""
+        if self._gen is None:
+            self._gen = CodeGenTarget()
+        return self._gen
+
+    @gen.setter
+    def gen(self, value: CodeGenTarget) -> None:
+        """Set CodeGenTarget."""
+        self._gen = value
+
+    @property
+    def _sub_node_tab(self) -> dict[type, list[UniNode]]:
+        """Lazy initialization of sub node table."""
+        if self.__sub_node_tab is None:
+            self.__sub_node_tab = {}
+            self._construct_sub_node_tab()
+        return self.__sub_node_tab
+
+    def _construct_sub_node_tab(self) -> None:
         """Construct sub node table."""
         for i in self.kid:
             if not i:
                 continue
             for k, v in i._sub_node_tab.items():
-                if k in self._sub_node_tab:
-                    self._sub_node_tab[k].extend(v)
+                if k in self.__sub_node_tab:  # type: ignore
+                    self.__sub_node_tab[k].extend(v)  # type: ignore
                 else:
-                    self._sub_node_tab[k] = copy(v)
-            if type(i) in self._sub_node_tab:
-                self._sub_node_tab[type(i)].append(i)
+                    self.__sub_node_tab[k] = copy(v)  # type: ignore
+            if type(i) in self.__sub_node_tab:  # type: ignore
+                self.__sub_node_tab[type(i)].append(i)  # type: ignore
             else:
-                self._sub_node_tab[type(i)] = [i]
+                self.__sub_node_tab[type(i)] = [i]  # type: ignore
 
     @property
     def sym_tab(self) -> UniScopeNode:
@@ -305,6 +324,15 @@ class Symbol:
         return f"Symbol({self.sym_name}, {self.sym_type}, {self.access}, {self.defn})"
 
 
+@dataclass
+class InheritedSymbolTable:
+    """Represents an inherited symbol table for selective imports."""
+
+    base_symbol_table: UniScopeNode
+    load_all_symbols: bool = False
+    symbols: list[str] = field(default_factory=list)
+
+
 class UniScopeNode(UniNode):
     """Symbol Table."""
 
@@ -318,6 +346,7 @@ class UniScopeNode(UniNode):
         self.parent_scope = parent_scope
         self.kid_scope: list[UniScopeNode] = []
         self.names_in_scope: dict[str, Symbol] = {}
+        self.inherited_scope: list[InheritedSymbolTable] = []
 
     def get_type(self) -> SymbolType:
         """Get type."""
@@ -744,6 +773,10 @@ class Expr(UniNode):
         # 1. Find a better name for this
         # 2. Migrate this to expr_type property
         self.type: TypeBase | None = None
+
+        # Temporary storage for attached tokens (e.g., braces in JSX attributes)
+        # TODO: Refactor to eliminate this workaround
+        self.attached_tokens: list[Token] | None = None
 
     @property
     def expr_type(self) -> str:
@@ -3498,13 +3531,11 @@ class FString(AtomExpr):
         if deep:
             for part in self.parts:
                 res = res and part.normalize(deep)
-        new_kid: list[UniNode] = (
-            [self.gen_token(self.start)] if self.start is not None else []
-        )
+        new_kid: list[UniNode] = [self.start] if self.start is not None else []
         for part in self.parts:
             new_kid.append(part)
         if self.end is not None:
-            new_kid.append(self.gen_token(self.end))
+            new_kid.append(self.end)
         self.set_kids(nodes=new_kid)
         return res
 
@@ -4350,14 +4381,14 @@ class JsxElement(AtomExpr):
         self,
         name: JsxElementName | None,
         attributes: Sequence[JsxAttribute] | None,
-        children: Sequence[JsxChild] | None,
+        children: Sequence[JsxChild | JsxElement] | None,
         is_self_closing: bool,
         is_fragment: bool,
         kid: Sequence[UniNode],
     ) -> None:
         self.name = name
         self.attributes = list(attributes) if attributes else []
-        self.children = list(children) if children else []
+        self.children: list[JsxChild | JsxElement] = list(children) if children else []
         self.is_self_closing = is_self_closing
         self.is_fragment = is_fragment
         UniNode.__init__(self, kid=kid)
@@ -4389,7 +4420,7 @@ class JsxElementName(UniNode):
 
     def __init__(
         self,
-        parts: Sequence[Name],
+        parts: Sequence[Name | Token],
         kid: Sequence[UniNode],
     ) -> None:
         self.parts = list(parts)
@@ -4451,7 +4482,7 @@ class JsxNormalAttribute(JsxAttribute):
 
     def __init__(
         self,
-        name: Name,
+        name: Name | Token,
         value: String | Expr | None,
         kid: Sequence[UniNode],
     ) -> None:
@@ -4499,7 +4530,7 @@ class JsxText(JsxChild):
 
     def __init__(
         self,
-        value: str,
+        value: str | Token,
         kid: Sequence[UniNode],
     ) -> None:
         self.value = value

@@ -2,6 +2,7 @@ exclude: |
     (?x)(
         ^jac/jaclang/vendor/|
         ^jac/jaclang/compiler/larkparse/jac_parser\.py$|
+        ^jac/jaclang/compiler/larkparse/ts_parser\.py$|
         ^$
     )
 repos:
@@ -16,23 +17,27 @@ repos:
         args: [--fix=lf]
       - id: end-of-file-fixer
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.6
+    rev: v0.14.7
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.19.0
     hooks:
       - id: mypy
         args:
-          - --follow-imports=silent
           - --ignore-missing-imports
           - --config-file=mypy.ini
           - --explicit-package-bases
-          - --exclude=jac-byllm/scripts
         additional_dependencies: [types-PyYAML, types-requests]
-        exclude: /fixtures/
+        exclude: (/fixtures/|/larkparse/|/vendor/|/scripts/|jac/examples/reference)
+  - repo: https://github.com/jaseci-labs/jaseci
+    rev: 1637c27ec5ca0cdda59ccc51b8b9e967b3d482b5
+    hooks:
+      - id: jac-format
+      - id: jac-check
+        exclude: (/fixtures/|_err\.jac$|_syntax_err\.jac$|jac-client/jac_client/examples/)
   - repo: local
     hooks:
       - id: check-no-binary-files
