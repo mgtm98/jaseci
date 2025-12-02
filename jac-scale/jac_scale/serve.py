@@ -168,6 +168,7 @@ class JacAPIServer(JServer):
                     required=func_fields[field_name]["required"],
                     default=func_fields[field_name]["default"],
                     description=f"Field {field_name} for function {func_name}",
+                    type=ParameterType.BODY,
                 )
             )
         return parameters
@@ -467,7 +468,7 @@ class JacAPIServer(JServer):
         for func_name in self.get_functions():
             self.server_impl.add_endpoint(
                 JEndPoint(
-                    method=HTTPMethod.GET,
+                    method=HTTPMethod.POST,
                     path=f"/function/{func_name}",
                     callback=self.create_function_callback(func_name),
                     parameters=self.create_function_parameters(func_name),
@@ -485,4 +486,4 @@ class JacAPIServer(JServer):
         # Must be registered after all other endpoints to avoid conflicts
         self.register_root_asset_endpoint()
 
-        self.server_impl.run_server()
+        self.server_impl.run_server(port=self.port)
