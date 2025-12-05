@@ -2,7 +2,7 @@ import mimetypes
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import jwt
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +31,7 @@ class JacAPIServer(JServer):
         return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
     @staticmethod
-    def validate_jwt_token(token: str) -> Optional[str]:
+    def validate_jwt_token(token: str) -> str | None:
         try:
             decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
             return decoded["username"]
@@ -148,14 +148,14 @@ class JacAPIServer(JServer):
         requires_auth = self.introspector.is_auth_required_for_walker(walker_name)
 
         def callback(
-            node: Optional[str] = None, **kwargs: JsonValue
+            node: str | None = None, **kwargs: JsonValue
         ) -> dict[str, JsonValue]:
-            username: Optional[str] = None
+            username: str | None = None
 
             if requires_auth:
                 authorization = kwargs.pop("Authorization", None)
 
-                token: Optional[str] = None
+                token: str | None = None
                 if (
                     authorization
                     and isinstance(authorization, str)
@@ -258,13 +258,13 @@ class JacAPIServer(JServer):
         requires_auth = self.introspector.is_auth_required_for_function(func_name)
 
         def callback(**kwargs: JsonValue) -> dict[str, JsonValue]:
-            username: Optional[str] = None
+            username: str | None = None
 
             if requires_auth:
                 # Extract and validate authorization header
                 authorization = kwargs.pop("Authorization", None)
 
-                token: Optional[str] = None
+                token: str | None = None
                 if (
                     authorization
                     and isinstance(authorization, str)
