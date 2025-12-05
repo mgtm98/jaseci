@@ -1081,7 +1081,7 @@ class PyastBuildPass(Transform[uni.PythonModuleAst, uni.Module]):
             raise self.ice("Length mismatch in dict compr generators")
         return uni.DictCompr(kv_pair=kv_pair, compr=valid, kid=[kv_pair, *valid])
 
-    def proc_ellipsis(self, node: py_ast.Ellipsis) -> None:
+    def proc_ellipsis(self, node: py_ast.Constant) -> None:
         """Process python node."""
 
     def proc_except_handler(self, node: py_ast.ExceptHandler) -> uni.Except:
