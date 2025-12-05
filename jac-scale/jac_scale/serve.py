@@ -57,19 +57,19 @@ class JacAPIServer(JServer):
             allow_headers=["*"],  # Allows all headers
         )
 
-    def login(self, username: str, password: str) -> JSONResponse:
-        if not username or not password:
+    def login(self, email: str, password: str) -> JSONResponse:
+        if not email or not password:
             return JSONResponse(
-                status_code=400, content={"error": "Username and password required"}
+                status_code=400, content={"error": "Email and password required"}
             )
 
-        result = self.user_manager.authenticate(username, password)
+        result = self.user_manager.authenticate(email, password)
         if not result:
             return JSONResponse(
                 status_code=401, content={"error": "Invalid credentials"}
             )
 
-        result["token"] = self.create_jwt_token(username)
+        result["token"] = self.create_jwt_token(email)
         return JSONResponse(status_code=200, content=dict[str, JsonValue](result))
 
     def register_login_endpoint(self) -> None:
@@ -80,11 +80,11 @@ class JacAPIServer(JServer):
                 callback=self.login,
                 parameters=[
                     APIParameter(
-                        name="username",
+                        name="email",
                         data_type="string",
                         required=True,
                         default=None,
-                        description="Username for login",
+                        description="Email for login",
                         type=ParameterType.BODY,
                     ),
                     APIParameter(
@@ -103,23 +103,23 @@ class JacAPIServer(JServer):
             )
         )
 
-    def create_user(self, username: str, password: str) -> JSONResponse:
-        res = self.user_manager.create_user(username, password)
+    def create_user(self, email: str, password: str) -> JSONResponse:
+        res = self.user_manager.create_user(email, password)
         if "error" in res:
             return JSONResponse(content=res, status_code=400)
 
-        res["token"] = self.create_jwt_token(username)
+        res["token"] = self.create_jwt_token(email)
         return JSONResponse(content=res, status_code=201)
 
     def register_create_user_endpoint(self) -> None:
         self.server_impl.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.POST,
-                path="/user/create",
+                path="/user/register",
                 callback=self.create_user,
                 parameters=[
                     APIParameter(
-                        name="username",
+                        name="email",
                         data_type="string",
                         required=True,
                         default=None,
