@@ -49,11 +49,11 @@ jobs:
       - name: Run K8 tests
         run: |
           pytest -v jac-scale/jac_scale/tests/test_deploy_k8.py
-      
+
       - name: Run Backend tests
         run: |
           pytest -v jac-scale/jac_scale/tests/test_serve.py
-      
+
       - name: Run jac-client examples
         run: |
           pytest -v jac-scale/jac_scale/tests/test_examples.py
