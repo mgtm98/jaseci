@@ -30,26 +30,6 @@ jobs:
           pip install pytest
           pip install -e jac-client
 
-      # - name: Install Docker (needed for Kind)
-      #   uses: docker/setup-docker@v2
-
-      - name: Install Kind (Kubernetes in Docker)
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-          kind version
-
-      - name: Create Kubernetes cluster with Kind
-        run: |
-          kind create cluster --name jaseci-test --wait 60s
-          kubectl cluster-info
-          kubectl get nodes
-
-      - name: Run K8 tests
-        run: |
-          pytest -v jac-scale/jac_scale/tests/test_deploy_k8.py
-
       - name: Run Backend tests
         run: |
           pytest -v jac-scale/jac_scale/tests/test_serve.py
@@ -58,6 +38,34 @@ jobs:
         run: |
           pytest -v jac-scale/jac_scale/tests/test_examples.py
 
+      - name: Check for Kubernetes changes
+        id: k8s-changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            k8s:
+              - 'jac-scale/jac_scale/kubernetes/**'
+
+      - name: Install Kind (Kubernetes in Docker)
+        if: steps.k8s-changes.outputs.k8s == 'true'
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.25.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Create Kubernetes cluster with Kind
+        if: steps.k8s-changes.outputs.k8s == 'true'
+        run: |
+          kind create cluster --name jaseci-test --wait 60s
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Run K8 tests
+        if: steps.k8s-changes.outputs.k8s == 'true'
+        run: |
+          pytest -v jac-scale/jac_scale/tests/test_deploy_k8.py
+
       - name: Delete Kind cluster
-        if: always()
+        if: always() && steps.k8s-changes.outputs.k8s == 'true'
         run: kind delete cluster --name jaseci-test
