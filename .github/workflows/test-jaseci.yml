@@ -65,6 +65,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e jac
         pip install -e jac-client
+        pip install -e jac-scale
         pip install -e jac-byllm
         pip install -e jac-streamlit
         pip install pytest
@@ -75,4 +76,4 @@ jobs:
         echo "TEST_ENV=true" >> $GITHUB_ENV
 
     - name: Run package tests
-      run: pytest -x jac-byllm jac-streamlit jac-client
+      run: pytest -x jac-byllm jac-streamlit jac-client jac-scale
