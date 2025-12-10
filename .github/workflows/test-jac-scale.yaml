@@ -1,4 +1,4 @@
-name: Test Jaseci Deploy on K8
+name: Test jac-scale
 
 on:
   push:
