@@ -4,13 +4,9 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'jac-scale/**'
   pull_request:
     branches:
       - main
-    paths:
-      - 'jac-scale/**'
 
 jobs:
   test-all:
