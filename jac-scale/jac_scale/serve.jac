@@ -417,15 +417,12 @@ class JacAPIServer(JServer) {
                 );
                 return HTMLResponse(content=render_payload['html']);
             } except ValueError as exc {
-                return HTMLResponse(
-                    content=f"<h1>404 Not Found</h1>", status_code=404
-                );
+                return HTMLResponse(content=f"<h1>404 Not Found</h1>", status_code=404);
             } except RuntimeError as exc {
                 return HTMLResponse(
                     content=f"<h1>503 Service Unavailable</h1>", status_code=503
                 );
             }
-            
         }
         return callback;
     }
@@ -517,7 +514,7 @@ class JacAPIServer(JServer) {
 
     """Serve a static file given its path."""
     def serve_static_file(self: JacAPIServer, file_path: str) -> Response {
-        try{
+        try {
             base_path = Path(Jac.base_path_dir) if Jac.base_path_dir else Path.cwd();
             file_name = Path(file_path).name;
             dist_file = base_path / 'dist' / file_path;
@@ -561,7 +558,9 @@ class JacAPIServer(JServer) {
                 }
             }
             return Response(
-                status_code=404, content='Static file not found', media_type='text/plain'
+                status_code=404,
+                content='Static file not found',
+                media_type='text/plain'
             );
         } except Exception as exc {
             return Response(status_code=500);
