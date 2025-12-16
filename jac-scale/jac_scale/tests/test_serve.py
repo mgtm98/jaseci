@@ -1021,7 +1021,7 @@ class TestJacScaleServe:
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()["reports"][0]
         assert "message" in data
         assert data["message"] == "Private task created"
@@ -1034,7 +1034,7 @@ class TestJacScaleServe:
             json={},
             timeout=5,
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()["reports"][0]
         assert "message" in data
         assert data["message"] == "This is a public endpoint"
@@ -1058,7 +1058,7 @@ class TestJacScaleServe:
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
         )
-        assert response.status_code == 201
+        assert response.status_code == 200
         data = response.json()["reports"][0]
         assert "message" in data
         assert data["message"] == "This is a public endpoint"
