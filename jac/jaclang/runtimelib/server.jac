@@ -168,7 +168,7 @@ class UserManager {
         };
         self._tokens[token] = username;
         self._persist();
-        return {'email': username, 'token': token, 'root_id': root_id};
+        return {'username': username, 'token': token, 'root_id': root_id};
     }
 
     """Authenticate a user and return their data."""
@@ -182,7 +182,7 @@ class UserManager {
         password_hash = hashlib.sha256(password.encode()).hexdigest();
         if (user['password_hash'] == password_hash) {
             return {
-                'email': username,
+                'username': username,
                 'token': user['token'],
                 'root_id': user['root_id']
             };
@@ -709,11 +709,11 @@ class RouteHandler {
 """Handle authentication routes."""
 class AuthHandler(RouteHandler) {
     """Create new user."""
-    def create_user(self: AuthHandler, email: str, password: str) -> Response {
-        if (not email or not password) {
-            return Response(400, {'error': 'Email and password required'});
+    def create_user(self: AuthHandler, username: str, password: str) -> Response {
+        if (not username or not password) {
+            return Response(400, {'error': 'Username and password required'});
         }
-        result = self.user_manager.create_user(email, password);
+        result = self.user_manager.create_user(username, password);
         if ('error' in result) {
             return Response(400, <>dict[(str, JsonValue)](result));
         }
@@ -721,11 +721,11 @@ class AuthHandler(RouteHandler) {
     }
 
     """Authenticate user."""
-    def login(self: AuthHandler, email: str, password: str) -> Response {
-        if (not email or not password) {
-            return Response(400, {'error': 'Email and password required'});
+    def login(self: AuthHandler, username: str, password: str) -> Response {
+        if (not username or not password) {
+            return Response(400, {'error': 'Username and password required'});
         }
-        result = self.user_manager.authenticate(email, password);
+        result = self.user_manager.authenticate(username, password);
         if not result {
             return Response(401, {'error': 'Invalid credentials'});
         }
@@ -1070,14 +1070,14 @@ class JacAPIServer {
                 }
                 if (path == '/user/register') {
                     response = server.auth_handler.create_user(
-                        data.get('email', ''), data.get('password', '')
+                        data.get('username', ''), data.get('password', '')
                     );
                     self._send_response(response);
                     return;
                 }
                 if (path == '/user/login') {
                     response = server.auth_handler.login(
-                        data.get('email', ''), data.get('password', '')
+                        data.get('username', ''), data.get('password', '')
                     );
                     self._send_response(response);
                     return;
@@ -1261,13 +1261,13 @@ def print_endpoint_docs(server: JacAPIServer) -> None {
         'POST',
         '/user/register',
         'Create new user account',
-        'Body: { "email": str, "password": str }'
+        'Body: { "username": str, "password": str }'
     );
     endpoint(
         'POST',
         '/user/login',
         'Authenticate and get token',
-        'Body: { "email": str, "password": str }'
+        'Body: { "username": str, "password": str }'
     );
     section('INTROSPECTION', 'Authenticated');
     endpoint('GET', '/functions', 'List all functions → string[]');
