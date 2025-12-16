@@ -11,7 +11,7 @@ import pytest
 from jaclang.compiler.passes.ecmascript import EsastGenPass
 from jaclang.compiler.passes.ecmascript.es_unparse import es_to_js
 from jaclang.compiler.passes.ecmascript.estree import Node as EsNode
-from jaclang.compiler.program import JacProgram
+from jaclang.pycore.program import JacProgram
 
 
 @pytest.fixture
@@ -135,6 +135,9 @@ def test_core_fixture_emits_expected_constructs(
     # Exception handling
     for pattern in ["try", "catch (err)", "finally"]:
         assert pattern in js_code
+
+    # Support strings within jsx
+    assert '"\\"Authentication\\" App"' in js_code
 
     assert_balanced_syntax(js_code, core_fixture)
     assert_no_jac_keywords(js_code, core_fixture)

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from jaclang.cli.cmdreg import cmd_registry
-from jaclang.runtimelib.runtime import hookimpl
+from jaclang.pycore.runtime import hookimpl
 
 
 class JacCmd:
@@ -182,7 +182,7 @@ cl import from ".components/Button.tsx" { Button }
 
 cl {
     def app() -> any {
-        let [count, setCount] = useState(0);
+        [count, setCount] = useState(0);
         useEffect(lambda -> None {
             console.log("Count: ", count);
         }, [count]);
@@ -211,7 +211,7 @@ cl {
 cl import from react {useState, useEffect}
 cl {
     def app() -> any {
-        let [count, setCount] = useState(0);
+        [count, setCount] = useState(0);
         useEffect(lambda -> None {
             console.log("Count: ", count);
         }, [count]);
