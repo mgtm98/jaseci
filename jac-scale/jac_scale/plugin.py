@@ -3,9 +3,11 @@
 import os
 import pathlib
 import pickle
+import subprocess
 import sys
 
 from dotenv import load_dotenv
+from watchfiles import watch
 
 from jaclang.cli.cmdreg import CommandPriority, cmd_registry
 from jaclang.pycore.runtime import (
@@ -66,6 +68,7 @@ class JacCmd:
             port: int = 8000,
             main: bool = True,
             faux: bool = False,
+            reload: bool = False,
         ) -> None:
             """Start a REST API server for the specified .jac file.
 
@@ -83,12 +86,14 @@ class JacCmd:
                 port: Port to run the server on (default: 8000)
                 main: Treat the module as __main__ (default: True)
                 faux: Perform introspection and print endpoint docs without starting server (default: False)
+                reload: Enable hot reload when .jac files change (default: False)
 
             Examples:
                 jac serve myprogram.jac
                 jac serve myprogram.jac --port 8080
                 jac serve myprogram.jac --session myapp.session
                 jac serve myprogram.jac --faux
+                jac serve myprogram.jac --reload
             """
 
             # Process file and session
@@ -148,18 +153,70 @@ class JacCmd:
                     mach.close()
                     exit(1)
 
-            # Don't close the context - keep the module loaded for the server
-            # mach.close()
+            # Display reload status
+            if reload:
+                # Run server in subprocess so we can restart it cleanly
+                server_process = None
 
-            try:
-                server.start()
-            except KeyboardInterrupt:
-                print("\nServer stopped.")
-                mach.close()  # Close on shutdown
-            except Exception as e:
-                print(f"Server error: {e}", file=sys.stderr)
-                mach.close()
-                exit(1)
+                def start_server_subprocess() -> None:
+                    """Start the server as a subprocess"""
+                    nonlocal server_process
+                    cmd = [sys.executable] + [
+                        arg
+                        for arg in sys.argv
+                        if arg != "--reload" and arg != "-reload"
+                    ]
+                    server_process = subprocess.Popen(cmd)
+
+                def stop_server_subprocess() -> None:
+                    """Stop the server subprocess gracefully"""
+                    nonlocal server_process
+                    if server_process:
+                        print("   Stopping server...")
+                        server_process.terminate()
+                        try:
+                            server_process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            print("   Force killing server...")
+                            server_process.kill()
+                            server_process.wait()
+                        server_process = None
+
+                start_server_subprocess()
+
+                try:
+                    # Watch for changes
+                    for changes in watch(
+                        base, watch_filter=lambda change, path: path.endswith(".jac")
+                    ):
+                        print("\n🔄 Detected changes in .jac files")
+                        print(
+                            f"   Changed files: {[os.path.basename(p) for _, p in changes]}"
+                        )
+
+                        # Stop old server
+                        stop_server_subprocess()
+
+                        # Start new server
+                        print("   Starting new server...")
+                        start_server_subprocess()
+                        print("✅ Server restarted\n")
+
+                except KeyboardInterrupt:
+                    print("\n\nShutting down...")
+                    stop_server_subprocess()
+                    mach.close()
+
+            else:
+                try:
+                    server.start()
+                except KeyboardInterrupt:
+                    print("\nServer stopped.")
+                    mach.close()  # Close on shutdown
+                except Exception as e:
+                    print(f"Server error: {e}", file=sys.stderr)
+                    mach.close()
+                    exit(1)
 
 
 # Plugin implementation for overriding JacRuntime hooks
