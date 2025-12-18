@@ -661,29 +661,29 @@ class TestJacScaleServe:
         """Test POST /user/register returns 201 on successful registration."""
         response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": "status201@example.com", "password": "password123"},
+            json={"username": "status201", "password": "password123"},
             timeout=5,
         )
         assert response.status_code == 201
         data = response.json()
         assert "token" in data
-        assert "email" in data
-        assert data["email"] == "status201@example.com"
+        assert "username" in data
+        assert data["username"] == "status201"
 
     def test_status_code_user_register_400_already_exists(self) -> None:
         """Test POST /user/register returns 400 when user already exists."""
-        email = "status400exists@example.com"
+        email = "status400exists"
         # Create user first
         requests.post(
             f"{self.base_url}/user/register",
-            json={"email": email, "password": "password123"},
+            json={"username": email, "password": "password123"},
             timeout=5,
         )
 
         # Try to create again
         response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": email, "password": "password123"},
+            json={"username": email, "password": "password123"},
             timeout=5,
         )
         assert response.status_code == 400
@@ -692,18 +692,18 @@ class TestJacScaleServe:
 
     def test_status_code_user_login_200_success(self) -> None:
         """Test POST /user/login returns 200 on successful login."""
-        email = "status200login@example.com"
+        email = "status200login"
         # Create user first
         requests.post(
             f"{self.base_url}/user/register",
-            json={"email": email, "password": "password123"},
+            json={"username": email, "password": "password123"},
             timeout=5,
         )
 
         # Login
         response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": email, "password": "password123"},
+            json={"username": email, "password": "password123"},
             timeout=5,
         )
         assert response.status_code == 200
@@ -715,7 +715,7 @@ class TestJacScaleServe:
         # Missing password - FastAPI returns 422 for validation errors
         response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": "test@example.com"},
+            json={"username": "test"},
             timeout=5,
         )
         assert response.status_code in [400, 422]  # 422 from FastAPI validation
@@ -742,27 +742,27 @@ class TestJacScaleServe:
         # Empty string values - should trigger custom 400 validation
         response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": "", "password": "password123"},
+            json={"username": "", "password": "password123"},
             timeout=5,
         )
         assert response.status_code == 400
         data = response.json()
-        assert data["error"] == "Email and password required"
+        assert data["error"] == "Username and password required"
 
     def test_status_code_user_login_401_invalid_credentials(self) -> None:
         """Test POST /user/login returns 401 for invalid credentials."""
-        email = "status401login@example.com"
+        email = "status401login"
         # Create user
         requests.post(
             f"{self.base_url}/user/register",
-            json={"email": email, "password": "correctpass"},
+            json={"username": email, "password": "correctpass"},
             timeout=5,
         )
 
         # Wrong password
         response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": email, "password": "wrongpass"},
+            json={"username": email, "password": "wrongpass"},
             timeout=5,
         )
         assert response.status_code == 401
@@ -772,7 +772,7 @@ class TestJacScaleServe:
         # Non-existent user
         response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": "nonexistent@example.com", "password": "password"},
+            json={"username": "nonexistent", "password": "password"},
             timeout=5,
         )
         assert response.status_code == 401
@@ -782,7 +782,7 @@ class TestJacScaleServe:
         # Create user and get token
         create_response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": "status200refresh@example.com", "password": "password123"},
+            json={"username": "status200refresh", "password": "password123"},
             timeout=5,
         )
         token = create_response.json()["token"]
@@ -843,7 +843,7 @@ class TestJacScaleServe:
         # Create user
         create_response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": "status200walker@example.com", "password": "password123"},
+            json={"username": "status200walker", "password": "password123"},
             timeout=5,
         )
         token = create_response.json()["token"]
@@ -862,7 +862,7 @@ class TestJacScaleServe:
         # Create user
         create_response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": "status200func@example.com", "password": "password123"},
+            json={"username": "status200func", "password": "password123"},
             timeout=5,
         )
         token = create_response.json()["token"]
@@ -951,12 +951,12 @@ class TestJacScaleServe:
 
     def test_status_code_integration_auth_flow(self) -> None:
         """Integration test for complete authentication flow with status codes."""
-        email = "integration_status@example.com"
+        email = "integration_status"
 
         # Register - 201
         register_response = requests.post(
             f"{self.base_url}/user/register",
-            json={"email": email, "password": "secure123"},
+            json={"username": email, "password": "secure123"},
             timeout=5,
         )
         assert register_response.status_code == 201
@@ -965,7 +965,7 @@ class TestJacScaleServe:
         # Login - 200
         login_response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": email, "password": "secure123"},
+            json={"username": email, "password": "secure123"},
             timeout=5,
         )
         assert login_response.status_code == 200
@@ -983,7 +983,7 @@ class TestJacScaleServe:
         # Failed login - 401
         fail_response = requests.post(
             f"{self.base_url}/user/login",
-            json={"email": email, "password": "wrongpass"},
+            json={"username": email, "password": "wrongpass"},
             timeout=5,
         )
         assert fail_response.status_code == 401
@@ -1008,7 +1008,7 @@ class TestJacScaleServe:
         create_result = self._request(
             "POST",
             "/user/register",
-            {"email": "privateuser@example.com", "password": "password123"},
+            {"username": "privateuser", "password": "password123"},
         )
         token = create_result["token"]
 
@@ -1045,7 +1045,7 @@ class TestJacScaleServe:
         create_result = self._request(
             "POST",
             "/user/register",
-            {"email": "publicuser@example.com", "password": "password123"},
+            {"username": "publicuser", "password": "password123"},
         )
         token = create_result["token"]
 
