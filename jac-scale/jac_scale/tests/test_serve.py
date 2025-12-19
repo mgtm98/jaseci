@@ -1062,3 +1062,114 @@ class TestJacScaleServe:
         data = response.json()["reports"][0]
         assert "message" in data
         assert data["message"] == "This is a public endpoint"
+
+    def test_hot_reload_updates_endpoints(self) -> None:
+        """Test that hot reload detects file changes and updates endpoints."""
+        # Define the fixed file path in fixtures
+        fixtures_dir = Path(__file__).parent / "fixtures"
+        fixtures_dir.mkdir(exist_ok=True)
+        
+        test_file = fixtures_dir / "__hot_reload__test.jac"
+        port = get_free_port()
+        server_process = None
+        
+        # Content 1
+        content1 = """
+walker greet {
+    can respond with `root entry {
+        report {"message": "Content 1 - Initial"};
+    }
+}
+"""
+        
+        # Content 2
+        content2 = """
+walker greet {
+    can respond with `root entry {
+        report {"message": "Content 2 - Updated"};
+    }
+}
+"""
+        
+        try:
+            # Clean up any existing file first
+            if test_file.exists():
+                test_file.unlink()
+            
+            # Create the file with content1
+            test_file.write_text(content1)
+            
+            # Verify file content
+            actual_content = test_file.read_text()
+            assert "Content 1" in actual_content, "File doesn't contain Content 1"
+            
+            # Give filesystem time to settle
+            time.sleep(2)
+            
+            # Start the server with hot reload enabled
+            cmd = ["jac", "serve", str(test_file), "--port", str(port), "--reload"]
+            
+            server_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            
+            # Wait for server to be ready
+            base_url = f"http://localhost:{port}"
+            max_wait = 30
+            wait_interval = 2
+            elapsed = 0
+            server_ready = False
+            
+            while elapsed < max_wait:
+                try:
+                    response = requests.get(f"{base_url}/docs", timeout=2)
+                    if response.status_code == 200:
+                        server_ready = True
+                        break
+                except requests.exceptions.RequestException:
+                    pass
+                
+                time.sleep(wait_interval)
+                elapsed += wait_interval
+            
+            assert server_ready, f"Server did not start within {max_wait} seconds"
+            
+            # Test initial content (Content 1)
+            response = requests.post(
+                f"{base_url}/walker/greet",
+                json={},
+                timeout=5,
+            )
+            assert response.status_code == 200
+            data = response.json()["reports"][0]
+            assert "Content 1" in data["message"], f"Expected 'Content 1' but got: {data['message']}"
+            
+            # Modify the file to content2
+            test_file.write_text(content2)
+            time.sleep(6)
+            
+            # Test updated content (Content 2)
+            response = requests.post(
+                f"{base_url}/walker/greet",
+                json={},
+                timeout=5,
+            )
+            assert response.status_code == 200
+            data = response.json()["reports"][0]
+            assert "Content 2" in data["message"], f"Expected 'Content 2' but got: {data['message']}"
+            
+        finally:
+            # Clean up: stop the server process
+            if server_process:
+                server_process.terminate()
+                try:
+                    server_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    server_process.kill()
+                    server_process.wait()
+            
+            # Clean up the test file
+            if test_file.exists():
+                test_file.unlink()
