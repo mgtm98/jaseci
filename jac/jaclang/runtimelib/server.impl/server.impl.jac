@@ -118,7 +118,11 @@ impl UserManager.authenticate(
     user = self._users[username];
     password_hash = hashlib.sha256(password.encode()).hexdigest();
     if (user['password_hash'] == password_hash) {
-        return {'username': username, 'token': user['token'], 'root_id': user['root_id']};
+        return {
+            'username': username,
+            'token': user['token'],
+            'root_id': user['root_id']
+        };
     }
     return None;
 }
@@ -607,7 +611,9 @@ impl RouteHandler.init(
 }
 
 """Create new user."""
-impl AuthHandler.create_user(self: AuthHandler, username: str, password: str) -> Response {
+impl AuthHandler.create_user(
+    self: AuthHandler, username: str, password: str
+) -> Response {
     if (not username or not password) {
         return Response(400, {'error': 'username and password required'});
     }

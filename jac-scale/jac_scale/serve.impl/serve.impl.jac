@@ -604,7 +604,9 @@ impl JacAPIServer.register_login_endpoint(self: JacAPIServer) -> None {
     );
 }
 
-impl JacAPIServer.login(self: JacAPIServer, username: str, password: str) -> JSONResponse {
+impl JacAPIServer.login(
+    self: JacAPIServer, username: str, password: str
+) -> JSONResponse {
     if (not username or not password) {
         return JSONResponse(
             status_code=400, content={'error': 'Username and password required'}
