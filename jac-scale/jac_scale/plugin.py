@@ -5,8 +5,6 @@ import pathlib
 import pickle
 import sys
 
-from typing import Optional
-
 from dotenv import load_dotenv
 
 from jaclang.cli.cmdreg import CommandPriority, cmd_registry
@@ -168,7 +166,7 @@ class JacCmd:
 class JacScalePlugin:
     """Jac Scale Plugin Implementation."""
 
-    context: Optional[JScaleExecutionContext] = None
+    context: JScaleExecutionContext | None = None
 
     @classmethod
     @hookimpl
