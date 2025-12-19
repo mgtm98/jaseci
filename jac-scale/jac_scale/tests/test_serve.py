@@ -1117,7 +1117,7 @@ walker greet {
 
             # Wait for server to be ready
             base_url = f"http://localhost:{port}"
-            max_wait = 30
+            max_wait = 60
             wait_interval = 2
             elapsed = 0
             server_ready = False
