@@ -35,9 +35,9 @@ class JacAPIServer(JServer) {
         base_path: (str | None) = None
     ) -> None;
 
-    def login(self: JacAPIServer, email: str, password: str) -> JSONResponse;
+    def login(self: JacAPIServer, username: str, password: str) -> JSONResponse;
     def register_login_endpoint(self: JacAPIServer) -> None;
-    def create_user(self: JacAPIServer, email: str, password: str) -> JSONResponse;
+    def create_user(self: JacAPIServer, username: str, password: str) -> JSONResponse;
     def refresh_token(self: JacAPIServer, token: (str | None) = None) -> JSONResponse;
     def register_create_user_endpoint(self: JacAPIServer) -> None;
     def register_refresh_token_endpoint(self: JacAPIServer) -> None;

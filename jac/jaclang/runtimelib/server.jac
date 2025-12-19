@@ -189,8 +189,8 @@ class RouteHandler {
 
 """Handle authentication routes."""
 class AuthHandler(RouteHandler) {
-    def create_user(self: AuthHandler, email: str, password: str) -> Response;
-    def login(self: AuthHandler, email: str, password: str) -> Response;
+    def create_user(self: AuthHandler, username: str, password: str) -> Response;
+    def login(self: AuthHandler, username: str, password: str) -> Response;
 }
 
 """Handle introspection routes."""
