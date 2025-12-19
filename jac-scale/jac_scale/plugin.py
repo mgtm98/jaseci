@@ -100,10 +100,10 @@ class JacCmd:
             from jaclang.cli.cli import proc_file_sess
 
             base, mod, mach = proc_file_sess(filename, session)
-            
+
             if reload:
                 print(f"INFO:     Hot reload enabled. Watching {base} for changes...")
-                
+
                 # Run server in subprocess so we can restart it cleanly
                 server_process = None
 
@@ -134,9 +134,9 @@ class JacCmd:
                 try:
                     # Watch for changes (with debounce to avoid spurious reloads)
                     for changes in watch(
-                        base, 
+                        base,
                         watch_filter=lambda change, path: path.endswith(".jac"),
-                        debounce=1600  # Wait 1.6s to batch rapid changes
+                        debounce=1600,  # Wait 1.6s to batch rapid changes
                     ):
                         print(
                             f"INFO:     Detected changes in {[os.path.basename(p) for _, p in changes]}. Reloading..."
@@ -185,7 +185,9 @@ class JacCmd:
                         exit(1)
 
                 # Create and start the API server
-                session_path = session if session else os.path.join(base, f"{mod}.session")
+                session_path = (
+                    session if session else os.path.join(base, f"{mod}.session")
+                )
 
                 server = JacAPIServer(
                     module_name=mod,
@@ -202,7 +204,8 @@ class JacCmd:
                         return
                     except Exception as e:
                         print(
-                            f"Error generating endpoint documentation: {e}", file=sys.stderr
+                            f"Error generating endpoint documentation: {e}",
+                            file=sys.stderr,
                         )
                         mach.close()
                         exit(1)
