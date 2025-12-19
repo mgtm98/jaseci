@@ -1150,7 +1150,7 @@ walker greet {
 
             # Modify the file to content2
             test_file.write_text(content2)
-            time.sleep(6)
+            time.sleep(20)
 
             # Test updated content (Content 2)
             response = requests.post(
