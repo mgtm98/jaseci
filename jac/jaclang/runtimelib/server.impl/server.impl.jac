@@ -56,6 +56,7 @@ impl UserManager.postinit(self: UserManager) -> None {
     self._load_db();
 }
 
+"""Load user data from persistent storage."""
 impl UserManager._load_db(self: UserManager) -> None {
     try {
         with open(self._db_path, encoding='utf-8') as fh {
@@ -68,12 +69,14 @@ impl UserManager._load_db(self: UserManager) -> None {
     }
 }
 
+"""Save user data to persistent storage."""
 impl UserManager._persist(self: UserManager) -> None {
     with open(self._db_path, 'w', encoding='utf-8') as fh {
         json.dump({'__jac_users__': self._users, '__jac_tokens__': self._tokens}, fh);
     }
 }
 
+"""Create a new user with their own root node. Returns dict with user data or error."""
 impl UserManager.create_user(
     self: UserManager, username: str, password: str
 ) -> dict[str, str] {
@@ -105,6 +108,7 @@ impl UserManager.create_user(
     return {'email': username, 'token': token, 'root_id': root_id};
 }
 
+"""Authenticate a user and return their data."""
 impl UserManager.authenticate(
     self: UserManager, username: str, password: str
 ) -> (dict[(str, str)] | None) {
@@ -119,14 +123,17 @@ impl UserManager.authenticate(
     return None;
 }
 
+"""Validate token and return username."""
 impl UserManager.validate_token(self: UserManager, token: str) -> (str | None) {
     return self._tokens.get(token);
 }
 
+"""Get user's root node ID."""
 impl UserManager.get_root_id(self: UserManager, username: str) -> (str | None) {
     return self._users[username]['root_id'] if (username in self._users) else None;
 }
 
+"""Close and persist user data."""
 impl UserManager.close(self: UserManager) -> None {
     self._persist();
 }
@@ -210,6 +217,7 @@ impl ModuleIntrospector.postinit(self: ModuleIntrospector) -> None {
     self._bundle_builder = Jac.get_client_bundle_builder();
 }
 
+"""Load module and refresh caches."""
 impl ModuleIntrospector.load(
     self: ModuleIntrospector, force_reload: bool = False
 ) -> None {
@@ -235,6 +243,7 @@ impl ModuleIntrospector.load(
     self._bundle_error = None;
 }
 
+"""Load client manifest from module."""
 impl ModuleIntrospector._load_manifest(self: ModuleIntrospector) -> None {
     if not self._module {
         return;
@@ -257,6 +266,7 @@ impl ModuleIntrospector._load_manifest(self: ModuleIntrospector) -> None {
     self._client_manifest = {};
 }
 
+"""Extract access level information from module AST."""
 impl ModuleIntrospector._extract_access_levels(self: ModuleIntrospector) -> None {
     if not self._module {
         return;
@@ -289,6 +299,7 @@ impl ModuleIntrospector._extract_access_levels(self: ModuleIntrospector) -> None
     }
 }
 
+"""Collect callable functions from module."""
 impl ModuleIntrospector._collect_functions(
     self: ModuleIntrospector
 ) -> dict[str, Callable[(..., Any)]] {
@@ -320,6 +331,7 @@ impl ModuleIntrospector._collect_functions(
     return functions;
 }
 
+"""Collect walker classes from module."""
 impl ModuleIntrospector._collect_walkers(
     self: ModuleIntrospector
 ) -> dict[str, type[WalkerArchetype]] {
@@ -341,6 +353,7 @@ impl ModuleIntrospector._collect_walkers(
     return walkers;
 }
 
+"""Get all functions."""
 impl ModuleIntrospector.get_functions(
     self: ModuleIntrospector
 ) -> dict[str, Callable[(..., Any)]] {
@@ -350,6 +363,7 @@ impl ModuleIntrospector.get_functions(
     return <>dict(self._functions);
 }
 
+"""Get all walkers."""
 impl ModuleIntrospector.get_walkers(
     self: ModuleIntrospector
 ) -> dict[str, type[WalkerArchetype]] {
@@ -359,6 +373,7 @@ impl ModuleIntrospector.get_walkers(
     return <>dict(self._walkers);
 }
 
+"""Get client-exportable functions."""
 impl ModuleIntrospector.get_client_functions(
     self: ModuleIntrospector
 ) -> dict[str, Callable[(..., Any)]] {
@@ -368,6 +383,7 @@ impl ModuleIntrospector.get_client_functions(
     return <>dict(self._client_functions);
 }
 
+"""Get callable signature information."""
 impl ModuleIntrospector.introspect_callable(
     self: ModuleIntrospector, func: Callable[(..., Any)]
 ) -> dict[str, Any] {
@@ -395,6 +411,7 @@ impl ModuleIntrospector.introspect_callable(
     };
 }
 
+"""Get walker field information."""
 impl ModuleIntrospector.introspect_walker(
     self: ModuleIntrospector, walker_cls: type[WalkerArchetype]
 ) -> dict[str, Any] {
@@ -425,6 +442,7 @@ impl ModuleIntrospector.introspect_walker(
     return {'fields': fields};
 }
 
+"""Ensure client bundle is available and return hash."""
 impl ModuleIntrospector.ensure_bundle(self: ModuleIntrospector) -> str {
     if not self._module {
         raise RuntimeError('Module not loaded') ;
@@ -443,6 +461,7 @@ impl ModuleIntrospector.ensure_bundle(self: ModuleIntrospector) -> str {
     }
 }
 
+"""Render HTML page for client function."""
 impl ModuleIntrospector.render_page(
     self: ModuleIntrospector, function_name: str, args: dict[(str, Any)], username: str
 ) -> dict[str, Any] {
@@ -474,18 +493,29 @@ impl ModuleIntrospector.render_page(
     return {'html': page, 'bundle_hash': bundle_hash, 'bundle_code': self._bundle.code};
 }
 
+"""Check if authentication is required for a function based on its access level.
+
+Public functions: no authentication required
+Protected/Private functions: authentication required
+"""
 impl ModuleIntrospector.is_auth_required_for_function(
     self: ModuleIntrospector, func_name: str
 ) -> bool {
     return self._function_access.get(func_name, False);
 }
 
+"""Check if authentication is required for a walker based on its access level.
+
+Public walkers: no authentication required
+Protected/Private walkers: authentication required
+"""
 impl ModuleIntrospector.is_auth_required_for_walker(
     self: ModuleIntrospector, walker_name: str
 ) -> bool {
     return self._walker_access.get(walker_name, False);
 }
 
+"""Collect client-exposed global values."""
 impl ModuleIntrospector._collect_client_globals(
     self: ModuleIntrospector
 ) -> dict[str, Any] {
