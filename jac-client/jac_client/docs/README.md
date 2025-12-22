@@ -569,13 +569,13 @@ Jac also provides built-in auth functions:
 
 ```jac
 # Sign up
-result = await jacSignup(email, password);
+result = await jacSignup(username, password);
 if result["success"] {
     navigate("/todos");
 }
 
 # Log in
-success = await jacLogin(email, password);
+success = await jacLogin(username, password);
 if success {
     navigate("/todos");
 }

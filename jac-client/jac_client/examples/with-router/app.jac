@@ -169,8 +169,8 @@ cl {
                     style={{"margin": "0.5rem 0", "display": "block"}}
                 />
                 <input
-                    type="email"
-                    placeholder="Your email"
+                    type="text"
+                    placeholder="Your username"
                     style={{"margin": "0.5rem 0", "display": "block"}}
                 />
                 <textarea

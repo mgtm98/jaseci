@@ -384,12 +384,12 @@ def test_all_in_one_app_endpoints() -> None:
                     pytest.fail("Failed to POST /walker/create_todo")
 
                 # POST /user/register – register a new user
-                test_email = "test_user@example.com"
+                test_username = "test_user"
                 test_password = "test_password_123"
                 try:
                     print("[DEBUG] Sending POST request to /user/register endpoint")
                     register_payload = {
-                        "email": test_email,
+                        "username": test_username,
                         "password": test_password,
                     }
                     req_register = Request(
@@ -409,14 +409,14 @@ def test_all_in_one_app_endpoints() -> None:
                         )
                         assert resp_register.status == 201
                         register_data = json.loads(register_body)
-                        assert "email" in register_data
+                        assert "username" in register_data
                         assert "token" in register_data
                         assert "root_id" in register_data
-                        assert register_data["email"] == test_email
+                        assert register_data["username"] == test_username
                         assert len(register_data["token"]) > 0
                         assert len(register_data["root_id"]) > 0
                         print(
-                            f"[DEBUG] Successfully registered user: {test_email}\n"
+                            f"[DEBUG] Successfully registered user: {test_username}\n"
                             f"Token: {register_data['token'][:20]}...\n"
                             f"Root ID: {register_data['root_id']}"
                         )
@@ -428,7 +428,7 @@ def test_all_in_one_app_endpoints() -> None:
                 try:
                     print("[DEBUG] Sending POST request to /user/login endpoint")
                     login_payload = {
-                        "email": test_email,
+                        "username": test_username,
                         "password": test_password,
                     }
                     req_login = Request(
@@ -449,7 +449,7 @@ def test_all_in_one_app_endpoints() -> None:
                         assert "token" in login_data
                         assert len(login_data["token"]) > 0
                         print(
-                            f"[DEBUG] Successfully logged in user: {test_email}\n"
+                            f"[DEBUG] Successfully logged in user: {test_username}\n"
                             f"Token: {login_data['token'][:20]}..."
                         )
                 except (URLError, HTTPError) as exc:
@@ -462,7 +462,7 @@ def test_all_in_one_app_endpoints() -> None:
                         "[DEBUG] Sending POST request to /user/login with invalid credentials"
                     )
                     invalid_login_payload = {
-                        "email": "nonexistent@example.com",
+                        "username": "nonexistent_user",
                         "password": "wrong_password",
                     }
                     req_invalid_login = Request(

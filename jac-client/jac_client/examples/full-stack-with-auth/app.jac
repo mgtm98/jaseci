@@ -139,7 +139,7 @@ cl {
 
     # Login Page
     def LoginPage -> any {
-        [email, setEmail] = useState("");
+        [username, setUsername] = useState("");
         [password, setPassword] = useState("");
         [error, setError] = useState("");
         navigate = useNavigate();
@@ -147,11 +147,11 @@ cl {
         async def handleLogin(e: any) -> None {
             e.preventDefault();
             setError("");
-            if not email or not password {
+            if not username or not password {
                 setError("Please fill in all fields");
                 return;
             }
-            success = await jacLogin(email, password);
+            success = await jacLogin(username, password);
             if success {
                 navigate("/todos");
             } else {
@@ -159,8 +159,8 @@ cl {
             }
         }
 
-        def handleEmailChange(e: any) -> None {
-            setEmail(e.target.value);
+        def handleUsernameChange(e: any) -> None {
+            setUsername(e.target.value);
         }
 
         def handlePasswordChange(e: any) -> None {
@@ -203,10 +203,10 @@ cl {
                     onSubmit={handleLogin}
                 >
                     <input
-                        type="email"
-                        value={email}
-                        onChange={handleEmailChange}
-                        placeholder="Email"
+                        type="text"
+                        value={username}
+                        onChange={handleUsernameChange}
+                        placeholder="Username"
                         style={{
                             "width": "100%",
                             "padding": "8px",
@@ -265,7 +265,7 @@ cl {
 
     # Signup Page
     def SignupPage -> any {
-        [email, setEmail] = useState("");
+        [username, setUsername] = useState("");
         [password, setPassword] = useState("");
         [error, setError] = useState("");
         navigate = useNavigate();
@@ -273,11 +273,11 @@ cl {
         async def handleSignup(e: any) -> None {
             e.preventDefault();
             setError("");
-            if not email or not password {
+            if not username or not password {
                 setError("Please fill in all fields");
                 return;
             }
-            result = await jacSignup(email, password);
+            result = await jacSignup(username, password);
             if result["success"] {
                 navigate("/todos");
             } else {
@@ -285,8 +285,8 @@ cl {
             }
         }
 
-        def handleEmailChange(e: any) -> None {
-            setEmail(e.target.value);
+        def handleUsernameChange(e: any) -> None {
+            setUsername(e.target.value);
         }
 
         def handlePasswordChange(e: any) -> None {
@@ -329,10 +329,10 @@ cl {
                     onSubmit={handleSignup}
                 >
                     <input
-                        type="email"
-                        value={email}
-                        onChange={handleEmailChange}
-                        placeholder="Email"
+                        type="text"
+                        value={username}
+                        onChange={handleUsernameChange}
+                        placeholder="Username"
                         style={{
                             "width": "100%",
                             "padding": "8px",

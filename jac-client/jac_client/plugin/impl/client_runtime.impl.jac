@@ -95,13 +95,13 @@ impl __jacCallFunction(function_name: str, args: dict = {}) -> any {
     return data["result"];
 }
 
-impl jacSignup(email: str, password: str) -> dict {
+impl jacSignup(username: str, password: str) -> dict {
     response = await fetch(
         "/user/register",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"email": email, "password": password})
+            "body": JSON.stringify({"username": username, "password": password})
         }
     );
     if response.ok {
@@ -109,7 +109,7 @@ impl jacSignup(email: str, password: str) -> dict {
         token = data["token"];
         if token {
             __setLocalStorage("jac_token", token);
-            return {"success": True, "token": token, "email": email};
+            return {"success": True, "token": token, "username": username};
         }
         return {"success": False, "error": "No token received"};
     } else {
@@ -128,13 +128,13 @@ impl jacSignup(email: str, password: str) -> dict {
     }
 }
 
-impl jacLogin(email: str, password: str) -> bool {
+impl jacLogin(username: str, password: str) -> bool {
     response = await fetch(
         "/user/login",
         {
             "method": "POST",
             "headers": {"Content-Type": "application/json"},
-            "body": JSON.stringify({"email": email, "password": password})
+            "body": JSON.stringify({"username": username, "password": password})
         }
     );
     if response.ok {
