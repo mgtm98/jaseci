@@ -872,3 +872,47 @@ def test_protocol(fixture_path: Callable[[str], str]) -> None:
     """,
         program.errors_had[1].pretty_print(),
     )
+
+
+def test_classmethod(fixture_path: Callable[[str], str]) -> None:
+    """Test classmethod type checking."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_classmethod.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+
+
+def test_any_type_works_with_any_type(fixture_path: Callable[[str], str]) -> None:
+    """Test stdlib typing module imports and Any type work correctly."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_any_type_works.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # There shouldn't be any errors - Any type accepts any value
+    assert len(program.errors_had) == 0
+
+
+def test_dict_pop(fixture_path: Callable[[str], str]) -> None:
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_dict_pop.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    assert len(program.errors_had) == 3
+    _assert_error_pretty_found(
+        """
+        d.pop(); # <-- Error: Missing argument
+        ^^^^^^^
+    """,
+        program.errors_had[0].pretty_print(),
+    )
+    _assert_error_pretty_found(
+        """
+        d.pop(1); # <-- Error: Key type mismatch
+              ^
+    """,
+        program.errors_had[1].pretty_print(),
+    )
+    _assert_error_pretty_found(
+        """
+        d.pop("key", 1, 2); # <-- Error: Too many arguments
+        ^^^^^^^^^^^^^^^^^^
+    """,
+        program.errors_had[2].pretty_print(),
+    )

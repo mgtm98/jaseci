@@ -27,8 +27,8 @@ import from pydantic { BaseModel, Field, create_model }
 import from .jserver { APIParameter, HTTPMethod, JEndPoint, JServer, ParameterType }
 
 glob EndpointResponse: TypeAlias = Response | BaseModel | <>dict[(str, object)] | <>list[
-    object
-] | str | <>bytes | None;
+         object
+     ] | str | <>bytes | None;
 
 """
 JFastApiServer: FastAPI implementation of JServer for programmatic endpoint creation.
@@ -70,7 +70,7 @@ class JFastApiServer(JServer[FastAPI]) {
     def _delete(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer';
     def _route_priority(
         self: JFastApiServer, endpoint: JEndPoint
-    ) -> tuple[int, int, str];
+    ) -> tuple[int, int, int, str];
 
     def execute(self: JFastApiServer) -> None;
     def create_server(self: JFastApiServer) -> FastAPI;

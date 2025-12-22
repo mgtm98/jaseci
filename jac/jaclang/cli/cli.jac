@@ -35,7 +35,7 @@ def get_object(filename: str, id: str, session: str = '', main: bool = True) -> 
 def build(filename: str, typecheck: bool = False) -> None;
 
 @cmd_registry.register
-def check(paths: list, print_errs: bool = True) -> None;
+def check(paths: list, print_errs: bool = True, warnonly: bool = False) -> None;
 
 @cmd_registry.register
 def lsp -> None;
@@ -80,7 +80,8 @@ def dot(
     edge_limit: int = 512,
     node_limit: int = 512,
     saveto: str = '',
-    to_screen: bool = False
+    to_screen: bool = False,
+    format: str = 'dot'
 ) -> None;
 
 @cmd_registry.register

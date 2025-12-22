@@ -18,6 +18,7 @@ import from jaclang.compiler.type_system.type_utils { get_completion_items }
 import from jaclang.compiler.type_system.types {
     ClassType,
     FunctionType,
+    OverloadedType,
     ModuleType,
     TypeBase
 }

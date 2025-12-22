@@ -24,9 +24,7 @@ class AstKidInfo {
 
 """Meta data about AST nodes."""
 class UniNodeInfo {
-    with entry {
-        type_map: dict[(str, type)] = {};
-    }
+    has type_map: dict[(str, type)] = {};
 
     def init(self: UniNodeInfo, cls: type) -> None;
     def process(self: UniNodeInfo, cls: type[uni.UniNode]) -> None;
