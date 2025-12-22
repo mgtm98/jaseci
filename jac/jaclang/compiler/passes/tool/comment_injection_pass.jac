@@ -17,22 +17,18 @@ import from jaclang.pycore.constant { Tokens as Tok }
 import from jaclang.pycore.passes { Transform }
 """Information about a pair of delimiters and their positions."""
 class DelimiterInfo(NamedTuple) {
-    with entry {
-        open_idx: int;
-        close_idx: int;
-        open_line: int;
+    has open_idx: int,
+        close_idx: int,
+        open_line: int,
         close_line: int;
-    }
 }
 
 """Rich metadata about a source comment."""
 @dataclass(slots=True)
 class CommentInfo {
-    with entry {
-        index: int;
-        token: uni.CommentToken;
+    has index: int,
+        token: uni.CommentToken,
         anchor_token_id: (int | None);
-    }
 
     @property
     def is_inline(self: CommentInfo) -> bool;

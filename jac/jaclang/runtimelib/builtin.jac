@@ -7,7 +7,7 @@ import from typing { TYPE_CHECKING, Any, ClassVar, override }
 with entry {
     if TYPE_CHECKING {
         import from enum { IntEnum }
-        import from jaclang.runtimelib.constructs { AccessLevel, NodeArchetype }
+        import from jaclang.pycore.constructs { AccessLevel, NodeArchetype }
         import from jaclang { JacRuntimeInterface }
         jid: Callable[(..., Any)];
         jobj: Callable[(..., Any)];
@@ -58,16 +58,16 @@ def printgraph(
 def _jac_graph_json(file: (str | None) = None) -> str;
 
 glob __all__ = [
-    'printgraph',
-    'jid',
-    'jobj',
-    'grant',
-    'revoke',
-    'allroots',
-    'save',
-    'commit',
-    'NoPerm',
-    'ReadPerm',
-    'ConnectPerm',
-    'WritePerm'
-];
+         'printgraph',
+         'jid',
+         'jobj',
+         'grant',
+         'revoke',
+         'allroots',
+         'save',
+         'commit',
+         'NoPerm',
+         'ReadPerm',
+         'ConnectPerm',
+         'WritePerm'
+     ];
