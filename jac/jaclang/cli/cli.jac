@@ -8,6 +8,10 @@ import types;
 import from importlib.metadata { version as pkg_version }
 import from pathlib { Path }
 import from jaclang.cli.cmdreg { cmd_registry }
+import from functools { wraps }
+import subprocess;
+import from typing { Callable }
+import from watchfiles { watch }
 
 glob _runtime_initialized = False;
 
@@ -92,13 +96,17 @@ def jac2py(filename: str) -> None;
 @cmd_registry.register
 def js(filename: str) -> None;
 
+def with_hot_reload(watch_path_arg: str = 'filename') -> Callable;
+
 @cmd_registry.register
+@with_hot_reload("filename")
 def serve(
     filename: str,
     session: str = '',
     port: int = 8000,
     main: bool = True,
-    faux: bool = False
+    faux: bool = False,
+    reload: bool = False
 ) -> None;
 
 def start_cli -> None;

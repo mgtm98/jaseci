@@ -47,6 +47,75 @@ impl start_cli -> None {
     }
 }
 
+"""
+Decorator to enable hot reloading functionality.
+"""
+impl with_hot_reload(watch_path_arg: str = 'filename') -> Callable {
+    def decorator(func: Callable) -> Callable {
+        @wraps(func)
+        def wrapper( *args: Any , **kwargs: Any)  -> None {
+            reload_enabled = kwargs.get('reload', False);
+            if not reload_enabled {
+                return func(*args, **kwargs);
+            }
+            watch_path = kwargs.get(watch_path_arg, args[0] if args else None);
+            if not watch_path {
+                raise ValueError(f"Could not find {watch_path_arg} for hot reload") ;
+            }
+            base = os.path.dirname(watch_path) or '.';
+            print(f"INFO:     Hot reload enabled. Watching {base} for changes...");
+            server_process = None;
+            """Start the server as a subprocess""";
+            def start_subprocess()  -> None {
+                nonlocal server_process ;
+                cmd = (
+                    [sys.executable] + [
+                        arg
+                        for arg in sys.argv
+                        if ((arg != '--reload') and (arg != '-reload'))
+                    ]
+                );
+                server_process = subprocess.Popen(cmd);
+            }
+            """Stop the server subprocess gracefully""";
+            def stop_subprocess()  -> None {
+                nonlocal server_process ;
+                if server_process {
+                    server_process.terminate();
+                    try {
+                        server_process.wait(timeout=2);
+                    } except subprocess.TimeoutExpired {
+                        server_process.kill();
+                        server_process.wait();
+                    }
+                    server_process = None;
+                }
+            }
+            start_subprocess();
+            try {
+                for changes in watch(
+                    base,
+                    watch_filter=lambda  change: Any , path: Any: path.endswith('.jac'),
+                    debounce=1600
+                ) {
+                    print(
+                        f"INFO:     Detected changes in {[
+                            os.path.basename(p) for (_, p) in changes
+                        ]}. Reloading..."
+                    );
+                    stop_subprocess();
+                    start_subprocess();
+                }
+            } except KeyboardInterrupt {
+                print('\nShutting down...');
+                stop_subprocess();
+            }
+        }
+        return wrapper;
+    }
+    return decorator;
+}
+
 """Start a REST API server for the specified .jac file.
 
 Executes the target module and turns all functions into authenticated REST API
@@ -69,13 +138,15 @@ jac serve myprogram.jac
 jac serve myprogram.jac --port 8080
 jac serve myprogram.jac --session myapp.session
 jac serve myprogram.jac --faux
+jac serve myprogram.jac --reload
 """
 impl serve(
     filename: str,
     session: str = '',
     port: int = 8000,
     main: bool = True,
-    faux: bool = False
+    faux: bool = False,
+    reload: bool = False
 ) -> None {
     _ensure_jac_runtime();
     import from jaclang.pycore.runtime { JacRuntime as Jac }

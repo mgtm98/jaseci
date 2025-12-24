@@ -3,12 +3,11 @@
 import os
 import pathlib
 import pickle
-import subprocess
 import sys
 
 from dotenv import load_dotenv
-from watchfiles import watch
 
+from jaclang.cli.cli import with_hot_reload
 from jaclang.cli.cmdreg import CommandPriority, cmd_registry
 from jaclang.pycore.runtime import (
     ExecutionContext,
@@ -62,6 +61,7 @@ class JacCmd:
             cleanup_K8s_resources()
 
         @cmd_registry.register(priority=CommandPriority.PLUGIN, source="jac-scale")
+        @with_hot_reload(watch_path_arg="filename")
         def serve(
             filename: str,
             session: str = "",
@@ -101,125 +101,70 @@ class JacCmd:
 
             base, mod, mach = proc_file_sess(filename, session)
 
-            if reload:
-                print(f"INFO:     Hot reload enabled. Watching {base} for changes...")
+            # Normal mode: do full initialization in this process
+            lng = filename.split(".")[-1]
+            Jac.set_base_path(base)
 
-                # Run server in subprocess so we can restart it cleanly
-                server_process = None
-
-                def start_server_subprocess() -> None:
-                    """Start the server as a subprocess"""
-                    nonlocal server_process
-                    cmd = [sys.executable] + [
-                        arg
-                        for arg in sys.argv
-                        if arg != "--reload" and arg != "-reload"
-                    ]
-                    server_process = subprocess.Popen(cmd)
-
-                def stop_server_subprocess() -> None:
-                    """Stop the server subprocess gracefully"""
-                    nonlocal server_process
-                    if server_process:
-                        server_process.terminate()
-                        try:
-                            server_process.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            server_process.kill()
-                            server_process.wait()
-                        server_process = None
-
-                start_server_subprocess()
-
+            # Import the module
+            if filename.endswith((".jac", ".py")):
                 try:
-                    # Watch for changes (with debounce to avoid spurious reloads)
-                    for changes in watch(
-                        base,
-                        watch_filter=lambda change, path: path.endswith(".jac"),
-                        debounce=1600,  # Wait 1.6s to batch rapid changes
-                    ):
-                        print(
-                            f"INFO:     Detected changes in {[os.path.basename(p) for _, p in changes]}. Reloading..."
-                        )
-
-                        # Stop old server
-                        stop_server_subprocess()
-
-                        # Start new server
-                        start_server_subprocess()
-
-                except KeyboardInterrupt:
-                    print("\nShutting down...")
-                    stop_server_subprocess()
+                    Jac.jac_import(
+                        target=mod,
+                        base_path=base,
+                        lng=lng,
+                    )
+                except Exception as e:
+                    print(f"Error loading {filename}: {e}", file=sys.stderr)
                     mach.close()
-
-            else:
-                # Normal mode: do full initialization in this process
-                lng = filename.split(".")[-1]
-                Jac.set_base_path(base)
-
-                # Import the module
-                if filename.endswith((".jac", ".py")):
-                    try:
+                    exit(1)
+            elif filename.endswith(".jir"):
+                try:
+                    with open(filename, "rb") as f:
+                        Jac.attach_program(pickle.load(f))
                         Jac.jac_import(
                             target=mod,
                             base_path=base,
                             lng=lng,
                         )
-                    except Exception as e:
-                        print(f"Error loading {filename}: {e}", file=sys.stderr)
-                        mach.close()
-                        exit(1)
-                elif filename.endswith(".jir"):
-                    try:
-                        with open(filename, "rb") as f:
-                            Jac.attach_program(pickle.load(f))
-                            Jac.jac_import(
-                                target=mod,
-                                base_path=base,
-                                lng=lng,
-                            )
-                    except Exception as e:
-                        print(f"Error loading {filename}: {e}", file=sys.stderr)
-                        mach.close()
-                        exit(1)
-
-                # Create and start the API server
-                session_path = (
-                    session if session else os.path.join(base, f"{mod}.session")
-                )
-
-                server = JacAPIServer(
-                    module_name=mod,
-                    session_path=session_path,
-                    port=port,
-                    base_path=base,
-                )
-
-                # If faux mode, print endpoint documentation and exit
-                if faux:
-                    try:
-                        server.print_endpoint_docs()
-                        mach.close()
-                        return
-                    except Exception as e:
-                        print(
-                            f"Error generating endpoint documentation: {e}",
-                            file=sys.stderr,
-                        )
-                        mach.close()
-                        exit(1)
-
-                # Start the server
-                try:
-                    server.start()
-                except KeyboardInterrupt:
-                    print("\nServer stopped.")
-                    mach.close()  # Close on shutdown
                 except Exception as e:
-                    print(f"Server error: {e}", file=sys.stderr)
+                    print(f"Error loading {filename}: {e}", file=sys.stderr)
                     mach.close()
                     exit(1)
+
+            # Create and start the API server
+            session_path = session if session else os.path.join(base, f"{mod}.session")
+
+            server = JacAPIServer(
+                module_name=mod,
+                session_path=session_path,
+                port=port,
+                base_path=base,
+            )
+
+            # If faux mode, print endpoint documentation and exit
+            if faux:
+                try:
+                    server.print_endpoint_docs()
+                    mach.close()
+                    return
+                except Exception as e:
+                    print(
+                        f"Error generating endpoint documentation: {e}",
+                        file=sys.stderr,
+                    )
+                    mach.close()
+                    exit(1)
+
+            # Start the server
+            try:
+                server.start()
+            except KeyboardInterrupt:
+                print("\nServer stopped.")
+                mach.close()  # Close on shutdown
+            except Exception as e:
+                print(f"Server error: {e}", file=sys.stderr)
+                mach.close()
+                exit(1)
 
 
 # Plugin implementation for overriding JacRuntime hooks
