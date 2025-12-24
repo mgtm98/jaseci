@@ -22,6 +22,7 @@ class TypeCategory(IntEnum) {
         TypeVar = auto();
         Class = auto();
         Function = auto();
+        Overload = auto();
         Union = auto();
     }
 }
@@ -178,7 +179,10 @@ Holds the private details of class type.
     def clone_as_class(self: ClassType) -> ClassType;
     def specialize_generics(self: ClassType, type_args: list[TypeBase]) -> ClassType;
     def get_class_symbol(self: ClassType) -> Symbol;
-    def lookup_member_symbol(self: ClassType, member: str) -> (Symbol | None);
+    def lookup_member_symbol(
+        self: ClassType, member: str, r_overloaded: list | None = None
+    ) -> (Symbol | None);
+
     def is_builtin(self: ClassType, class_name: (str | None) = None) -> bool;
     def is_data_class(self: ClassType) -> bool;
     def is_edge_type(self: ClassType) -> bool;
@@ -205,6 +209,7 @@ class Parameter {
         param_type: (TypeBase | None),
         default_value: (Expr | None) = None,
         is_self: bool = False,
+        is_cls: bool = False,
         param_kind: ParamKind = ParamKind.NORMAL
     ) -> None;
 }
@@ -227,6 +232,15 @@ class FunctionType(TypeBase) {
     def _index_of_type_param(
         self: FunctionType, class_type: ClassType, type_var: TypeVarType
     ) -> int;
+}
+
+"""Represents an overloaded type."""
+class OverloadedType(TypeBase) {
+    with entry {
+        CATEGORY: ClassVar[TypeCategory] = TypeCategory.Overload;
+    }
+
+    def init(self: OverloadedType, overloads: list[FunctionType]) -> None;
 }
 
 """Represents a union type."""
