@@ -329,6 +329,15 @@ def test_deep_imports_interp_mode(fixture_path: Callable[[str], str]) -> None:
     Jac.attach_program(
         JacProgram(),
     )
+    # Clear any cached module from previous test runs
+    for mod_name in list(sys.modules.keys()):
+        if "deep_import_interp" in mod_name:
+            del sys.modules[mod_name]
+    # Delete bytecode cache files to force recompilation
+    cache_dir = Path.cwd() / ".jaccache"
+    if cache_dir.exists():
+        for cache_file in cache_dir.glob("deep_import_interp*.jbc"):
+            cache_file.unlink()
     Jac.jac_import("deep_import_interp", base_path=fixture_path("./"))
     assert len(Jac.get_program().mod.hub.keys()) == 1
     Jac.set_base_path(fixture_path("./"))

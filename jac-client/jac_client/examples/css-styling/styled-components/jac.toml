@@ -1,0 +1,8 @@
+[project]
+name = "styled-components"
+version = "1.0.0"
+description = "Jac application: styled-components"
+entry-point = "app.jac"
+
+[dependencies.npm]
+styled-components = "^6.1.13"

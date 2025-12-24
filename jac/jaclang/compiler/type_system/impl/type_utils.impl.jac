@@ -85,9 +85,7 @@ impl completion_kind_from_sym(sym: Symbol) -> int {
 }
 
 """Check if there are any unmatched required parameters."""
-impl ParamAssignmentTracker.get_unmatched_required_params(
-    self: ParamAssignmentTracker
-) -> list[types.Parameter] {
+impl ParamAssignmentTracker.get_unmatched_required_params -> list[types.Parameter] {
     ret: list[types.Parameter] = [];
     for param in self.params {
         if (
@@ -105,7 +103,7 @@ impl ParamAssignmentTracker.get_unmatched_required_params(
 
 """Match a positional argument to a parameter."""
 impl ParamAssignmentTracker.match_positional_argument(
-    self: ParamAssignmentTracker, arg: uni.Expr
+    arg: uni.Expr
 ) -> (types.Parameter | None) {
     if (self.curr_param_idx == -1) {
         return self.varargs;
@@ -132,7 +130,7 @@ impl ParamAssignmentTracker.match_positional_argument(
 
 """Match a named argument to a parameter."""
 impl ParamAssignmentTracker.match_named_argument(
-    self: ParamAssignmentTracker, arg: uni.KWPair
+    arg: uni.KWPair
 ) -> (types.Parameter | None) {
     if (arg.key is None) {
         self._mark_all_named_params_as_matched();
@@ -148,9 +146,7 @@ impl ParamAssignmentTracker.match_named_argument(
 }
 
 """Mark all positional parameters as matched."""
-impl ParamAssignmentTracker._mark_all_positional_params_as_matched(
-    self: ParamAssignmentTracker
-) -> None {
+impl ParamAssignmentTracker._mark_all_positional_params_as_matched -> None {
     for param in self.params {
         if (
             param.param_kind in (
@@ -166,9 +162,7 @@ impl ParamAssignmentTracker._mark_all_positional_params_as_matched(
 }
 
 """Mark all named parameters as matched."""
-impl ParamAssignmentTracker._mark_all_named_params_as_matched(
-    self: ParamAssignmentTracker
-) -> None {
+impl ParamAssignmentTracker._mark_all_named_params_as_matched -> None {
     for param in self.params {
         if (
             param.param_kind in (
@@ -184,7 +178,7 @@ impl ParamAssignmentTracker._mark_all_named_params_as_matched(
 
 """Lookup a named parameter by name and if any match is found we mark it as such."""
 impl ParamAssignmentTracker.lookup_named_parameter(
-    self: ParamAssignmentTracker, param_name: str
+    param_name: str
 ) -> (types.Parameter | None) {
     for param in self.params {
         if (
@@ -210,15 +204,8 @@ impl ParamAssignmentTracker.lookup_named_parameter(
     return self.kwargs;
 }
 
-"""Initialize obviously."""
-impl ParamAssignmentTracker.init(
-    self: ParamAssignmentTracker, params: list[types.Parameter]
-) -> None {
-    self.params = params;
-    self.curr_param_idx = 0;
-    self.matched_params: set[types.Parameter] = <>set();
-    self.varargs: (types.Parameter | None) = None;
-    self.kwargs: (types.Parameter | None) = None;
+"""Initialize varargs and kwargs from params."""
+impl ParamAssignmentTracker.postinit -> None {
     for param in self.params {
         if (param.param_kind == types.ParamKind.VARARG) {
             self.varargs = param;
@@ -253,23 +240,4 @@ impl compute_mro_linearization(cls: types.ClassType) -> None {
             }
         }
     }
-}
-
-"""Initialize obviously."""
-impl ClassMember.init(
-    self: ClassMember,
-    symbol: Symbol,
-    class_type: types.ClassType,
-    overloads: list[Symbol]
-) -> None {
-    self.symbol = symbol;
-    self.overloads = overloads;
-    self.class_type = class_type;
-    self.is_instance_member = True;
-    self.is_class_member = False;
-    self.is_slots_member = False;
-    self.is_class_var = False;
-    self.is_read_only = False;
-    self.is_type_declared = False;
-    self.skipped_undeclared_type = False;
 }

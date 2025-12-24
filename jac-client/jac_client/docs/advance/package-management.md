@@ -1,15 +1,15 @@
 # Package Management
 
-Manage npm dependencies for your Jac Client projects through a centralized configuration system.
+Manage npm dependencies for your Jac Client projects through the unified `jac.toml` configuration.
 
 ## Overview
 
-Jac Client provides a unified package management system that:
+Jac Client integrates with the core Jac package management system:
 
-- Manages dependencies through `config.json` (not `package.json`)
+- Manages dependencies through `jac.toml` (the standard Jac project config)
+- Uses `[dependencies.npm]` and `[dependencies.npm.dev]` sections
 - Automatically generates `package.json` from your configuration
 - Integrates seamlessly with the build system
-- Supports both regular and scoped packages
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ jac add --cl lodash@^4.17.21
 Add a dev dependency:
 
 ```bash
-jac add --cl -d @types/react
+jac add --cl --dev @types/react
 ```
 
 ### Removing a Package
@@ -44,90 +44,94 @@ jac remove --cl lodash
 Remove a package from devDependencies:
 
 ```bash
-jac remove --cl -D @types/react
+jac remove --cl --dev @types/react
 ```
 
 ### Installing All Packages
 
-Install all packages listed in `config.json`:
+Install all packages listed in `jac.toml`:
 
 ```bash
 jac add --cl
 ```
 
-> **Note**: When you run `jac add --cl` without specifying a package name, it installs all packages listed in the `dependencies` and `devDependencies` sections of your `config.json`. This is useful after manually editing `config.json` or when setting up a project on a new machine.
+> **Note**: When you run `jac add --cl` without specifying a package name, it installs all packages listed in the `[dependencies.npm]` and `[dependencies.npm.dev]` sections of your `jac.toml`.
+
+## Configuration in jac.toml
+
+### Basic Structure
+
+npm dependencies are configured in your `jac.toml` file:
+
+```toml
+[project]
+name = "my-app"
+version = "1.0.0"
+description = "My Jac application"
+entry-point = "app.jac"
+
+[dependencies.npm]
+lodash = "^4.17.21"
+axios = "^1.6.0"
+
+[dependencies.npm.dev]
+sass = "^1.77.8"
+"@types/lodash" = "^4.17.0"
+```
+
+### Package Storage
+
+- **Runtime dependencies**: `[dependencies.npm]` section
+- **Dev dependencies**: `[dependencies.npm.dev]` section
+
+**Default packages are automatically added during build time:**
+
+- **Dependencies**: `react`, `react-dom`, `react-router-dom`
+- **DevDependencies**: `vite`, `@babel/cli`, `@babel/core`, `@babel/preset-env`, `@babel/preset-react`
+- **TypeScript packages** (if detected): `typescript`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`
+
+### Example jac.toml
+
+```toml
+[project]
+name = "my-app"
+version = "1.0.0"
+description = "My Jac application"
+entry-point = "app.jac"
+
+# Vite configuration (optional)
+[plugins.client.vite]
+plugins = ["tailwindcss()"]
+lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
+
+[plugins.client.vite.build]
+sourcemap = true
+
+[plugins.client.vite.server]
+port = 3000
+
+# npm dependencies
+[dependencies.npm]
+lodash = "^4.17.21"
+
+[dependencies.npm.dev]
+"@tailwindcss/vite" = "latest"
+tailwindcss = "latest"
+```
 
 ## How It Works
 
-### Configuration-First Approach
-
-Unlike traditional npm projects, Jac Client uses `config.json` as the source of truth for package management:
+### Configuration Flow
 
 ```
-config.json (source of truth)
+jac.toml (source of truth)
     ↓
-PackageInstaller updates config.json
+JacClientConfig reads from jac.toml
     ↓
 ViteBundler generates package.json
     ↓
 npm install installs packages
 ```
-
-### Package Storage
-
-Packages are stored in `config.json` under the `package` section. However, **default dependencies are automatically added during build time** and should not be included in `config.json`:
-
-**Automatically Added (Don't include in config.json):**
-
-- **Dependencies**: `react`, `react-dom`, `react-router-dom`
-- **DevDependencies**: `vite`, `@babel/cli`, `@babel/core`, `@babel/preset-env`, `@babel/preset-react`
-- **TypeScript packages** (if TypeScript is detected): `typescript`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`
-
-**Only include custom packages in config.json:**
-
-```json
-{
-  "package": {
-    "name": "my-app",
-    "version": "1.0.0",
-    "dependencies": {
-      "lodash": "^4.17.21"
-    },
-    "devDependencies": {
-      "sass": "^1.77.8"
-    }
-  }
-}
-```
-
-> **Note**: React, React-DOM, React-Router-DOM, and all Babel packages are automatically added to the generated `package.json` during build time. You only need to add custom packages that aren't part of the defaults.
-
-### Default Dependencies (Automatically Added)
-
-The following dependencies are **automatically added during build time** and should **not** be included in `config.json`:
-
-**Runtime Dependencies (always added):**
-
-- `react` (^19.2.0)
-- `react-dom` (^19.2.0)
-- `react-router-dom` (^6.30.1)
-
-**Development Dependencies (always added):**
-
-- `vite` (^6.4.1)
-- `@babel/cli` (^7.28.3)
-- `@babel/core` (^7.28.5)
-- `@babel/preset-env` (^7.28.5)
-- `@babel/preset-react` (^7.28.5)
-
-**TypeScript Dependencies (added if TypeScript is detected):**
-
-- `typescript` (^5.3.3)
-- `@types/react` (^18.2.45)
-- `@types/react-dom` (^18.2.18)
-- `@vitejs/plugin-react` (^4.2.1)
-
-> **Important**: Only add custom packages to `config.json`. The build system automatically includes all default dependencies when generating `package.json`.
 
 ### Generated Files
 
@@ -136,7 +140,7 @@ The system automatically generates `package.json` in `.jac-client.configs/` dire
 - **Location**: `.jac-client.configs/package.json`
 - **Purpose**: Used by npm for actual package installation
 - **Git**: This directory is automatically gitignored
-- **Source**: Generated from `config.json` during build/install
+- **Source**: Generated from `jac.toml` during build/install
 
 ## CLI Commands
 
@@ -151,19 +155,19 @@ Add a package to your project.
 jac add --cl lodash
 
 # Add to devDependencies
-jac add --cl -d @types/react
+jac add --cl --dev @types/react
 
 # Add with specific version
 jac add --cl lodash@^4.17.21
 
-# Install all packages from config.json
+# Install all packages from jac.toml
 jac add --cl
 ```
 
 #### Flags
 
-- `--cl`: Required flag indicating client-side package management
-- `-D`: Add to `devDependencies` instead of `dependencies`
+- `--cl`: Required flag indicating client-side (npm) package
+- `--dev` or `-d`: Add to dev dependencies
 
 #### Package Name Formats
 
@@ -187,17 +191,16 @@ jac add --cl @vitejs/plugin-react@^4.0.0    # Scoped with version
 
 **When adding a specific package** (`jac add --cl <package>`):
 
-1. Package is added to `config.json` (dependencies or devDependencies)
-2. `package.json` is regenerated from `config.json`
-3. `npm install` is run to install the package
-4. `package-lock.json` is created/updated
+1. Package is added to `jac.toml` (`[dependencies.npm]` or `[dependencies.npm.dev]`)
+2. `jac.toml` is saved
+3. `package.json` is regenerated from `jac.toml`
+4. `npm install` is run to install the package
 
 **When installing all packages** (`jac add --cl` without package name):
 
-1. Reads all packages from `config.json` (both `dependencies` and `devDependencies`)
-2. `package.json` is regenerated from `config.json`
-3. `npm install` is run to install **all** configured packages
-4. `package-lock.json` is created/updated with all packages
+1. Reads all packages from `jac.toml`
+2. `package.json` is regenerated
+3. `npm install` is run to install all packages
 
 ### `jac remove --cl <package>`
 
@@ -210,51 +213,14 @@ Remove a package from your project.
 jac remove --cl lodash
 
 # Remove from devDependencies
-jac remove --cl -D @types/react
+jac remove --cl --dev @types/react
 ```
-
-#### Flags
-
-- `--cl`: Required flag indicating client-side package management
-- `-D`: Remove from `devDependencies` instead of `dependencies`
 
 #### What Happens
 
-1. Package is removed from `config.json`
-2. `package.json` is regenerated from `config.json`
+1. Package is removed from `jac.toml`
+2. `package.json` is regenerated
 3. `npm install` is run to update `node_modules`
-4. Package is removed from `node_modules`
-
-## Manual Configuration
-
-You can also manually edit `config.json` to manage packages:
-
-```json
-{
-  "package": {
-    "dependencies": {
-      "lodash": "^4.17.21",
-      "react": "^18.0.0"
-    },
-    "devDependencies": {
-      "@types/react": "^18.0.0",
-      "vite": "^5.0.0"
-    }
-  }
-}
-```
-
-After manual edits, run:
-
-```bash
-jac add --cl
-```
-
-This will **install all packages** listed in both `dependencies` and `devDependencies` sections of your `config.json`. The command:
-
-1. Regenerates `package.json` from `config.json`
-2. Runs `npm install` to install all configured packages
-3. Updates `package-lock.json` accordingly
 
 ## Package Version Management
 
@@ -262,19 +228,13 @@ This will **install all packages** listed in both `dependencies` and `devDepende
 
 The system supports all npm version formats:
 
-```json
-{
-  "package": {
-    "dependencies": {
-      "exact": "1.2.3",              // Exact version
-      "caret": "^1.2.3",             // Compatible version (^)
-      "tilde": "~1.2.3",             // Approximate version (~)
-      "range": ">=1.2.3 <2.0.0",     // Version range
-      "latest": "latest",            // Latest version
-      "tag": "beta"                  // Version tag
-    }
-  }
-}
+```toml
+[dependencies.npm]
+exact = "1.2.3"              # Exact version
+caret = "^1.2.3"             # Compatible version (^)
+tilde = "~1.2.3"             # Approximate version (~)
+range = ">=1.2.3 <2.0.0"     # Version range
+latest = "latest"            # Latest version
 ```
 
 ### Default Version
@@ -283,36 +243,19 @@ If no version is specified, the package is added with `"latest"`:
 
 ```bash
 jac add --cl lodash
-# Adds: "lodash": "latest"
+# Adds: lodash = "latest" to [dependencies.npm]
 ```
-
-## Scoped Packages
-
-Scoped packages (packages starting with `@`) are fully supported:
-
-```bash
-# Add scoped package
-jac add --cl @types/react
-
-# Add scoped package with version
-jac add --cl @types/react@^18.0.0
-
-# Remove scoped package
-jac remove --cl @types/react
-```
-
-The system correctly parses scoped packages by finding the version separator (`@`) after the scope name.
 
 ## Integration with Build System
 
 ### Automatic Regeneration
 
-The build system automatically regenerates `package.json` from `config.json`:
+The build system automatically regenerates `package.json` from `jac.toml`:
 
-1. **During `jac add --cl <package>`**: Regenerates before running npm install for the specific package
-2. **During `jac add --cl`** (no package): Regenerates and installs **all packages** from `config.json`
-3. **During `jac remove --cl`**: Regenerates before running npm install
-4. **During `jac serve`**: Regenerates if config.json changed
+1. **During `jac add --cl <package>`**: Regenerates and installs the specific package
+2. **During `jac add --cl`** (no package): Regenerates and installs all packages
+3. **During `jac remove --cl`**: Regenerates after removal
+4. **During `jac serve`**: Regenerates if jac.toml changed
 5. **During `jac build`**: Regenerates before building
 
 ### Package.json Location
@@ -321,11 +264,12 @@ Generated `package.json` is stored in `.jac-client.configs/`:
 
 ```
 project-root/
-├── config.json              # Your source of truth (committed)
+├── jac.toml                 # Your source of truth (committed)
+├── app.jac                  # Your Jac application
 ├── .jac-client.configs/     # Generated files (gitignored)
-│   ├── package.json         # Generated from config.json
+│   ├── package.json         # Generated from jac.toml
 │   ├── package-lock.json    # Generated by npm
-│   └── vite.config.js      # Generated Vite config
+│   └── vite.config.js       # Generated Vite config
 └── node_modules/            # Installed packages
 ```
 
@@ -339,64 +283,39 @@ Prefer CLI commands over manual editing:
 # Good: Use CLI
 jac add --cl lodash
 
-# Less ideal: Manual edit (requires running jac add --cl after)
+# Less ideal: Manual edit (but works)
+# Edit jac.toml, then run: jac add --cl
 ```
 
-### 2. Commit config.json, Not package.json
+### 2. Commit jac.toml, Not package.json
 
-- **Commit**: `config.json` (your source of truth)
+- **Commit**: `jac.toml` (your source of truth)
 - **Don't commit**: `.jac-client.configs/package.json` (generated)
-
-The `.gitignore` automatically excludes generated files.
 
 ### 3. Version Pinning for Production
 
-For production apps, pin exact versions or use caret ranges:
+For production apps, pin versions:
 
-```json
-{
-  "package": {
-    "dependencies": {
-      "react": "^18.2.0",      // Caret for minor updates
-      "lodash": "4.17.21"      // Exact for stability
-    }
-  }
-}
+```toml
+[dependencies.npm]
+lodash = "4.17.21"      # Exact for stability
+
+[dependencies.npm.dev]
+sass = "^1.77.8"        # Caret for dev tools
 ```
 
 ### 4. Keep Dependencies Organized
 
-Separate runtime dependencies from dev dependencies (only custom packages):
+Only include custom packages (defaults are auto-added):
 
-```json
-{
-  "package": {
-    "dependencies": {
-      "lodash": "^4.17.21"
-    },
-    "devDependencies": {
-      "@types/lodash": "^4.17.21",
-      "sass": "^1.77.8"
-    }
-  }
-}
+```toml
+[dependencies.npm]
+lodash = "^4.17.21"
+
+[dependencies.npm.dev]
+"@types/lodash" = "^4.17.21"
+sass = "^1.77.8"
 ```
-
-> **Note**: React, Babel, and Vite packages are automatically added during build time and don't need to be in `config.json`.
-
-### 5. Regular Updates
-
-Keep packages updated:
-
-```bash
-# Check for outdated packages
-npm outdated
-
-# Update versions in config.json, then install all packages
-jac add --cl
-```
-
-> **Note**: `jac add --cl` (without a package name) installs all packages from `config.json`, making it perfect for syncing dependencies after manual edits or when setting up on a new machine.
 
 ## Troubleshooting
 
@@ -410,26 +329,6 @@ jac add --cl
 - Check npm registry is accessible
 - Ensure you have internet connection
 
-### Version Conflicts
-
-**Problem**: Package version conflicts during installation.
-
-**Solution**:
-
-- Check `package.json` in `.jac-client.configs/` for conflicts
-- Update conflicting packages to compatible versions
-- Use `npm ls` to see dependency tree
-
-### Config Not Applied
-
-**Problem**: Changes to `config.json` not reflected.
-
-**Solution**:
-
-- Run `jac add --cl` to regenerate and install
-- Check JSON syntax is valid
-- Verify package names are correct
-
 ### npm Command Not Found
 
 **Problem**: `npm command not found` error.
@@ -440,84 +339,49 @@ jac add --cl
 - Verify npm is in your PATH
 - Check Node.js version: `node --version`
 
-### Scoped Package Issues
+### Config Not Applied
 
-**Problem**: Scoped package not parsed correctly.
+**Problem**: Changes to `jac.toml` not reflected.
 
 **Solution**:
 
-- Use the CLI command (handles scoping automatically)
-- For manual edits, ensure format: `"@scope/package": "version"`
+- Run `jac add --cl` to regenerate and install
+- Check TOML syntax is valid
+- Verify package names are correct
 
 ## Examples
 
-### Example 1: TypeScript Support
-
-TypeScript dependencies are automatically added when TypeScript is detected (via `tsconfig.json` or TypeScript packages in config). You don't need to manually add React or TypeScript types - they're included automatically.
-
-If you need additional TypeScript-related packages:
+### Example 1: Adding Tailwind CSS
 
 ```bash
-# Add additional TypeScript tooling (if needed)
-jac add --cl -d @types/lodash
+# Add Tailwind packages
+jac add --cl --dev @tailwindcss/vite
+jac add --cl --dev tailwindcss
 ```
 
-Result in `config.json`:
+Then update `jac.toml` for Vite plugin:
 
-```json
-{
-  "package": {
-    "dependencies": {},
-    "devDependencies": {
-      "@types/lodash": "latest"
-    }
-  }
-}
+```toml
+[plugins.client.vite]
+plugins = ["tailwindcss()"]
+lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 ```
 
-> **Note**: React, React-DOM, React-Router-DOM, and TypeScript packages (`typescript`, `@types/react`, `@types/react-dom`, `@vitejs/plugin-react`) are automatically added during build time when TypeScript is detected.
-
-### Example 2: Adding Tailwind CSS
-
-```bash
-# Add Tailwind
-jac add --cl -d @tailwindcss/vite
-jac add --cl -d tailwindcss
-```
-
-Then update `config.json`:
-
-```json
-{
-  "vite": {
-    "plugins": ["tailwindcss()"],
-    "lib_imports": ["import tailwindcss from '@tailwindcss/vite'"]
-  },
-  "package": {
-    "devDependencies": {
-      "@tailwindcss/vite": "latest",
-      "tailwindcss": "latest"
-    }
-  }
-}
-```
-
-### Example 3: Complete Setup
+### Example 2: Complete Setup
 
 ```bash
 # Create project
 jac create_jac_app my-app
 cd my-app
 
-# Add custom dependencies (React/Babel are added automatically)
+# Add custom dependencies
 jac add --cl lodash@^4.17.21
+jac add --cl --dev @types/lodash
+jac add --cl --dev sass
 
-# Add custom dev dependencies
-jac add --cl -d @types/lodash
-jac add --cl -d sass
+# Build/serve
+jac serve app.jac
 ```
-
-> **Note**: React, React-DOM, React-Router-DOM, Vite, and Babel packages are automatically added during build time. You only need to add custom packages like `lodash`, `sass`, `tailwindcss`, etc.
 
 ## Related Documentation
 

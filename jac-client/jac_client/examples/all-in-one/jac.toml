@@ -1,0 +1,15 @@
+[project]
+name = "all-in-one"
+version = "1.0.0"
+description = "Jac application: all-in-one"
+entry-point = "app.jac"
+
+[dependencies.npm]
+react = "^18.2.0"
+"react-dom" = "^18.2.0"
+"react-router-dom" = "^6.22.0"
+antd = "^6.0.0"
+
+[dependencies.npm.dev]
+"@types/react" = "^18.2.0"
+"@types/react-dom" = "^18.2.0"

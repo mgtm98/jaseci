@@ -1,0 +1,11 @@
+[project]
+name = "material-ui"
+version = "1.0.0"
+description = "Jac application: material-ui"
+entry-point = "app.jac"
+
+[dependencies.npm]
+"@emotion/react" = "^11.14.0"
+"@emotion/styled" = "^11.14.1"
+"@mui/icons-material" = "^7.3.5"
+"@mui/material" = "^7.3.5"

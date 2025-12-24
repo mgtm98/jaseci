@@ -21,19 +21,23 @@ import from jaclang.runtimelib.server { JsonValue }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.utils { generate_random_password }
+import from jac_scale.config_loader { get_scale_config }
 
-glob JWT_SECRET = getenv('JWT_SECRET', 'supersecretkey'),
-     JWT_ALGORITHM = getenv('JWT_ALGORITHM', 'HS256'),
-     JWT_EXP_DELTA_DAYS = getenv('JWT_EXP_DELTA_DAYS', 7),
-     SSO_HOST = getenv("SSO_HOST", "http://localhost:8000/sso");
+# Load configuration from jac.toml with env var overrides
+glob _jwt_config = get_scale_config().get_jwt_config(),
+     _sso_config = get_scale_config().get_sso_config(),
+     JWT_SECRET = _jwt_config['secret'],
+     JWT_ALGORITHM = _jwt_config['algorithm'],
+     JWT_EXP_DELTA_DAYS = _jwt_config['exp_delta_days'],
+     SSO_HOST = _sso_config['host'];
 
 class Platforms(StrEnum) {
     has GOOGLE: str = 'google';
 }
 
 class Operations(StrEnum) {
-    has LOGIN: str = 'login';
-    has REGISTER: str = 'register';
+    has LOGIN: str = 'login',
+        REGISTER: str = 'register';
 }
 
 class JacAPIServer(JServer) {

@@ -60,9 +60,7 @@ impl CommandRegistry._bind_command_to_argparse(
     );
     first = True;
     for (param_name, param) in cmd.sig.parameters.items() {
-        type_name = param.annotation.__name__
-        if param.annotation?.__name__
-        else str(param.annotation);
+        type_name = param.annotation?.__name__ or str(param.annotation);
         docstring_param_descriptions = extract_param_descriptions(doc);
         if (param_name in docstring_param_descriptions) {
             arg_msg = f"{type_name} - {docstring_param_descriptions[param_name]}";
@@ -112,12 +110,23 @@ impl CommandRegistry._bind_command_to_argparse(
         } elif first {
             arg_msg += f", default: {param.default}";
             first = False;
-            cmd_parser.add_argument(
-                f"{param_name}",
-                <>default=param.default,
-                <>type=eval(param.annotation),
-                help=arg_msg
-            );
+            # Handle list types with nargs='*' to allow zero or more arguments
+            annotation = eval(param.annotation)
+            if isinstance(param.annotation, str)
+            else param.annotation;
+            if annotation is list
+            or (annotation?.__origin__ and annotation?.__origin__ is list) {
+                cmd_parser.add_argument(
+                    f"{param_name}", <>default=param.default, nargs='*', help=arg_msg
+                );
+            } else {
+                cmd_parser.add_argument(
+                    f"{param_name}",
+                    <>default=param.default,
+                    <>type=annotation,
+                    help=arg_msg
+                );
+            }
         } else {
             arg_msg += f", default: {param.default}";
             if (param.annotation is bool or param.annotation == 'bool') {

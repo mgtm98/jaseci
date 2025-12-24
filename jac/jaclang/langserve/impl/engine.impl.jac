@@ -1,6 +1,11 @@
 impl JacLangServer.shutdown(self: JacLangServer) -> None {
+    # Guard against double shutdown.
+    if self._shutdown_called {
+        return;
+    }
+    self._shutdown_called = True;
     try {
-        if self?.worker_thread and self.worker_thread.is_alive() {
+        if self?.worker_thread and self?.worker_thread.is_alive() {
             self.queue.put(None);  # Signal the worker thread to exit
             self.worker_thread.join();  # Wait for the worker thread to finish
         }
@@ -129,12 +134,17 @@ impl JacLangServer.get_definition(
             return make_location(parent.body.sym.decl);
         }
     }
-    if not node_selected or not node_selected.type {
-        return None;
+    ####################################################################
+    ##         Fallback: use symbol resolution if available           ##
+    ####################################################################
+    # Even if type is not available, we can still navigate using the symbol
+    # reference. This is important for symbols resolved in impl bodies where
+    # type inference may not have run yet.
+    if node_selected.sym and node_selected.sym.defn {
+        try {
+            return make_location(node_selected.sym.defn[0]);
+        } except Exception { }
     }
-    try {
-        return make_location(node_selected.sym.defn[0]);
-    } except Exception { }
     return None;
 }
 
@@ -158,7 +168,7 @@ impl JacLangServer.get_node_info(
             sym_node = sym_node.name_of;
         }
         access = (sym_node.sym.access.value + ' ') if sym_node.sym else None;
-        node_info = f"'('{(access if access else '')}{sym_node.sym_category.value}') '{sym_node.sym_name}";
+        node_info = f"'('{(access or '')}{sym_node.sym_category.value}') '{sym_node.sym_name}";
         if sym_node.name_spec.clean_type {
             node_info += f"': '{sym_node.name_spec.clean_type}";
         }
@@ -417,9 +427,7 @@ impl JacLangServer.type_check_file(
                 # to display diagnostic , it need URI starts with "file://"
             ),
             utils.gen_diagnostics(
-                (annex_view if annex_view else fs_path),
-                self.errors_had,
-                self.warnings_had
+                (annex_view or fs_path), self.errors_had, self.warnings_had
             )
         );
         if annex_view {
@@ -501,6 +509,7 @@ impl JacLangServer.init(self: JacLangServer) -> None {
     self.last_task: Task | None = None;
     self.worker_thread = threading.Thread(target=self.dispatcher);
     self.worker_thread.start();
+    self._shutdown_called = False;
 }
 
 impl Task.init(self: Task, file_uri: str) {

@@ -8,7 +8,10 @@ This pass applies automatic linting corrections to Jac code, including:
 - Converting `def __init__` to `can init` (Jac style)
 - Converting `def __post_init__` to `can postinit` (Jac style)
 - Removing empty parentheses from function/method declarations (def foo() -> def foo)
-- Removing unnecessary <> from names that are not actual keywords
+- Removing unnecessary angle bracket escaping from names that are not actual keywords
+- Converting hasattr(obj, "attr") to null-safe access
+- Propagating null-safe access consistency
+- Simplifying ternary expressions (x if x else default -> x or default)
 - (Future) Import organization
 - (Future) Redundant code removal
 """
@@ -54,4 +57,35 @@ class JacAutoLintPass(UniPass) {
     def enter_name(self: JacAutoLintPass, <>node: uni.Name) -> None;
     def enter_special_var_ref(self: JacAutoLintPass, <>node: uni.SpecialVarRef) -> None;
     def enter_builtin_type(self: JacAutoLintPass, <>node: uni.BuiltinType) -> None;
+    def exit_func_call(self: JacAutoLintPass, node: uni.FuncCall) -> None;
+    def _convert_hasattr_to_null_ok(
+        self: JacAutoLintPass, node: uni.FuncCall
+    ) -> (uni.AtomTrailer | None);
+
+    def _is_matching_attr_access(
+        self: JacAutoLintPass,
+        trailer: uni.AtomTrailer,
+        obj_expr: uni.Expr,
+        attr_name: str
+    ) -> bool;
+
+    def _make_null_ok(self: JacAutoLintPass, trailer: uni.AtomTrailer) -> None;
+    def _collect_atom_trailers(
+        self: JacAutoLintPass, uni_node: uni.UniNode, results: list
+    ) -> None;
+
+    def _get_trailer_key(
+        self: JacAutoLintPass, trailer: uni.AtomTrailer
+    ) -> (str | None);
+
+    def _exprs_are_identical(
+        self: JacAutoLintPass, expr1: uni.Expr, expr2: uni.Expr
+    ) -> bool;
+
+    def _convert_ternary_to_or(
+        self: JacAutoLintPass, if_else_node: uni.IfElseExpr
+    ) -> bool;
+
+    def exit_if_else_expr(self: JacAutoLintPass, if_else_node: uni.IfElseExpr) -> None;
+    def exit_bool_expr(self: JacAutoLintPass, bool_node: uni.BoolExpr) -> None;
 }

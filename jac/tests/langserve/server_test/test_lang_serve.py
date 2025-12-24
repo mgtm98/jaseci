@@ -66,7 +66,7 @@ def test_open_with_syntax_error():
         helper.assert_has_diagnostics(count=2, message_contains="Unexpected token")
 
         diagnostics = helper.get_diagnostics()
-        assert str(diagnostics[0].range) == "59:0-59:5"
+        assert str(diagnostics[0].range) == "57:0-57:5"
     finally:
         ls.shutdown()
         test_file.cleanup()

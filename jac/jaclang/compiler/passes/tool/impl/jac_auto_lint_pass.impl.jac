@@ -145,7 +145,7 @@ impl JacAutoLintPass.enter_ability(
                 for dec in ability_node.decorators
                 if not (isinstance(dec, uni.Name) and dec.value == "staticmethod")
             ];
-            ability_node.decorators = new_decorators if new_decorators else None;
+            ability_node.decorators = new_decorators or None;
         }
     }
     # Surgically remove @staticmethod tokens from kids list
@@ -491,14 +491,14 @@ impl JacAutoLintPass.enter_module(self: JacAutoLintPass, node: uni.Module) -> No
     module.normalize(deep=False);
 }
 
-"""Remove unnecessary <> from names that are not actual keywords.
+"""Remove unnecessary angle bracket escaping from names that are not actual keywords.
 
-Names only need <> escaping if they conflict with:
+Names only need angle bracket escaping if they conflict with:
 - Python keywords (and, or, if, else, etc.)
 - Jac reserved keywords from the grammar
 
 This also handles SpecialVarRef where the underlying name should
-never have <> since it's already recognized as a special keyword.
+never have angle bracket escaping since it's already recognized as a special keyword.
 """
 impl JacAutoLintPass.enter_name(self: JacAutoLintPass, <>node: uni.Name) -> None {
     if not self.lint_enabled {
@@ -511,7 +511,7 @@ impl JacAutoLintPass.enter_name(self: JacAutoLintPass, <>node: uni.Name) -> None
     jac_keywords = set(TOKEN_MAP.values());
     python_keywords = set(keyword.kwlist);
     reserved = jac_keywords | python_keywords;
-    # If the name value is NOT a reserved keyword, remove the <>
+    # If the name value is NOT a reserved keyword, remove the angle bracket escape
     if <>node.value not in reserved {
         <>node.is_kwesc = False;
         # Also update the token name from KWESC_NAME to NAME
@@ -521,10 +521,10 @@ impl JacAutoLintPass.enter_name(self: JacAutoLintPass, <>node: uni.Name) -> None
     }
 }
 
-"""Remove <> from SpecialVarRef's underlying name.
+"""Remove angle bracket escaping from SpecialVarRef's underlying name.
 
 SpecialVarRef wraps special keywords like init, postinit, self, super,
-root, here, visitor. The underlying Name should never have <> escaping
+root, here, visitor. The underlying Name should never have angle bracket escaping
 since these are already recognized as special tokens in the grammar.
 """
 impl JacAutoLintPass.enter_special_var_ref(
@@ -545,10 +545,10 @@ impl JacAutoLintPass.enter_special_var_ref(
     }
 }
 
-"""Remove <> from BuiltinType nodes.
+"""Remove angle bracket escaping from BuiltinType nodes.
 
 BuiltinType represents built-in types like str, int, float, bool, etc.
-These should never have <> escaping since they are recognized as
+These should never have angle bracket escaping since they are recognized as
 built-in type tokens in the grammar.
 """
 impl JacAutoLintPass.enter_builtin_type(
@@ -564,5 +564,460 @@ impl JacAutoLintPass.enter_builtin_type(
         if <>node.name == Tok.KWESC_NAME {
             <>node.name = Tok.NAME;
         }
+    }
+}
+
+"""Convert hasattr(obj, "attr") to null-safe access.
+
+This helper checks if a FuncCall is a hasattr call with exactly two arguments:
+- First arg: any expression (the object)
+- Second arg: a string literal (the attribute name)
+
+If valid, creates and returns an AtomTrailer with is_null_ok=True.
+Returns None if the call doesn't match the hasattr pattern.
+"""
+impl JacAutoLintPass._convert_hasattr_to_null_ok(
+    self: JacAutoLintPass, node: uni.FuncCall
+) -> (uni.AtomTrailer | None) {
+    # Check if target is a Name with value "hasattr"
+    if not isinstance(node.target, uni.Name) {
+        return None;
+    }
+    if node.target.value != "hasattr" {
+        return None;
+    }
+    # Must have exactly 2 parameters
+    if len(node.params) != 2 {
+        return None;
+    }
+    obj_expr = node.params[0];
+    attr_expr = node.params[1];
+    # Second parameter must be a string literal
+    # Handle both String and MultiString (which wraps String)
+    attr_value: str | None = None;
+    string_node: uni.String | None = None;
+    if isinstance(attr_expr, uni.String) {
+        attr_value = attr_expr.value;
+        string_node = attr_expr;
+    } elif isinstance(attr_expr, uni.MultiString) {
+        # MultiString contains a list of String/FString
+        # For hasattr, we only handle simple single strings
+        if len(attr_expr.strings) == 1 and isinstance(attr_expr.strings[0], uni.String) {
+            attr_value = attr_expr.strings[0].value;
+            string_node = attr_expr.strings[0];
+        }
+    }
+    if attr_value is None or string_node is None {
+        return None;
+    }
+    # Extract attribute name from string (remove quotes)
+    if (attr_value.startswith('"') and attr_value.endswith('"'))
+    or (attr_value.startswith("'") and attr_value.endswith("'")) {
+        attr_name = attr_value[1:-1];
+    } else {
+        return None;
+    }
+    # Create a Name node for the attribute using the string node's location info
+    attr_name_node = uni.Name(
+        orig_src=string_node.loc.orig_src,
+        name=Tok.NAME.name,
+        value=attr_name,
+        line=string_node.loc.first_line,
+        end_line=string_node.loc.last_line,
+        col_start=string_node.loc.col_start,
+        col_end=string_node.loc.col_end,
+        pos_start=string_node.loc.pos_start,
+        pos_end=string_node.loc.pos_end,
+        is_kwesc=False
+    );
+    # Create the null-safe AtomTrailer (obj null-safe attr)
+    null_ok_access = uni.AtomTrailer(
+        target=obj_expr,
+        right=attr_name_node,
+        is_attr=True,
+        is_null_ok=True,
+        kid=[obj_expr, attr_name_node]
+    );
+    null_ok_access.normalize(deep=False);
+    return null_ok_access;
+}
+
+"""Check if an AtomTrailer matches an object and attribute name.
+
+Returns True if the AtomTrailer represents obj.attr where obj matches
+the given object expression and attr matches the given attribute name.
+"""
+impl JacAutoLintPass._is_matching_attr_access(
+    self: JacAutoLintPass, trailer: uni.AtomTrailer, obj_expr: uni.Expr, attr_name: str
+) -> bool {
+    # Must be an attribute access (not subscript)
+    if not trailer.is_attr {
+        return False;
+    }
+    # The right side must be a Name matching the attribute
+    if not isinstance(trailer.right, uni.Name) {
+        return False;
+    }
+    if trailer.right.value != attr_name {
+        return False;
+    }
+    # The target must match the object expression
+    # For simple names, compare the values
+    if isinstance(obj_expr, uni.Name) and isinstance(trailer.target, uni.Name) {
+        return obj_expr.value == trailer.target.value;
+    }
+    # For more complex expressions, we'd need deeper comparison
+    # For now, use string comparison of unparsed expressions
+    try {
+        return obj_expr.unparse() == trailer.target.unparse();
+    } except Exception {
+        return False;
+    }
+}
+
+"""Convert an AtomTrailer to use null-safe access.
+
+Takes an existing obj.attr AtomTrailer and converts it to use null-safe access
+by setting is_null_ok=True and re-normalizing.
+"""
+impl JacAutoLintPass._make_null_ok(
+    self: JacAutoLintPass, trailer: uni.AtomTrailer
+) -> None {
+    if not trailer.is_null_ok {
+        trailer.is_null_ok = True;
+        trailer.normalize(deep=False);
+    }
+}
+
+"""Process FuncCall to convert hasattr(obj, "attr") to null-safe access.
+
+This replaces hasattr calls in the parent node's children with
+the equivalent null-safe access expression.
+
+For IfElseExpr patterns like obj.attr if hasattr(obj, "attr") else default,
+this also converts the value expression to use null-safe access.
+"""
+impl JacAutoLintPass.exit_func_call(self: JacAutoLintPass, node: uni.FuncCall) -> None {
+    if not self.lint_enabled {
+        return;
+    }
+    # Try to convert hasattr to null-safe access
+    replacement = self._convert_hasattr_to_null_ok(node);
+    if replacement is None {
+        return;
+    }
+    # Extract obj and attr from the hasattr call for pattern matching
+    obj_expr = node.params[0];
+    attr_expr = node.params[1];
+    attr_name: str | None = None;
+    if isinstance(attr_expr, uni.String) {
+        attr_val = attr_expr.value;
+        if (attr_val.startswith('"') and attr_val.endswith('"'))
+        or (attr_val.startswith("'") and attr_val.endswith("'")) {
+            attr_name = attr_val[1:-1];
+        }
+    } elif isinstance(attr_expr, uni.MultiString) {
+        if len(attr_expr.strings) == 1 and isinstance(attr_expr.strings[0], uni.String) {
+            attr_val = attr_expr.strings[0].value;
+            if (attr_val.startswith('"') and attr_val.endswith('"'))
+            or (attr_val.startswith("'") and attr_val.endswith("'")) {
+                attr_name = attr_val[1:-1];
+            }
+        }
+    }
+    # Replace this node in its parent
+    parent = node.parent;
+    if parent is None {
+        return;
+    }
+    replacement.parent = parent;
+    # Find and replace in parent's children
+    # Handle different parent types that might contain this FuncCall
+    if isinstance(parent, uni.IfElseExpr) {
+        if parent.condition is node {
+            parent.condition = replacement;
+            # Also check if value is obj.attr matching the hasattr pattern
+            # Pattern: obj.attr if hasattr(obj, "attr") else default
+            # Convert to: null-safe access if null-safe access else default
+            if attr_name is not None and isinstance(parent.value, uni.AtomTrailer) {
+                if self._is_matching_attr_access(parent.value, obj_expr, attr_name) {
+                    self._make_null_ok(parent.value);
+                }
+            }
+        } elif parent.value is node {
+            parent.value = replacement;
+        } elif parent.else_value is node {
+            parent.else_value = replacement;
+        }
+        parent.normalize(deep=False);
+    } elif isinstance(parent, uni.BinaryExpr) {
+        if parent.left is node {
+            parent.left = replacement;
+        } elif parent.right is node {
+            parent.right = replacement;
+        }
+        parent.normalize(deep=False);
+    } elif isinstance(parent, uni.BoolExpr) {
+        # BoolExpr has a values list (for 'and'/'or' expressions)
+        new_values: list = [];
+        for val in parent.values {
+            if val is node {
+                new_values.append(replacement);
+            } else {
+                new_values.append(val);
+            }
+        }
+        parent.values = new_values;
+        parent.normalize(deep=False);
+    } elif isinstance(parent, uni.UnaryExpr) {
+        if parent.operand is node {
+            parent.operand = replacement;
+        }
+        parent.normalize(deep=False);
+    } elif isinstance(parent, uni.IfStmt) {
+        if parent.condition is node {
+            parent.condition = replacement;
+        }
+        parent.normalize(deep=False);
+    } elif isinstance(parent, uni.WhileStmt) {
+        if parent.condition is node {
+            parent.condition = replacement;
+        }
+        parent.normalize(deep=False);
+    } else {
+        # For other parent types, update kid list manually
+        new_kids: list = [];
+        for kid in parent.kid {
+            if kid is node {
+                new_kids.append(replacement);
+            } else {
+                new_kids.append(kid);
+            }
+        }
+        parent.kid = new_kids;
+    }
+}
+
+"""Recursively collect all AtomTrailer nodes from a subtree."""
+impl JacAutoLintPass._collect_atom_trailers(
+    self: JacAutoLintPass, uni_node: uni.UniNode, results: list
+) -> None {
+    if isinstance(uni_node, uni.AtomTrailer) {
+        results.append(uni_node);
+    }
+    if uni_node?.kid and uni_node?.kid {
+        for kid in uni_node.kid {
+            if kid is not None {
+                self._collect_atom_trailers(kid, results);
+            }
+        }
+    }
+}
+
+"""Get a unique key for an AtomTrailer based on its target and attribute.
+
+Returns a string like "obj.attr" that can be used to identify matching accesses.
+Returns None if the trailer is not a simple attribute access.
+"""
+impl JacAutoLintPass._get_trailer_key(
+    self: JacAutoLintPass, trailer: uni.AtomTrailer
+) -> (str | None) {
+    if not trailer.is_attr {
+        return None;
+    }
+    if not isinstance(trailer.right, uni.Name) {
+        return None;
+    }
+    attr_name = trailer.right.value;
+    # Get the target as a string
+    try {
+        target_str = trailer.target.unparse();
+        return f"{target_str}.{attr_name}";
+    } except Exception {
+        return None;
+    }
+}
+
+"""Check if two expressions are structurally identical by comparing their unparsed form."""
+impl JacAutoLintPass._exprs_are_identical(
+    self: JacAutoLintPass, expr1: uni.Expr, expr2: uni.Expr
+) -> bool {
+    try {
+        return expr1.unparse() == expr2.unparse();
+    } except Exception {
+        return False;
+    }
+}
+
+"""Convert IfElseExpr to BoolExpr with or when value equals condition.
+
+Transforms: x?.attr if x?.attr else default -> x?.attr or default
+This only applies when the value and condition are identical expressions.
+"""
+impl JacAutoLintPass._convert_ternary_to_or(
+    self: JacAutoLintPass, if_else_node: uni.IfElseExpr
+) -> bool {
+    # Check if value and condition are identical
+    if not self._exprs_are_identical(if_else_node.value, if_else_node.condition) {
+        return False;
+    }
+    # Create a BoolExpr with 'or' operator: value or else_value
+    or_expr = uni.BoolExpr(
+        op=uni.Token(
+            orig_src=if_else_node.loc.orig_src,
+            name=Tok.KW_OR,
+            value="or",
+            line=if_else_node.loc.first_line,
+            end_line=if_else_node.loc.first_line,
+            col_start=0,
+            col_end=2,
+            pos_start=0,
+            pos_end=2
+        ),
+        values=[if_else_node.value, if_else_node.else_value],
+        kid=[if_else_node.value, if_else_node.else_value]
+    );
+    or_expr.normalize(deep=False);
+    # Replace in parent
+    parent = if_else_node.parent;
+    if parent is None {
+        return False;
+    }
+    or_expr.parent = parent;
+    # Update parent's reference to this node
+    if parent?.kid and parent?.kid {
+        new_kids: list = [];
+        for kid in parent.kid {
+            if kid is if_else_node {
+                new_kids.append(or_expr);
+            } else {
+                new_kids.append(kid);
+            }
+        }
+        parent.kid = new_kids;
+    }
+    # Also update specific parent attributes that might reference this node
+    if isinstance(parent, uni.Assignment) {
+        if parent.value is if_else_node {
+            parent.value = or_expr;
+        }
+    } elif isinstance(parent, uni.IfElseExpr) {
+        if parent.value is if_else_node {
+            parent.value = or_expr;
+        } elif parent.condition is if_else_node {
+            parent.condition = or_expr;
+        } elif parent.else_value is if_else_node {
+            parent.else_value = or_expr;
+        }
+    } elif isinstance(parent, uni.BoolExpr) {
+        new_values: list = [];
+        for val in parent.values {
+            if val is if_else_node {
+                new_values.append(or_expr);
+            } else {
+                new_values.append(val);
+            }
+        }
+        parent.values = new_values;
+    }
+    return True;
+}
+
+"""Propagate null-safe access within IfElseExpr and simplify ternary to or.
+
+When an expression contains both null-safe and regular accesses for the same
+object and attribute, convert the regular accesses to null-safe.
+
+Also converts patterns like: x?.attr if x?.attr else default -> x?.attr or default
+"""
+impl JacAutoLintPass.exit_if_else_expr(
+    self: JacAutoLintPass, if_else_node: uni.IfElseExpr
+) -> None {
+    if not self.lint_enabled {
+        return;
+    }
+    # First, try to convert identical ternary to or expression
+    # Pattern: x?.attr if x?.attr else default -> x?.attr or default
+    if self._convert_ternary_to_or(if_else_node) {
+        return;
+    }
+    # Collect all AtomTrailers in this expression
+    trailers: list = [];
+    self._collect_atom_trailers(if_else_node, trailers);
+    if len(trailers) < 2 {
+        return;
+    }
+    # Find null-safe accesses and their keys
+    null_ok_keys: set = set();
+    for trailer in trailers {
+        if isinstance(trailer, uni.AtomTrailer) and trailer.is_null_ok {
+            key = self._get_trailer_key(trailer);
+            if key is not None {
+                null_ok_keys.add(key);
+            }
+        }
+    }
+    if not null_ok_keys {
+        return;
+    }
+    # Convert matching non-null-safe accesses
+    changed = False;
+    for trailer in trailers {
+        if isinstance(trailer, uni.AtomTrailer) and not trailer.is_null_ok {
+            key = self._get_trailer_key(trailer);
+            if key is not None and key in null_ok_keys {
+                self._make_null_ok(trailer);
+                changed = True;
+            }
+        }
+    }
+    if changed {
+        if_else_node.normalize(deep=True);
+    }
+}
+
+"""Propagate null-safe access within BoolExpr (and/or expressions).
+
+When an expression contains both null-safe and regular accesses for the same
+object and attribute, convert the regular accesses to null-safe.
+"""
+impl JacAutoLintPass.exit_bool_expr(
+    self: JacAutoLintPass, bool_node: uni.BoolExpr
+) -> None {
+    if not self.lint_enabled {
+        return;
+    }
+    # Collect all AtomTrailers in this expression
+    trailers: list = [];
+    self._collect_atom_trailers(bool_node, trailers);
+    if len(trailers) < 2 {
+        return;
+    }
+    # Find null-safe accesses and their keys
+    null_ok_keys: set = set();
+    for trailer in trailers {
+        if isinstance(trailer, uni.AtomTrailer) and trailer.is_null_ok {
+            key = self._get_trailer_key(trailer);
+            if key is not None {
+                null_ok_keys.add(key);
+            }
+        }
+    }
+    if not null_ok_keys {
+        return;
+    }
+    # Convert matching non-null-safe accesses
+    changed = False;
+    for trailer in trailers {
+        if isinstance(trailer, uni.AtomTrailer) and not trailer.is_null_ok {
+            key = self._get_trailer_key(trailer);
+            if key is not None and key in null_ok_keys {
+                self._make_null_ok(trailer);
+                changed = True;
+            }
+        }
+    }
+    if changed {
+        bool_node.normalize(deep=True);
     }
 }

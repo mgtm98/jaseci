@@ -1,11 +1,11 @@
-"""List all installed packages from config.json."""
+"""List all installed packages from jac.toml."""
 
 impl PackageInstaller.list_packages(
     self: PackageInstaller
 ) -> dict[str, dict[str, str]] {
     if not self.config_file.exists() {
         raise ClientBundleError(
-            f'config.json not found at {self.config_file}. Run "jac generate_client_config" first.'
+            f'jac.toml not found at {self.config_file}. Run "jac init" first.'
         ) ;
     }
     config = self.config_loader.load();
@@ -16,47 +16,30 @@ impl PackageInstaller.list_packages(
     };
 }
 
-"""Uninstall a package by removing it from config.json."""
+"""Uninstall a package by removing it from jac.toml."""
 impl PackageInstaller.uninstall_package(
     self: PackageInstaller, package_name: str, is_dev: bool = False
 ) -> None {
     if not self.config_file.exists() {
         raise ClientBundleError(
-            f'config.json not found at {self.config_file}. Run "jac generate_client_config" first.'
+            f'jac.toml not found at {self.config_file}. Run "jac init" first.'
         ) ;
     }
-    # Load current config
-    config = self.config_loader.load();
-    package_config = config.get('package', {});
-    # Determine which dependencies dict to update
-    if is_dev {
-        deps_key = 'devDependencies';
-    } else {
-        deps_key = 'dependencies';
-    }
-    # Remove package if it exists
-    if (deps_key in package_config and package_name in package_config[deps_key]) {
-        del package_config[deps_key][package_name] ;
-        # Remove empty dict if no dependencies left
-        if not package_config[deps_key] {
-            package_config[deps_key] = {};
-        }
-    } else {
+    # Remove the dependency using JacClientConfig
+    result = self.config_loader.remove_dependency(package_name, is_dev);
+    if not result {
+        deps_key = 'dev-dependencies' if is_dev else 'dependencies';
         raise ClientBundleError(f'Package "{package_name}" not found in {deps_key}') ;
     }
-    # Update config
-    config['package'] = package_config;
-    # Write updated config back to file
-    with self.config_file.open('w', encoding='utf-8') as f {
-        json.dump(config, f, indent=2);
-    }
+    # Save the updated config
+    self.config_loader.save();
     # Regenerate package.json and run npm install to actually remove the package
     self._regenerate_and_install();
 }
 
-"""Regenerate package.json from config.json and run npm install."""
+"""Regenerate package.json from jac.toml and run npm install."""
 impl PackageInstaller._regenerate_and_install(self: PackageInstaller) -> None {
-    # Regenerate package.json from updated config.json
+    # Regenerate package.json from updated jac.toml
     bundler = ViteBundler(self.project_dir);
     bundler.create_package_json();
     # Ensure root package.json exists temporarily for npm commands
@@ -82,17 +65,17 @@ impl PackageInstaller._regenerate_and_install(self: PackageInstaller) -> None {
     }
 }
 
-"""Install all packages from config.json (regenerate package.json and run npm install)."""
+"""Install all packages from jac.toml (regenerate package.json and run npm install)."""
 impl PackageInstaller.install_all(self: PackageInstaller) -> None {
     if not self.config_file.exists() {
         raise ClientBundleError(
-            f'config.json not found at {self.config_file}. Run "jac generate_client_config" first.'
+            f'jac.toml not found at {self.config_file}. Run "jac init" first.'
         ) ;
     }
     self._regenerate_and_install();
 }
 
-"""Install a package by adding it to config.json."""
+"""Install a package by adding it to jac.toml."""
 impl PackageInstaller.install_package(
     self: PackageInstaller,
     package_name: str,
@@ -101,38 +84,22 @@ impl PackageInstaller.install_package(
 ) -> None {
     if not self.config_file.exists() {
         raise ClientBundleError(
-            f'config.json not found at {self.config_file}. Run "jac generate_client_config" first.'
+            f'jac.toml not found at {self.config_file}. Run "jac init" first.'
         ) ;
     }
-    # Load current config
-    config = self.config_loader.load();
-    package_config = config.get('package', {});
-    # Determine which dependencies dict to update
-    if is_dev {
-        deps_key = 'devDependencies';
-    } else {
-        deps_key = 'dependencies';
-    }
-    # Initialize dependencies dict if it doesn't exist
-    if deps_key not in package_config {
-        package_config[deps_key] = {};
-    }
     # Add package with version (default to latest if not specified)
-    package_version = version if version else 'latest';
-    package_config[deps_key][package_name] = package_version;
-    # Update config
-    config['package'] = package_config;
-    # Write updated config back to file
-    with self.config_file.open('w', encoding='utf-8') as f {
-        json.dump(config, f, indent=2);
-    }
+    package_version = version or 'latest';
+    # Use JacClientConfig to add the dependency
+    self.config_loader.add_dependency(package_name, package_version, is_dev);
+    # Save the updated config
+    self.config_loader.save();
     # Regenerate package.json and install the package via npm
     self._regenerate_and_install();
 }
 
-"""Handles installing npm packages by updating config.json."""
+"""Handles installing npm packages by updating jac.toml."""
 impl PackageInstaller.init(self: PackageInstaller, project_dir: Path) {
     self.project_dir = project_dir;
     self.config_loader = JacClientConfig(project_dir);
-    self.config_file = project_dir / 'config.json';
+    self.config_file = project_dir / 'jac.toml';
 }

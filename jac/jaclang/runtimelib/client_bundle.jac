@@ -2,7 +2,6 @@
 import hashlib;
 import json;
 import from collections.abc { Iterable, Sequence }
-import from dataclasses { dataclass }
 import from pathlib { Path }
 import from types { ModuleType }
 import from typing { TYPE_CHECKING, Any, NamedTuple }
@@ -25,8 +24,7 @@ class ProcessedImports(NamedTuple) {
 }
 
 """Container for a compiled client bundle."""
-@dataclass(slots=True)
-class ClientBundle {
+obj ClientBundle {
     has module_name: str,
         code: str,
         client_functions: list[str],
@@ -34,41 +32,29 @@ class ClientBundle {
         hash: str;
 }
 
-@dataclass(slots=True)
-class _CachedBundle {
+obj _CachedBundle {
     has signature: str,
         bundle: ClientBundle;
 }
 
 """Compile Jac modules and runtime support into a browser-ready bundle."""
-class ClientBundleBuilder {
-    def init(self: ClientBundleBuilder, runtime_path: (Path | None) = None) -> None;
-    def build(
-        self: ClientBundleBuilder, module: ModuleType, force: bool = False
-    ) -> ClientBundle;
+obj ClientBundleBuilder {
+    has runtime_path: (Path | None) = None,
+        _cache: dict[(str, _CachedBundle)] = {};
 
+    def postinit -> None;
+    def build(module: ModuleType, force: bool = False) -> ClientBundle;
     def _process_imports(
-        self: ClientBundleBuilder, manifest: (ClientManifest | None), module_path: Path
+        manifest: (ClientManifest | None), module_path: Path
     ) -> ProcessedImports;
 
-    def _extract_client_exports(
-        self: ClientBundleBuilder, manifest: (ClientManifest | None)
-    ) -> list[str];
-
+    def _extract_client_exports(manifest: (ClientManifest | None)) -> list[str];
     def _extract_client_globals(
-        self: ClientBundleBuilder,
-        manifest: (ClientManifest | None),
-        module: ModuleType
+        manifest: (ClientManifest | None), module: ModuleType
     ) -> dict[str, Any];
 
-    def _compile_bundle(
-        self: ClientBundleBuilder, module: ModuleType, module_path: Path
-    ) -> ClientBundle;
-
-    def _compile_to_js(
-        self: ClientBundleBuilder, source_path: Path
-    ) -> tuple[str, Module];
-
+    def _compile_bundle(module: ModuleType, module_path: Path) -> ClientBundle;
+    def _compile_to_js(source_path: Path) -> tuple[str, Module];
     static def _strip_import_statements(js_code: str, bundled_modules: set[str]) -> str;
     static def _signature(paths: Iterable[Path]) -> str;
     static def _generate_registration_js(

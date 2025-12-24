@@ -1,17 +1,13 @@
 """Initialise the builder with an optional override for the runtime path."""
 
-impl ClientBundleBuilder.init(
-    self: ClientBundleBuilder, runtime_path: (Path | None) = None
-) -> None {
-    self.runtime_path = runtime_path
-    or Path(__file__).with_name('client_runtime.cl.jac');
-    self._cache: dict[(str, _CachedBundle)] = {};
+impl ClientBundleBuilder.postinit -> None {
+    if not self.runtime_path {
+        self.runtime_path = Path(__file__).with_name('client_runtime.cl.jac');
+    }
 }
 
 """Build (or reuse) a client bundle for the supplied module."""
-impl ClientBundleBuilder.build(
-    self: ClientBundleBuilder, module: ModuleType, force: bool = False
-) -> ClientBundle {
+impl ClientBundleBuilder.build(module: ModuleType, force: bool = False) -> ClientBundle {
     if not module?.__file__ {
         raise ClientBundleError(
             f"Module '{module.__name__}' has no __file__ attribute"
@@ -52,7 +48,7 @@ Returns:
 ProcessedImports containing JavaScript code pieces and bundled module names
 """
 impl ClientBundleBuilder._process_imports(
-    self: ClientBundleBuilder, manifest: (ClientManifest | None), module_path: Path
+    manifest: (ClientManifest | None), module_path: Path
 ) -> ProcessedImports {
     import_pieces: list[str] = [];
     bundled_module_names: set[str] = <>set();
@@ -125,7 +121,7 @@ Returns:
 Sorted list of client export names
 """
 impl ClientBundleBuilder._extract_client_exports(
-    self: ClientBundleBuilder, manifest: (ClientManifest | None)
+    manifest: (ClientManifest | None)
 ) -> list[str] {
     return sorted(<>dict.fromkeys(manifest.exports)) if manifest else [];
 }
@@ -140,7 +136,7 @@ Returns:
 Dictionary of global names to their values
 """
 impl ClientBundleBuilder._extract_client_globals(
-    self: ClientBundleBuilder, manifest: (ClientManifest | None), module: ModuleType
+    manifest: (ClientManifest | None), module: ModuleType
 ) -> dict[str, Any] {
     client_globals_map: dict[(str, Any)] = {};
     if manifest {
@@ -159,7 +155,7 @@ impl ClientBundleBuilder._extract_client_globals(
 
 """Compile bundle pieces and stitch them together."""
 impl ClientBundleBuilder._compile_bundle(
-    self: ClientBundleBuilder, module: ModuleType, module_path: Path
+    module: ModuleType, module_path: Path
 ) -> ClientBundle {
     import from jaclang { JacRuntime as Jac }
     # First compile to ensure module is in hub and get JS code + manifest
@@ -201,9 +197,7 @@ impl ClientBundleBuilder._compile_bundle(
 Returns:
 Tuple of (js_code, compiled_module) where compiled_module contains the client_manifest
 """
-impl ClientBundleBuilder._compile_to_js(
-    self: ClientBundleBuilder, source_path: Path
-) -> tuple[str, Module] {
+impl ClientBundleBuilder._compile_to_js(source_path: Path) -> tuple[str, Module] {
     import from jaclang { JacRuntime as Jac }
     program = Jac.program;
     source_key = str(source_path);

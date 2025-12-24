@@ -1,0 +1,5 @@
+[project]
+name = "basic-auth-with-router"
+version = "1.0.0"
+description = "Jac application: basic-auth-with-router"
+entry-point = "app.jac"

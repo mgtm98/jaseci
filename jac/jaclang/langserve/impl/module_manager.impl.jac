@@ -1,8 +1,6 @@
 """Remove errors and warnings for a specific file from the lists."""
 
-impl ModuleManager.clear_alerts_for_file(
-    self: ModuleManager, file_path_fs: str
-) -> None {
+impl ModuleManager.clear_alerts_for_file(file_path_fs: str) -> None {
     self.program.errors_had = [
         e
         for e in self.program.errors_had
@@ -17,7 +15,7 @@ impl ModuleManager.clear_alerts_for_file(
 
 """Update modules in JacProgram's hub and semantic managers."""
 impl ModuleManager.update(
-    self: ModuleManager, file_path: str, build: uni.Module, update_annexed: bool = True
+    file_path: str, build: uni.Module, update_annexed: bool = True
 ) -> None {
     self.program.mod.hub[file_path] = build;
     if update_annexed {
@@ -28,12 +26,4 @@ impl ModuleManager.update(
             }
         }
     }
-}
-
-"""Initialize ModuleManager."""
-impl ModuleManager.init(
-    self: ModuleManager, program: JacProgram, sem_managers: dict
-) -> None {
-    self.program = program;
-    self.sem_managers = sem_managers;
 }

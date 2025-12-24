@@ -17,6 +17,64 @@ from pathlib import Path
 from typing import Final
 
 
+def discover_annex_files(source_path: str, suffix: str = ".impl.jac") -> list[str]:
+    """Discover annex files (.impl.jac, .test.jac, .cl.jac) for a source .jac file.
+
+    Searches: same directory, module-specific folder (foo.impl/), shared folder (impl/, test/, cl/).
+    Also handles .cl.jac files looking for their .impl.jac annexes.
+    """
+    src = Path(source_path).resolve()
+    # Skip non-.jac files and files that are the same annex type as requested
+    if not src.name.endswith(".jac") or src.name.endswith(suffix):
+        return []
+
+    # Get base name, handling .cl.jac files specially (foo.cl.jac -> foo)
+    base = src.name[:-7] if src.name.endswith(".cl.jac") else src.stem
+
+    mod_folder = src.parent / (base + suffix[:-4])  # foo.impl/, foo.test/, foo.cl/
+    shared_folder = suffix[1:-4]  # Extract "impl", "test", or "cl"
+    dirs = [src.parent, mod_folder, src.parent / shared_folder]
+    return [
+        str(f)
+        for d in dirs
+        if d.is_dir()
+        for f in d.iterdir()
+        if f.is_file()
+        and f.name.endswith(suffix)
+        and (d == mod_folder or f.name.startswith(f"{base}."))
+    ]
+
+
+def discover_base_file(annex_path: str) -> str | None:
+    """Discover the base .jac file for an annex file (.impl.jac, .test.jac, .cl.jac).
+
+    Searches: same directory, module-specific folder (foo.impl/), shared folder (impl/).
+    For multi-part names like "foo.bar.impl.jac", only the first component is used.
+    """
+    src = Path(annex_path).resolve()
+    annex_types = {".impl.jac": ".impl", ".test.jac": ".test", ".cl.jac": ".cl"}
+
+    # Find matching annex type and extract base name
+    for suffix, folder_suffix in annex_types.items():
+        if src.name.endswith(suffix):
+            base_name = src.name[: -len(suffix)].split(".")[0]
+            parent = src.parent.name
+            # Build search candidates: (directory, base_name_to_search)
+            candidates = [(src.parent, base_name)]
+            if parent.endswith(folder_suffix):  # Module-specific folder
+                candidates.append((src.parent.parent, parent[: -len(folder_suffix)]))
+            if parent in {"impl", "test", "cl"}:  # Shared folder
+                candidates.append((src.parent.parent, base_name))
+            # Search for base file
+            for directory, name in candidates:
+                for ext in (".jac", ".cl.jac"):
+                    path = directory / f"{name}{ext}"
+                    if path.is_file() and path != src:
+                        return str(path)
+            break
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class CacheKey:
     """Immutable key identifying a cached bytecode entry.
@@ -92,14 +150,35 @@ class DiskBytecodeCache(BytecodeCache):
         return cache_dir / cache_name
 
     def _is_valid(self, key: CacheKey, cache_path: Path) -> bool:
-        """Check if cached bytecode is still valid (exists and newer than source)."""
+        """Check if cached bytecode is still valid.
+
+        The cache is valid if:
+        - The cache file exists
+        - The cache is newer than the source file
+        - The cache is newer than all impl files associated with the source
+        """
         if not cache_path.exists():
             return False
 
         try:
-            source_mtime = os.path.getmtime(key.source_path)
             cache_mtime = os.path.getmtime(cache_path)
-            return cache_mtime > source_mtime
+
+            # Check source file modification time
+            source_mtime = os.path.getmtime(key.source_path)
+            if cache_mtime <= source_mtime:
+                return False
+
+            # Check all impl files - cache must be newer than all of them
+            for impl_path in discover_annex_files(key.source_path):
+                try:
+                    impl_mtime = os.path.getmtime(impl_path)
+                    if cache_mtime <= impl_mtime:
+                        return False
+                except OSError:
+                    # If we can't stat an impl file, invalidate cache to be safe
+                    return False
+
+            return True
         except OSError:
             return False
 
