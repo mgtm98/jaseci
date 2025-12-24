@@ -11,15 +11,18 @@ import from jaclang.langserve.utils {
 import lsprotocol.types as lspt;
 
 """Semantic Token Manager class."""
-class SemTokManager {
-    def init(self: SemTokManager, ir: uni.Module) -> None;
-    def gen_sem_tokens(self: SemTokManager, ir: uni.Module) -> list[int];
+obj SemTokManager {
+    has ir: uni.Module,
+        sem_tokens: List[int] = [],
+        static_sem_tokens: List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]] = [];
+
+    def postinit -> None;
+    def gen_sem_tokens(ir: uni.Module) -> list[int];
     def gen_sem_tok_node(
-        self: SemTokManager, ir: uni.Module
+        ir: uni.Module
     ) -> List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]];
 
     def update_sem_tokens(
-        self: SemTokManager,
         content_changes: lspt.DidChangeTextDocumentParams,
         sem_tokens: list[int],
         document_lines: List[str]

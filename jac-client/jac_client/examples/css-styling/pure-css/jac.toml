@@ -1,0 +1,5 @@
+[project]
+name = "my-test-app"
+version = "1.0.0"
+description = "Jac application: my-test-app"
+entry-point = "app.jac"

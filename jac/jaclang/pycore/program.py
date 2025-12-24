@@ -164,14 +164,14 @@ class JacProgram:
         # Clear the type evaluator (will be recreated lazily if needed)
         self.type_evaluator = None
 
-        # Clear .type attributes from all Expr nodes in all modules
-        for mod in self.mod.hub.values():
-            for node in mod.get_all_sub_nodes(uni.Expr, brute_force=True):
-                node.type = None
-
-        # Optionally clear the entire module hub
+        # Optionally clear the entire module hub (skip node traversal if clearing hub)
         if clear_hub:
             self.mod.hub.clear()
+        else:
+            # Clear .type attributes from all Expr nodes in all modules
+            for mod in self.mod.hub.values():
+                for node in mod.get_all_sub_nodes(uni.Expr, brute_force=True):
+                    node.type = None
 
     def get_bytecode(
         self, full_target: str, minimal: bool = False

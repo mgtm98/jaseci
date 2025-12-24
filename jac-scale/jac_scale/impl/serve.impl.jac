@@ -565,12 +565,21 @@ impl JacAPIServer.refresh_token(
 impl JacAPIServer.create_user(
     self: JacAPIServer, email: str, password: str
 ) -> JSONResponse {
-    res = self.user_manager.create_user(email, password);
-    if ('error' in res) {
-        return JSONResponse(content=res, status_code=400);
+    import traceback;
+    try {
+        res = self.user_manager.create_user(email, password);
+        if ('error' in res) {
+            return JSONResponse(content=res, status_code=400);
+        }
+        res['token'] = self.create_jwt_token(email);
+        return JSONResponse(content=res, status_code=201);
+    } except Exception as e {
+        error_trace = traceback.format_exc();
+        print(f"Error in create_user: {e}\n{error_trace}");
+        return JSONResponse(
+            status_code=500, content={'error': f"Registration failed: {e}"}
+        );
     }
-    res['token'] = self.create_jwt_token(email);
-    return JSONResponse(content=res, status_code=201);
 }
 
 impl JacAPIServer.register_login_endpoint(self: JacAPIServer) -> None {
@@ -636,11 +645,14 @@ impl JacAPIServer.init(
         allow_headers=['*']
     );
     self.SUPPORTED_PLATFORMS: dict = {};
+    # Load SSO config fresh (not from cached global) to support env var overrides at runtime
+    sso_config = get_scale_config().get_sso_config();
     for platform in Platforms {
-        key = platform.upper();
+        key = platform.lower();
+        platform_config = sso_config.get(key, {});
 
-        client_id = getenv(f"SSO_{key}_CLIENT_ID");
-        client_secret = getenv(f"SSO_{key}_CLIENT_SECRET");
+        client_id = platform_config.get('client_id', '');
+        client_secret = platform_config.get('client_secret', '');
 
         if not client_id or not client_secret {
             continue;

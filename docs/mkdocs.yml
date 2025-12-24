@@ -124,6 +124,7 @@ nav:
     - Tooling:
       - Jac Debugger: "learn/debugger.md"
       - Run Jac In Browser: "learn/jac_playground.md"
+      - Project Configuration (jac.toml): "learn/tools/project_config.md"
       - "learn/tools/cli.md"
       - "learn/tools/jac_serve.md"
       - "learn/tools/streamlit.md"

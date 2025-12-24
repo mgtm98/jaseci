@@ -9,7 +9,6 @@ This pass injects comments into the DocIR structure by:
 """
 import from bisect { bisect_left }
 import from collections.abc { Sequence }
-import from dataclasses { dataclass }
 import from typing { NamedTuple }
 import jaclang.compiler.passes.tool.doc_ir as doc;
 import jaclang.pycore.unitree as uni;
@@ -24,11 +23,17 @@ class DelimiterInfo(NamedTuple) {
 }
 
 """Rich metadata about a source comment."""
-@dataclass(slots=True)
 class CommentInfo {
     has index: int,
         token: uni.CommentToken,
         anchor_token_id: (int | None);
+
+    def init(
+        self: CommentInfo,
+        index: int,
+        token: uni.CommentToken,
+        anchor_token_id: (int | None)
+    ) -> None;
 
     @property
     def is_inline(self: CommentInfo) -> bool;
@@ -42,10 +47,15 @@ class CommentInfo {
 
 """Efficient bookkeeping for inline and standalone comments."""
 class CommentStore {
+    has _inline: dict[(int, list[CommentInfo])],
+        _standalone: list[CommentInfo],
+        _standalone_lines: list[int] = [],
+        _used: set[int] = set();
+
     def init(
         self: CommentStore,
-        inline: dict[(int, list[CommentInfo])],
-        standalone: list[CommentInfo]
+        _inline: dict[(int, list[CommentInfo])],
+        _standalone: list[CommentInfo]
     ) -> None;
 
     @classmethod

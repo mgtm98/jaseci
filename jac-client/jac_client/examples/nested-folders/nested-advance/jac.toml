@@ -1,0 +1,5 @@
+[project]
+name = "nested-advance"
+version = "1.0.0"
+description = "Jac application: nested-advance"
+entry-point = "app.jac"

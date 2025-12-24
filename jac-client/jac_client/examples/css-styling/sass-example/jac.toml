@@ -1,0 +1,8 @@
+[project]
+name = "sass-example"
+version = "1.0.0"
+description = "Jac application: sass-example"
+entry-point = "app.jac"
+
+[dependencies.npm.dev]
+sass = "^1.77.8"

@@ -1,0 +1,5 @@
+[project]
+name = "ts-support"
+version = "1.0.0"
+description = "Jac application: ts-support"
+entry-point = "app.jac"

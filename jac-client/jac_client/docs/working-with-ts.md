@@ -130,6 +130,27 @@ cl {
 - Include the `.tsx` extension in the import path
 - Import named exports: `{ Button }`
 
+## Customizing TypeScript Configuration
+
+While TypeScript works out of the box, you can customize the generated `tsconfig.json` via `jac.toml`:
+
+```toml
+# Override compiler options
+[plugins.client.ts.compilerOptions]
+target = "ES2022"
+strict = false
+noUnusedLocals = false
+
+# Custom include/exclude paths
+[plugins.client.ts]
+include = ["components/**/*", "lib/**/*"]
+exclude = ["node_modules", "dist", "tests"]
+```
+
+**Note**: If you provide your own `tsconfig.json` file in the project root, it will be used as-is instead of generating one.
+
+For more details, see [Custom Configuration](./advance/custom-config.md).
+
 ## Troubleshooting
 
 ### Import resolution issues

@@ -14,7 +14,18 @@ impl PyastBuildPass.aug_op_map(
 
 """Convert a string to a docstring."""
 impl PyastBuildPass.convert_to_doc(self: PyastBuildPass, string: uni.String) -> None {
-    string.value = f'"""{string.value[1:-1]}"""';
+    import codecs;
+    # string.value is in repr format (e.g., 'line1\nline2' with escaped newlines)
+    # For docstrings, we need to decode escape sequences back to actual characters
+    content = string.value[1:-1];  # Remove surrounding quotes
+    try {
+        # Decode unicode escape sequences (\n, \t, etc.) to actual characters
+        # First encode to bytes (latin-1 preserves byte values), then decode unicode escapes
+        decoded = codecs.decode(content, 'unicode_escape');
+    } except Exception {
+        decoded = content;
+    }
+    string.value = f'"""{decoded}"""';
 }
 
 """
@@ -37,7 +48,7 @@ impl PyastBuildPass.proc_withitem(
     ) {
         return uni.ExprAsItem(
             expr=context_expr,
-            alias=optional_vars if optional_vars else None,
+            alias=optional_vars or None,
             kid=[context_expr, optional_vars] if optional_vars else [context_expr]
         );
     } else {
@@ -100,9 +111,9 @@ impl PyastBuildPass.proc_keyword(
             name=Tok.NAME,
             value=<>node.arg,
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
-            col_end=(<>node.col_offset + len(<>node.arg if <>node.arg else '_')),
+            col_end=(<>node.col_offset + len(<>node.arg or '_')),
             pos_start=0,
             pos_end=0,
             is_kwesc=(<>node.arg in reserved_keywords)
@@ -478,7 +489,7 @@ impl PyastBuildPass.proc_arg(self: PyastBuildPass, <>node: py_ast.arg) -> uni.Pa
         name=Tok.NAME,
         value=<>node.arg,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.arg)),
         pos_start=0,
@@ -493,7 +504,7 @@ impl PyastBuildPass.proc_arg(self: PyastBuildPass, <>node: py_ast.arg) -> uni.Pa
         name=Tok.NAME,
         value='Any',
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + 3),
         pos_start=0,
@@ -525,7 +536,7 @@ impl PyastBuildPass.proc_alias(
         name=Tok.NAME,
         value=<>node.name,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.name)),
         pos_start=0,
@@ -899,7 +910,7 @@ impl PyastBuildPass.proc_nonlocal(
                 name=Tok.NAME,
                 value=name,
                 line=<>node.lineno,
-                end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+                end_line=<>node.end_lineno or <>node.lineno,
                 col_start=<>node.col_offset,
                 col_end=(<>node.col_offset + len(name)),
                 pos_start=0,
@@ -972,7 +983,7 @@ impl PyastBuildPass.proc_name(self: PyastBuildPass, <>node: py_ast.Name) -> uni.
         name=Tok.NAME,
         value=<>node.id,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.id)),
         pos_start=0,
@@ -1011,11 +1022,11 @@ impl PyastBuildPass.proc_match_star(
     name = uni.Name(
         orig_src=self.orig_src,
         name=Tok.NAME,
-        value=<>node.name if <>node.name else '_',
+        value=<>node.name or '_',
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
-        col_end=(<>node.col_offset + len(<>node.name if <>node.name else '_')),
+        col_end=(<>node.col_offset + len(<>node.name or '_')),
         pos_start=0,
         pos_end=0
     );
@@ -1038,7 +1049,7 @@ impl PyastBuildPass.proc_match_singleton(
         name=<>type,
         value=str(<>node.value),
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(str(<>node.value))),
         pos_start=0,
@@ -1129,7 +1140,7 @@ impl PyastBuildPass.proc_match_mapping(
             name=Tok.NAME,
             value=<>node.rest,
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + len(<>node.rest)),
             pos_start=0,
@@ -1182,7 +1193,7 @@ impl PyastBuildPass.proc_match_class(
                     name=Tok.NAME,
                     value=kwd_attrs,
                     line=<>node.lineno,
-                    end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+                    end_line=<>node.end_lineno or <>node.lineno,
                     col_start=<>node.col_offset,
                     col_end=(<>node.col_offset + len(kwd_attrs)),
                     pos_start=0,
@@ -1233,9 +1244,9 @@ impl PyastBuildPass.proc_match_as(
     name = uni.Name(
         orig_src=self.orig_src,
         name=Tok.NAME,
-        value=<>node.name if <>node.name else '_',
+        value=<>node.name or '_',
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.name))
         if <>node.name
@@ -1370,7 +1381,7 @@ impl PyastBuildPass.proc_joined_str(
                     name='STRING',
                     value=i.value,
                     line=i.lineno,
-                    end_line=i.end_lineno if i.end_lineno else i.lineno,
+                    end_line=i.end_lineno or i.lineno,
                     col_start=i.col_offset,
                     col_end=(i.col_offset + len(i.value)),
                     pos_start=0,
@@ -1451,7 +1462,7 @@ impl PyastBuildPass.proc_import_from(
         name=Tok.NAME,
         value='py',
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=0,
         pos_start=0,
@@ -1466,7 +1477,7 @@ impl PyastBuildPass.proc_import_from(
                     name=Tok.NAME,
                     value=i,
                     line=<>node.lineno,
-                    end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+                    end_line=<>node.end_lineno or <>node.lineno,
                     col_start=0,
                     col_end=0,
                     pos_start=0,
@@ -1478,10 +1489,7 @@ impl PyastBuildPass.proc_import_from(
     moddots = [self.operator(Tok.DOT, '.') for _ in range(<>node.level)];
     modparts = moddots + modpaths;
     path = uni.ModulePath(
-        path=modpaths if modpaths else None,
-        level=<>node.level,
-        alias=None,
-        kid=modparts
+        path=modpaths or None, level=<>node.level, alias=None, kid=modparts
     );
     names = [self.convert(name) for name in <>node.names];
     valid_names = [];
@@ -1494,7 +1502,7 @@ impl PyastBuildPass.proc_import_from(
             valid_names.append(
                 uni.ModuleItem(
                     name=name.expr,
-                    alias=name.alias if name.alias else None,
+                    alias=name.alias or None,
                     kid=[
                         i
                         for i in name.kid
@@ -1611,7 +1619,7 @@ impl PyastBuildPass.proc_global(
                 name=Tok.NAME,
                 value=id,
                 line=<>node.lineno,
-                end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+                end_line=<>node.end_lineno or <>node.lineno,
                 col_start=<>node.col_offset,
                 col_end=(<>node.col_offset + len(id)),
                 pos_start=0,
@@ -1718,7 +1726,7 @@ impl PyastBuildPass.proc_except_handler(
             name=Tok.NAME,
             value='Exception',
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + 9),
             pos_start=0,
@@ -1729,7 +1737,7 @@ impl PyastBuildPass.proc_except_handler(
             name=Tok.NAME,
             value='e',
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + 1),
             pos_start=0,
@@ -1899,7 +1907,7 @@ impl PyastBuildPass.proc_constant(
             name=token_type,
             value=value,
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + len(str(<>node.value))),
             pos_start=0,
@@ -1911,7 +1919,7 @@ impl PyastBuildPass.proc_constant(
             name=Tok.ELLIPSIS,
             value='...',
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + 3),
             pos_start=0,
@@ -2154,7 +2162,7 @@ impl PyastBuildPass.proc_attribute(
             name=Tok.KW_SUPER,
             value='super',
             line=<>node.lineno,
-            end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+            end_line=<>node.end_lineno or <>node.lineno,
             col_start=<>node.col_offset,
             col_end=(<>node.col_offset + len('super')),
             pos_start=0,
@@ -2167,7 +2175,7 @@ impl PyastBuildPass.proc_attribute(
         name=Tok.NAME,
         value='init' if (<>node.attr == '__init__') else <>node.attr,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.attr)),
         pos_start=0,
@@ -2700,7 +2708,7 @@ impl PyastBuildPass.proc_class_def(
         name=Tok.NAME,
         value=<>node.name,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.name)),
         pos_start=0,
@@ -2711,7 +2719,7 @@ impl PyastBuildPass.proc_class_def(
         name=Tok.KW_CLASS,
         value='class',
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=0,
         col_end=0,
         pos_start=0,
@@ -2729,7 +2737,7 @@ impl PyastBuildPass.proc_class_def(
                 name=Tok.KW_INIT,
                 value='init',
                 line=<>node.lineno,
-                end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+                end_line=<>node.end_lineno or <>node.lineno,
                 col_start=<>node.col_offset,
                 col_end=(<>node.col_offset + len('init')),
                 pos_start=0,
@@ -2766,7 +2774,7 @@ impl PyastBuildPass.proc_class_def(
         self.operator(Tok.LBRACE, '{'),
         self.operator(Tok.RBRACE, '}')
     ];
-    valid_body = valid if valid else empty_block;
+    valid_body = valid or empty_block;
     converted_base_classes = [self.convert(base) for base in <>node.bases];
     base_classes: list[uni.Expr] = [
         base
@@ -2782,7 +2790,7 @@ impl PyastBuildPass.proc_class_def(
     if (len(decorators) != len(converted_decorators_list)) {
         raise self.ice('Length mismatch in decorators on class') ;
     }
-    valid_decorators = decorators if decorators else None;
+    valid_decorators = decorators or None;
     kid = [name, *base_classes, *valid_body, doc]
     if (doc and base_classes)
     else [name, *base_classes, *valid_body]
@@ -2844,7 +2852,7 @@ impl PyastBuildPass.proc_function_def(
         name=Tok.NAME,
         value=<>node.name,
         line=<>node.lineno,
-        end_line=<>node.end_lineno if <>node.end_lineno else <>node.lineno,
+        end_line=<>node.end_lineno or <>node.lineno,
         col_start=<>node.col_offset,
         col_end=(<>node.col_offset + len(<>node.name)),
         pos_start=0,
@@ -2881,7 +2889,7 @@ impl PyastBuildPass.proc_function_def(
     if (len(valid_dec) != len(decorators)) {
         raise self.ice('Length mismatch in decorators on function') ;
     }
-    valid_decorators = valid_dec if valid_dec else None;
+    valid_decorators = valid_dec or None;
     res = self.convert(<>node.args);
     sig: (uni.FuncSignature | None) = res
     if isinstance(res, uni.FuncSignature)

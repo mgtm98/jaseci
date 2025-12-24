@@ -108,7 +108,7 @@ def _wait_for_endpoint(
 
 
 def test_all_in_one_app_endpoints() -> None:
-    """Create a Jac app, copy @all-in-one into it, install packages from config.json, then verify endpoints."""
+    """Create a Jac app, copy @all-in-one into it, install packages from jac.toml, then verify endpoints."""
     print(
         "[DEBUG] Starting test_all_in_one_app_endpoints using jac create_jac_app + @all-in-one"
     )
@@ -178,9 +178,9 @@ def test_all_in_one_app_endpoints() -> None:
                 else:
                     shutil.copy2(src, dst)
 
-            # 3. Install packages from config.json using `jac add --cl`
-            # This reads packages from config.json, generates package.json, and runs npm install
-            print("[DEBUG] Running 'jac add --cl' to install packages from config.json")
+            # 3. Install packages from jac.toml using `jac add --cl`
+            # This reads packages from jac.toml, generates package.json, and runs npm install
+            print("[DEBUG] Running 'jac add --cl' to install packages from jac.toml")
             jac_add_result = run(
                 ["jac", "add", "--cl"],
                 cwd=project_path,
