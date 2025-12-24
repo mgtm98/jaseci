@@ -85,40 +85,49 @@ impl ViteBundler.create_package_json(
     return package_json_path;
 }
 
-"""Create tsconfig.json during build time."""
+"""Create tsconfig.json during build time, merging user config from jac.toml."""
 impl ViteBundler.create_tsconfig(self: ViteBundler) -> Path {
     tsconfig_path = self.project_dir / 'tsconfig.json';
-    # Only create if it doesn't exist (user may have customized it)
+    # Only create if it doesn't exist (user may have a fully custom one)
     if tsconfig_path.exists() {
         return tsconfig_path;
     }
-    tsconfig_content = """{
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["components/**/*"],
-  "exclude": ["node_modules", "dist", "build", "compiled"]
-}
-""";
-    tsconfig_path.write_text(tsconfig_content, encoding='utf-8');
+    # Default tsconfig settings
+    default_compiler_options = {
+        'target': 'ES2020',
+        'useDefineForClassFields': True,
+        'lib': ['ES2020', 'DOM', 'DOM.Iterable'],
+        'module': 'ESNext',
+        'skipLibCheck': True,
+        'moduleResolution': 'bundler',
+        'allowImportingTsExtensions': True,
+        'resolveJsonModule': True,
+        'isolatedModules': True,
+        'noEmit': True,
+        'jsx': 'react-jsx',
+        'strict': True,
+        'noUnusedLocals': True,
+        'noUnusedParameters': True,
+        'noFallthroughCasesInSwitch': True
+    };
+    default_include = ['components/**/*'];
+    default_exclude = ['node_modules', 'dist', 'build', 'compiled'];
+    # Get user config from [plugins.client.ts] in jac.toml
+    user_ts_config = self.config_loader.get_ts_config();
+    user_compiler_options = user_ts_config.get('compilerOptions', {});
+    user_include = user_ts_config.get('include', []);
+    user_exclude = user_ts_config.get('exclude', []);
+    # Merge compiler options (user overrides defaults)
+    merged_compiler_options = {** default_compiler_options, ** user_compiler_options};
+    # For include/exclude, use user values if provided, otherwise defaults
+    merged_include = user_include or default_include;
+    merged_exclude = user_exclude or default_exclude;
+    tsconfig_data = {
+        'compilerOptions': merged_compiler_options,
+        'include': merged_include,
+        'exclude': merged_exclude
+    };
+    tsconfig_path.write_text(json.dumps(tsconfig_data, indent=2), encoding='utf-8');
     return tsconfig_path;
 }
 

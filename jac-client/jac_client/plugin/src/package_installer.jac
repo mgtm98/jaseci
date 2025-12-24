@@ -1,6 +1,5 @@
-"""Package installer for managing npm dependencies in config.json."""
+"""Package installer for managing npm dependencies in jac.toml."""
 import from __future__ { annotations }
-import json;
 import shutil;
 import subprocess;
 import from pathlib { Path }

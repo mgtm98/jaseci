@@ -3,20 +3,23 @@ Functions that operate on Type objects.
 
 PyrightReference: packages/pyright-internal/src/analyzer/typeUtils.ts
 """
-import from dataclasses { dataclass }
 import from enum { Enum }
 import jaclang.pycore.unitree as uni;
 import from jaclang.pycore.constant { Tokens as Tok }
 import from jaclang.pycore.unitree { Symbol }
 import from . { types }
 """Represents a member of a class."""
-class ClassMember {
-    def init(
-        self: ClassMember,
-        symbol: Symbol,
+obj ClassMember {
+    has symbol: Symbol,
         class_type: types.ClassType,
-        overloads: list[Symbol]
-    ) -> None;
+        overloads: list[Symbol],
+        is_instance_member: bool = True,
+        is_class_member: bool = False,
+        is_slots_member: bool = False,
+        is_class_var: bool = False,
+        is_read_only: bool = False,
+        is_type_declared: bool = False,
+        skipped_undeclared_type: bool = False;
 }
 
 def compute_mro_linearization(cls: types.ClassType) -> None;
@@ -28,37 +31,31 @@ Tracks parameter assignments for function calls.
     with arguments in a function call. It supports positional, named,
     *args, and **kwargs arguments.
 """
-class ParamAssignmentTracker {
-    def init(self: ParamAssignmentTracker, params: list[types.Parameter]) -> None;
-    def lookup_named_parameter(
-        self: ParamAssignmentTracker, param_name: str
-    ) -> (types.Parameter | None);
+obj ParamAssignmentTracker {
+    has params: list[types.Parameter],
+        curr_param_idx: int = 0,
+        matched_params: set[types.Parameter] = set(),
+        varargs: (types.Parameter | None) = None,
+        kwargs: (types.Parameter | None) = None;
 
-    def _mark_all_named_params_as_matched(self: ParamAssignmentTracker) -> None;
-    def _mark_all_positional_params_as_matched(self: ParamAssignmentTracker) -> None;
-    def match_named_argument(
-        self: ParamAssignmentTracker, arg: uni.KWPair
-    ) -> (types.Parameter | None);
-
-    def match_positional_argument(
-        self: ParamAssignmentTracker, arg: uni.Expr
-    ) -> (types.Parameter | None);
-
-    def get_unmatched_required_params(
-        self: ParamAssignmentTracker
-    ) -> list[types.Parameter];
+    def postinit -> None;
+    def lookup_named_parameter(param_name: str) -> (types.Parameter | None);
+    def _mark_all_named_params_as_matched -> None;
+    def _mark_all_positional_params_as_matched -> None;
+    def match_named_argument(arg: uni.KWPair) -> (types.Parameter | None);
+    def match_positional_argument(arg: uni.Expr) -> (types.Parameter | None);
+    def get_unmatched_required_params -> list[types.Parameter];
 }
 
 """A completion item."""
-@dataclass
-class CompletionItem {
+obj CompletionItem {
     has label: str,
         kind: int,
         detail: (str | None) = None;
 }
 
 """The kind of a completion entry."""
-class CompletionItemKind(int , Enum) {
+class CompletionItemKind(int, Enum) {
     with entry {
         Text = 1;
         Method = 2;

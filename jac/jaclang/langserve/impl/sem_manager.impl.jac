@@ -175,7 +175,6 @@ impl SemTokManager.handle_multi_line_delete(
 
 """Update semantic tokens on change."""
 impl SemTokManager.update_sem_tokens(
-    self: SemTokManager,
     content_changes: lspt.DidChangeTextDocumentParams,
     sem_tokens: list[int],
     document_lines: List[str]
@@ -326,7 +325,7 @@ impl SemTokManager.update_sem_tokens(
 
 """Return semantic tokens."""
 impl SemTokManager.gen_sem_tok_node(
-    self: SemTokManager, ir: uni.Module
+    ir: uni.Module
 ) -> List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]] {
     tokens: List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]] = [];
     for nd in ir._in_mod_nodes {
@@ -345,7 +344,7 @@ impl SemTokManager.gen_sem_tok_node(
 }
 
 """Return semantic tokens."""
-impl SemTokManager.gen_sem_tokens(self: SemTokManager, ir: uni.Module) -> list[int] {
+impl SemTokManager.gen_sem_tokens(ir: uni.Module) -> list[int] {
     tokens = [];
     (prev_line, prev_col) = (0, 0);
     for nd in ir._in_mod_nodes {
@@ -369,9 +368,7 @@ impl SemTokManager.gen_sem_tokens(self: SemTokManager, ir: uni.Module) -> list[i
 }
 
 """Initialize semantic token manager."""
-impl SemTokManager.init(self: SemTokManager, ir: uni.Module) -> None {
-    self.sem_tokens: List[int] = self.gen_sem_tokens(ir);
-    self.static_sem_tokens: List[Tuple[lspt.Position, int, int, uni.AstSymbolNode]] = self.gen_sem_tok_node(
-        ir
-    );
+impl SemTokManager.postinit -> None {
+    self.sem_tokens = self.gen_sem_tokens(self.ir);
+    self.static_sem_tokens = self.gen_sem_tok_node(self.ir);
 }

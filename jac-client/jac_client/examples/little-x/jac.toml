@@ -1,0 +1,5 @@
+[project]
+name = "littlex-vite-bundler"
+version = "1.0.0"
+description = "Jac application: littlex-vite-bundler"
+entry-point = "app.jac"

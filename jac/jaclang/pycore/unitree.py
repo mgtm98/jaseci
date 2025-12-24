@@ -19,6 +19,7 @@ from typing import (
     cast,
 )
 
+from jaclang.pycore.bccache import discover_base_file
 from jaclang.pycore.codeinfo import CodeGenTarget, CodeLocInfo
 from jaclang.pycore.constant import (
     DELIM_MAP,
@@ -1005,45 +1006,17 @@ class Module(AstDocNode, UniScopeNode):
 
     @property
     def annexable_by(self) -> str | None:
-        """Get annexable by."""
-        if not self.stub_only and (
-            self.loc.mod_path.endswith(".impl.jac")
-            or self.loc.mod_path.endswith(".test.jac")
-            or self.loc.mod_path.endswith(".cl.jac")
-        ):
+        """Get the base module path that this annex file belongs to.
 
-            def existing_base_path(dir_path: str, stem: str) -> str | None:
-                jac_path = os.path.join(dir_path, f"{stem}.jac")
-                cl_path = os.path.join(dir_path, f"{stem}.cl.jac")
-                if os.path.exists(jac_path) and jac_path != self.loc.mod_path:
-                    return jac_path
-                if os.path.exists(cl_path) and cl_path != self.loc.mod_path:
-                    return cl_path
-                return None
-
-            head_mod_name = self.name.split(".")[0]
-            potential_path = existing_base_path(
-                os.path.dirname(self.loc.mod_path),
-                head_mod_name,
-            )
-            if potential_path:
-                return potential_path
-            annex_dir = os.path.split(os.path.dirname(self.loc.mod_path))[-1]
-            if (
-                annex_dir.endswith(".impl")
-                or annex_dir.endswith(".test")
-                or annex_dir.endswith(".cl")
-            ):
-                head_mod_name = os.path.split(os.path.dirname(self.loc.mod_path))[
-                    -1
-                ].split(".")[0]
-                potential_path = existing_base_path(
-                    os.path.dirname(os.path.dirname(self.loc.mod_path)),
-                    head_mod_name,
-                )
-                if potential_path:
-                    return potential_path
-        return None
+        Uses discover_base_file to find the base .jac file for annex files
+        (.impl.jac, .test.jac, .cl.jac). Handles all discovery scenarios:
+        - Same directory: foo.impl.jac -> foo.jac
+        - Module-specific folder: foo.impl/bar.impl.jac -> foo.jac
+        - Shared folder: impl/foo.impl.jac -> foo.jac
+        """
+        if self.stub_only:
+            return None
+        return discover_base_file(self.loc.mod_path)
 
     def normalize(self, deep: bool = False) -> bool:
         res = True

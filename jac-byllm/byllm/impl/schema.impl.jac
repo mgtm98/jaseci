@@ -8,11 +8,9 @@ impl _type_to_schema(ty: type, title: str = "", desc: str = "") -> dict {
     context = ({"title": title} if title else {}) | (
         {"description": desc} if desc else {}
     );
-    semstr: str = ty._jac_semstr if hasattr(ty, "_jac_semstr") else "";
-    semstr = semstr or (ty.__doc__ if hasattr(ty, "__doc__") else "") or "";  # type: ignore
-    semstr_inner: dict[str, str] = (
-        ty._jac_semstr_inner if hasattr(ty, "_jac_semstr_inner") else {}
-    );
+    semstr: str = ty?._jac_semstr or "";
+    semstr = semstr or ty?.__doc__ or "";  # type: ignore
+    semstr_inner: dict[str, str] = ty?._jac_semstr_inner or {};
     # Raise on unsupported types
     if ty in (list, dict, set, tuple) {
         raise ValueError(
@@ -143,7 +141,7 @@ impl _name_of_type(ty: type) -> str {
         names = [_name_of_type(arg) for arg in get_args(ty)];
         return "_or_".join(names);
     }
-    if hasattr(ty, "__name__") {
+    if ty?.__name__ {
         return ty.__name__;
     }
     return "type";

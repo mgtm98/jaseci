@@ -1,10 +1,11 @@
 """Build and push docker image to dockerhub."""
 
 impl build_and_push_docker(code_folder: str) -> None {
-    app_name = os.getenv('APP_NAME', 'jaseci');
-    image_name = os.getenv('DOCKER_IMAGE_NAME', f"{app_name}:latest");
-    docker_username = os.getenv('DOCKER_USERNAME', 'juzailmlwork');
-    docker_password = os.getenv('DOCKER_PASSWORD', '12345');
+    # Use configuration from jac.toml with env var overrides
+    app_name = _k8s_config['app_name'];
+    image_name = _k8s_config['docker_image_name'] or f"{app_name}:latest";
+    docker_username = _k8s_config['docker_username'] or 'juzailmlwork';
+    docker_password = _k8s_config['docker_password'] or '12345';
     repository_name = f"{docker_username}/{image_name}";
     print('the repo name is', repository_name);
     build_docker_image(image_name=repository_name, code_folder=code_folder);

@@ -531,7 +531,7 @@ impl CommentInjectionPass._handle_body_comments(
     self: CommentInjectionPass, <>node: uni.UniNode, indent: doc.Indent
 ) -> doc.Indent {
     body: (Sequence[uni.UniNode] | None) = None;
-    if hasattr(<>node, 'body') {
+    if <>node?.body {
         body = <>node.body;
     } elif (isinstance(<>node, uni.JsxElement) and <>node.children) {
         body = <>node.children;
@@ -941,10 +941,10 @@ impl CommentInjectionPass._process(
     self: CommentInjectionPass, ctx: uni.UniNode, <>node: doc.DocType
 ) -> doc.DocType {
     if isinstance(<>node, doc.Concat) {
-        ctx = <>node.ast_node if <>node.ast_node else ctx;
+        ctx = <>node.ast_node or ctx;
         processed_parts = self._inject_into_parts(<>node.parts, ctx);
         if isinstance(ctx, (uni.FuncSignature, uni.FuncCall)) {
-            items = ctx.params if hasattr(ctx, 'params') else [];
+            items = ctx?.params or [];
             processed_parts = self._handle_paren_comments(items, processed_parts);
         }
         if isinstance(
@@ -963,7 +963,7 @@ impl CommentInjectionPass._process(
         processed_parts = self._fix_empty_region_spacing(processed_parts);
         return doc.Concat(processed_parts, ast_node=ctx);
     } elif isinstance(<>node, doc.Group) {
-        ctx = <>node.ast_node if <>node.ast_node else ctx;
+        ctx = <>node.ast_node or ctx;
         return doc.Group(
             self._process(ctx, <>node.contents),
             <>node.break_contiguous,
@@ -971,7 +971,7 @@ impl CommentInjectionPass._process(
             ast_node=ctx
         );
     } elif isinstance(<>node, doc.Indent) {
-        ctx = <>node.ast_node if <>node.ast_node else ctx;
+        ctx = <>node.ast_node or ctx;
         has_body = (
             <>node.ast_node
             and (
@@ -1158,18 +1158,29 @@ impl CommentStore.from_module(cls: Any, module: uni.Module) -> CommentStore {
         collection.sort(key=lambda  c: Any: (c.first_line, c.index));
     }
     standalone.sort(key=lambda  c: Any: (c.first_line, c.index));
-    return cls(inline, standalone);
+    return cls(_inline=inline, _standalone=standalone);
 }
 
 impl CommentStore.init(
     self: CommentStore,
-    inline: dict[(int, list[CommentInfo])],
-    standalone: list[CommentInfo]
+    _inline: dict[(int, list[CommentInfo])],
+    _standalone: list[CommentInfo]
 ) -> None {
-    self._inline: dict[(int, list[CommentInfo])] = inline;
-    self._standalone: list[CommentInfo] = standalone;
-    self._standalone_lines: list[int] = [c.first_line for c in standalone];
-    self._used: set[int] = <>set();
+    self._inline = _inline;
+    self._standalone = _standalone;
+    self._standalone_lines = [c.first_line for c in self._standalone];
+    self._used = set();
+}
+
+impl CommentInfo.init(
+    self: CommentInfo,
+    index: int,
+    token: uni.CommentToken,
+    anchor_token_id: (int | None)
+) -> None {
+    self.index = index;
+    self.token = token;
+    self.anchor_token_id = anchor_token_id;
 }
 
 """Return the final line this comment occupies."""

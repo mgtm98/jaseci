@@ -40,7 +40,7 @@ obj UserData {
 }
 
 """Type-safe serializer for Jac objects."""
-class JacSerializer {
+obj JacSerializer {
     static def serialize(<>obj: object) -> JsonValue;
     static def _serialize_archetype(arch: Archetype) -> dict[str, JsonValue];
 }
@@ -64,23 +64,16 @@ obj UserManager {
 }
 
 """Manages execution contexts for user operations."""
-class ExecutionManager {
-    def init(
-        self: ExecutionManager, session_path: str, user_manager: UserManager
-    ) -> None;
+obj ExecutionManager {
+    has session_path: str,
+        user_manager: UserManager;
 
     def execute_function(
-        self: ExecutionManager,
-        func: Callable[(..., Any)],
-        args: dict[(str, Any)],
-        username: str
+        func: Callable[(..., Any)], args: dict[(str, Any)], username: str
     ) -> dict[str, JsonValue];
 
     def spawn_walker(
-        self: ExecutionManager,
-        walker_cls: type[WalkerArchetype],
-        fields: dict[(str, Any)],
-        username: str
+        walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
     ) -> dict[str, JsonValue];
 }
 
@@ -121,7 +114,7 @@ obj ModuleIntrospector {
 }
 
 """Build and send HTTP responses."""
-class ResponseBuilder {
+obj ResponseBuilder {
     static def send_json(
         handler: BaseHTTPRequestHandler,
         status: StatusCode,
@@ -138,72 +131,68 @@ class ResponseBuilder {
 }
 
 """Base route handler."""
-class RouteHandler {
-    def init(
-        self: RouteHandler,
-        introspector: ModuleIntrospector,
+obj RouteHandler {
+    has introspector: ModuleIntrospector,
         execution_manager: ExecutionManager,
-        user_manager: UserManager
-    ) -> None;
+        user_manager: UserManager;
 }
 
 """Handle authentication routes."""
-class AuthHandler(RouteHandler) {
-    def create_user(self: AuthHandler, email: str, password: str) -> Response;
-    def login(self: AuthHandler, email: str, password: str) -> Response;
+obj AuthHandler {
+    has introspector: ModuleIntrospector,
+        execution_manager: ExecutionManager,
+        user_manager: UserManager;
+
+    def create_user(email: str, password: str) -> Response;
+    def login(email: str, password: str) -> Response;
 }
 
 """Handle introspection routes."""
-class IntrospectionHandler(RouteHandler) {
-    def list_functions(self: IntrospectionHandler) -> Response;
-    def list_walkers(self: IntrospectionHandler) -> Response;
-    def get_function_info(self: IntrospectionHandler, name: str) -> Response;
-    def get_walker_info(self: IntrospectionHandler, name: str) -> Response;
+obj IntrospectionHandler {
+    has introspector: ModuleIntrospector,
+        execution_manager: ExecutionManager,
+        user_manager: UserManager;
+
+    def list_functions -> Response;
+    def list_walkers -> Response;
+    def get_function_info(name: str) -> Response;
+    def get_walker_info(name: str) -> Response;
 }
 
 """Handle execution routes."""
-class ExecutionHandler(RouteHandler) {
-    def call_function(
-        self: ExecutionHandler, name: str, args: dict[(str, Any)], username: str
-    ) -> Response;
+obj ExecutionHandler {
+    has introspector: ModuleIntrospector,
+        execution_manager: ExecutionManager,
+        user_manager: UserManager;
 
-    def spawn_walker(
-        self: ExecutionHandler, name: str, fields: dict[(str, Any)], username: str
-    ) -> Response;
+    def call_function(name: str, args: dict[(str, Any)], username: str) -> Response;
+    def spawn_walker(name: str, fields: dict[(str, Any)], username: str) -> Response;
 }
 
 """REST API Server for Jac programs."""
-class JacAPIServer {
-    def init(
-        self: JacAPIServer,
-        module_name: str,
+obj JacAPIServer {
+    has module_name: str,
         session_path: str,
         port: int = 8000,
-        base_path: (str | None) = None
-    ) -> None;
+        base_path: (str | None) = None;
 
-    def create_handler(self: JacAPIServer) -> type[BaseHTTPRequestHandler];
-    def load_module(self: JacAPIServer, force_reload: bool = False) -> None;
+    def postinit -> None;
+    def create_handler -> type[BaseHTTPRequestHandler];
+    def load_module(force_reload: bool = False) -> None;
     @property
-    def module(self: JacAPIServer) -> object;
+    def module -> object;
 
-    def get_functions(self: JacAPIServer) -> dict[str, Callable[(..., Any)]];
-    def get_walkers(self: JacAPIServer) -> dict[str, type[WalkerArchetype]];
-    def introspect_callable(
-        self: JacAPIServer, func: Callable[(..., Any)]
-    ) -> dict[str, Any];
-
-    def introspect_walker(
-        self: JacAPIServer, walker_cls: type[WalkerArchetype]
-    ) -> dict[str, Any];
-
+    def get_functions -> dict[str, Callable[(..., Any)]];
+    def get_walkers -> dict[str, type[WalkerArchetype]];
+    def introspect_callable(func: Callable[(..., Any)]) -> dict[str, Any];
+    def introspect_walker(walker_cls: type[WalkerArchetype]) -> dict[str, Any];
     def render_client_page(
-        self: JacAPIServer, function_name: str, args: dict[(str, Any)], username: str
+        function_name: str, args: dict[(str, Any)], username: str
     ) -> dict[str, Any];
 
-    def get_client_bundle_code(self: JacAPIServer) -> str;
-    def print_endpoint_docs(self: JacAPIServer) -> None;
-    def start(self: JacAPIServer) -> None;
+    def get_client_bundle_code -> str;
+    def print_endpoint_docs -> None;
+    def start -> None;
 }
 
 """Print comprehensive documentation for all endpoints that would be generated."""

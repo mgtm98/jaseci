@@ -1,0 +1,5 @@
+[project]
+name = "image-asset"
+version = "1.0.0"
+description = "Jac application: image-asset"
+entry-point = "app.jac"

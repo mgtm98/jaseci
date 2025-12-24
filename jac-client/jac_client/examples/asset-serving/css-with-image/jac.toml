@@ -1,0 +1,5 @@
+[project]
+name = "relative-imports"
+version = "1.0.0"
+description = "Jac application: relative-imports"
+entry-point = "app.jac"

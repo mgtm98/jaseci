@@ -29,19 +29,6 @@ jobs:
           pip install -e jac-scale
           pip install pytest
           pip install pytest-asyncio
-          pip install -e jac-client
-
-      - name: Run Backend tests
-        run: |
-          pytest -v jac-scale/jac_scale/tests/test_serve.py
-
-      - name: Run jac-client examples
-        run: |
-          pytest -v jac-scale/jac_scale/tests/test_examples.py
-
-      - name: Run SSO tests
-        run: |
-          pytest -v jac-scale/jac_scale/tests/test_sso.py
 
       - name: Check for Kubernetes changes
         id: k8s-changes

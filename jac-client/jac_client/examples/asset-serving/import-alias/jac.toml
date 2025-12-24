@@ -1,0 +1,5 @@
+[project]
+name = "import-alias"
+version = "1.0.0"
+description = "Jac application: import-alias"
+entry-point = "app.jac"

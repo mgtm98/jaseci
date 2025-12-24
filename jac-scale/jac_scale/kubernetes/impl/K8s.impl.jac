@@ -6,15 +6,16 @@ impl deploy_K8s(
     build: bool = False,
     testing: bool = False
 ) -> None {
-    app_name = os.getenv('APP_NAME', 'jaseci');
-    image_name = os.getenv('DOCKER_IMAGE_NAME', f"{app_name}:latest");
-    namespace = os.getenv('K8s_NAMESPACE', 'default');
-    container_port = int(os.getenv('K8s_CONTAINER_PORT', '8000'));
-    node_port = int(os.getenv('K8s_NODE_PORT', '30001'));
-    docker_username = os.getenv('DOCKER_USERNAME', 'juzailmlwork');
+    # Use configuration from jac.toml with env var overrides
+    app_name = _k8s_config['app_name'];
+    image_name = _k8s_config['docker_image_name'] or f"{app_name}:latest";
+    namespace = _k8s_config['namespace'];
+    container_port = _k8s_config['container_port'];
+    node_port = _k8s_config['node_port'];
+    docker_username = _k8s_config['docker_username'] or 'juzailmlwork';
     repository_name = f"{docker_username}/{image_name}";
-    mongodb_enabled = os.getenv('K8s_MONGODB', 'true').lower() == 'true';
-    redis_enabled = os.getenv('K8s_REDIS', 'true').lower() == 'true';
+    mongodb_enabled = _k8s_config['mongodb_enabled'];
+    redis_enabled = _k8s_config['redis_enabled'];
     if not build {
         repository_name = 'python:3.12-slim';
     }
