@@ -239,6 +239,14 @@ impl TypeEvaluator._get_type_of_expression_core(
                 if symbol := scope.lookup(expr.value, deep=True, incl_inner_scope=True) {
                     symbol = self.resolve_imported_symbols(symbol);
                     symbol.add_use(expr);
+                    # Only set sym if not already set (preserves existing symbol info for declarations)
+                    if expr.sym is None {
+                        expr.sym = symbol;
+                        # Link name_of to the declaration's AstSymbolNode for hover
+                        if symbol.decl and symbol.decl.name_of {
+                            expr.name_of = symbol.decl.name_of;
+                        }
+                    }
                     return self.get_type_of_symbol(symbol);
                 }
             }

@@ -9,13 +9,6 @@ from threading import Event
 from typing import TYPE_CHECKING
 
 import jaclang.pycore.unitree as uni
-from jaclang.compiler.passes.main import (
-    Alert,
-    PyastGenPass,
-    PyBytecodeGenPass,
-    SymTabBuildPass,
-    Transform,
-)
 from jaclang.pycore.bccache import (
     BytecodeCache,
     CacheKey,
@@ -23,6 +16,16 @@ from jaclang.pycore.bccache import (
 )
 from jaclang.pycore.helpers import read_file_with_encoding
 from jaclang.pycore.jac_parser import JacParser
+from jaclang.pycore.passes import (
+    Alert,
+    DeclImplMatchPass,
+    JacAnnexPass,
+    PyastGenPass,
+    PyBytecodeGenPass,
+    SemanticAnalysisPass,
+    SymTabBuildPass,
+    Transform,
+)
 from jaclang.pycore.tsparser import TypeScriptParser
 
 if TYPE_CHECKING:
@@ -32,19 +35,12 @@ if TYPE_CHECKING:
 # Lazy schedule getters - enables converting analysis passes to Jac
 def get_symtab_ir_sched() -> list[type[Transform[uni.Module, uni.Module]]]:
     """Return symbol table build schedule with lazy imports."""
-    from jaclang.compiler.passes.main import DeclImplMatchPass
-
     return [SymTabBuildPass, DeclImplMatchPass]
 
 
 def get_ir_gen_sched() -> list[type[Transform[uni.Module, uni.Module]]]:
     """Return full IR generation schedule with lazy imports."""
-    from jaclang.compiler.passes.main import (
-        CFGBuildPass,
-        DeclImplMatchPass,
-        SemanticAnalysisPass,
-        SemDefMatchPass,
-    )
+    from jaclang.compiler.passes.main import CFGBuildPass, SemDefMatchPass
 
     return [
         SymTabBuildPass,
@@ -76,8 +72,6 @@ def get_minimal_ir_gen_sched() -> list[type[Transform[uni.Module, uni.Module]]]:
     This schedule is used for bootstrap-critical modules that need basic
     semantic analysis but don't need full control flow analysis.
     """
-    from jaclang.compiler.passes.main import DeclImplMatchPass, SemanticAnalysisPass
-
     return [SymTabBuildPass, DeclImplMatchPass, SemanticAnalysisPass]
 
 
@@ -245,8 +239,6 @@ class JacProgram:
         if self.mod.main.stub_only:
             self.mod = uni.ProgramModule(mod)
         self.mod.hub[mod.loc.mod_path] = mod
-        from jaclang.compiler.passes.main import JacAnnexPass
-
         JacAnnexPass(ir_in=mod, prog=self)
         return mod
 
@@ -309,7 +301,7 @@ class JacProgram:
         self, file_path: str, use_str: str | None = None, type_check: bool = False
     ) -> uni.Module:
         """Convert a Jac file to an AST."""
-        from jaclang.compiler.passes.main import JacImportDepsPass, SemanticAnalysisPass
+        from jaclang.compiler.passes.main import JacImportDepsPass
 
         mod_targ = self.compile(file_path, use_str, type_check=type_check)
         JacImportDepsPass(ir_in=mod_targ, prog=self)
