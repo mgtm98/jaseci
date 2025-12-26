@@ -114,6 +114,7 @@ impl with_hot_reload(watch_path_arg: str = 'filename') -> Callable {
         return wrapper;
     }
     return decorator;
+}
 
 """Load project configuration from jac.toml if present."""
 def _load_project_config -> None {
