@@ -47,26 +47,30 @@ pip install jac-client
 
 ### Create a New Jac App
 
-Use the `jac create_jac_app` command to scaffold a new application: (* we can name our app however we want, here we are using `todo-app)
+Use the `jac create --cl` command to scaffold a new client-side application: (* we can name our app however we want, here we are using `todo-app)
 
 ```bash
-jac create_jac_app todo-app
+jac create --cl todo-app
 ```
 
 This command will:
 
 - Create a new directory with your project name
-- Set up the basic project structure
-- Initialize npm and install Vite (for development server)
-- Create a starter `app.jac` file with a sample component
+- Set up an organized project structure with `src/` folder
+- Create a starter `src/app.jac` file with a sample component
+- Include a sample TypeScript component
 
 **What gets created:**
 
 ```
-my-app/
-├── app.jac          # Your main application file
-├── package.json      # Node.js dependencies
-└── node_modules/    # Dependencies (after npm install)
+todo-app/
+├── jac.toml              # Project configuration
+├── src/                  # Source files
+│   ├── app.jac           # Main application file
+│   └── components/       # Reusable components
+│       └── Button.tsx    # Example TypeScript component
+├── assets/               # Static assets
+└── build/                # Build output (generated)
 ```
 
 ### Running Your App
@@ -75,7 +79,7 @@ Navigate to your project directory and start the development server:
 
 ```bash
 cd todo-app
-jac serve app.jac
+jac serve src/app.jac
 ```
 
 This starts both:

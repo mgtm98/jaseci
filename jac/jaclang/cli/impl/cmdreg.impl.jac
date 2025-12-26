@@ -180,7 +180,7 @@ impl CommandRegistry.register(
     self: CommandRegistry,
     func: (Callable | None) = None,
     *,
-    priority: CommandPriority = CommandPriority.CORE,
+    priority: (int | CommandPriority) = CommandPriority.CORE,
     source: str = 'core'
 ) -> Callable {
     """Inner registration function.""";

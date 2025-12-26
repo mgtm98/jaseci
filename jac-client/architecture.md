@@ -333,7 +333,7 @@ jac uninstall --cl -D @types/react  # Remove from devDependencies
 **Project Creation:**
 
 ```bash
-jac create_jac_app my-app            # Creates config.json with package.name = "my-app"
+jac create --cl my-app            # Creates jac.toml with organized folder structure
 ```
 
 #### Benefits

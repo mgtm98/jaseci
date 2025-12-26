@@ -371,7 +371,7 @@ lib_imports = ["import tailwindcss from '@tailwindcss/vite'"]
 
 ```bash
 # Create project
-jac create_jac_app my-app
+jac create --cl my-app
 cd my-app
 
 # Add custom dependencies
@@ -380,7 +380,7 @@ jac add --cl --dev @types/lodash
 jac add --cl --dev sass
 
 # Build/serve
-jac serve app.jac
+jac serve src/app.jac
 ```
 
 ## Related Documentation

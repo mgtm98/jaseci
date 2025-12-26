@@ -31,14 +31,25 @@ import lsprotocol.types as lspt;
 import from . { utils }
 import from .module_manager { ModuleManager }
 
-class Task {
-    has _task_id: int = 0;
+obj Task {
+    has file_uri: str,
+        task_id: int = 0,
+        cancel_token: threading.Event | None = None;
 
-    def init(self: Task, file_uri: str);
+    static has _task_id: int = 0;
+
+    def postinit -> None;
 }
 
 """Jac Language Server, manages JacProgram and LSP."""
 class JacLangServer(JacProgram, LanguageServer) {
+    has module_manager: ModuleManager,
+        sem_managers: dict,
+        queue: Queue,
+        worker_thread: threading.Thread,
+        last_task: Task | None = None,
+        _shutdown_called: bool = False;
+
     def init(self: JacLangServer) -> None;
     def dispatcher(self: JacLangServer) -> None;
     @property

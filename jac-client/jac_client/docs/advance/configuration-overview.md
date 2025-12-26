@@ -242,7 +242,7 @@ export default {
 
 | Command | Purpose |
 |---------|---------|
-| `jac create_jac_app <name>` | Create new project with `jac.toml` |
+| `jac create --cl <name>` | Create new client project with `jac.toml` |
 | `jac add --cl <package>` | Add npm package |
 | `jac remove --cl <package>` | Remove npm package |
 | `jac add --cl` | Install all packages from jac.toml |
@@ -251,10 +251,10 @@ export default {
 
 ```bash
 # 1. Create project
-jac create_jac_app my-app
+jac create --cl my-app
 cd my-app
 
-# 2. jac.toml is automatically created
+# 2. jac.toml is automatically created with organized folder structure
 
 # 3. Add custom packages
 jac add --cl lodash
@@ -263,7 +263,7 @@ jac add --cl --dev sass
 # 4. Customize build (edit jac.toml)
 
 # 5. Build/serve
-jac serve app.jac
+jac serve src/app.jac
 ```
 
 ## File Organization

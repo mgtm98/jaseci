@@ -107,6 +107,15 @@ impl JacLangServer.get_definition(
         return None;
     }
     node_type = node_selected.type;
+    parent = node_selected.parent;
+    ####################################################################
+    ##         Check for impl body first (stub -> impl navigation)    ##
+    ####################################################################
+    if isinstance(parent, uni.AstImplNeedingNode) and parent.body {
+        if isinstance(parent.body, uni.ImplDef) {
+            return make_location(parent.body.sym.decl);
+        }
+    }
     ####################################################################
     ##          Handle go to def for types and variables              ##
     ####################################################################
@@ -122,17 +131,11 @@ impl JacLangServer.get_definition(
     ####################################################################
     ##         Ad-hoc handling for impl-def go to def                 ##
     ####################################################################
-    parent = node_selected.parent;
     if not parent {
         return None;
     }
     if isinstance(parent, uni.ImplDef) and parent.decl_link {
         return make_location(parent.decl_link.sym.decl);
-    }
-    if isinstance(parent, uni.AstImplNeedingNode) and parent.body {
-        if isinstance(parent.body, uni.ImplDef) {
-            return make_location(parent.body.sym.decl);
-        }
     }
     ####################################################################
     ##         Fallback: use symbol resolution if available           ##
@@ -502,19 +505,16 @@ impl JacLangServer.dispatcher(self: JacLangServer) -> None {
 impl JacLangServer.init(self: JacLangServer) -> None {
     LanguageServer.init(self, 'jac-lsp', 'v0.1');
     JacProgram.init(self);
-    self.sem_managers: dict[(str, SemTokManager)] = {};
+    self.sem_managers = {};
     self.module_manager = ModuleManager(self, self.sem_managers);
     # Worker thread for type checking.
     self.queue = Queue();
-    self.last_task: Task | None = None;
     self.worker_thread = threading.Thread(target=self.dispatcher);
     self.worker_thread.start();
-    self._shutdown_called = False;
 }
 
-impl Task.init(self: Task, file_uri: str) {
+impl Task.postinit -> None {
     self.task_id = Task._task_id;
     self.cancel_token = threading.Event();
-    self.file_uri = file_uri;
     Task._task_id += 1;
 }

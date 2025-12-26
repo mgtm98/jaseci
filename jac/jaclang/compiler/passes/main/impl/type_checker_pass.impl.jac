@@ -6,6 +6,14 @@ impl TypeCheckPass.exit_special_var_ref(
     self.evaluator.get_type_of_expression(<>node);
 }
 
+"""Handle name nodes to ensure symbol resolution for all variable references."""
+impl TypeCheckPass.exit_name(self: TypeCheckPass, <>node: uni.Name) -> None {
+    # Skip if already resolved or if part of a construct that handles its own resolution
+    if <>node.sym is None {
+        self.evaluator.get_type_of_expression(<>node);
+    }
+}
+
 """Handle the edge reference trailer node."""
 impl TypeCheckPass.exit_edge_ref_trailer(
     self: TypeCheckPass, <>node: uni.EdgeRefTrailer
@@ -111,6 +119,137 @@ impl TypeCheckPass.enter_ability(self: TypeCheckPass, <>node: uni.Ability) -> No
         if (isinstance(ty, jtypes.ClassType) and ty.is_builtin('staticmethod')) {
             <>node.is_static = True;
             break;
+        }
+    }
+}
+
+"""Exit an ability node - ensure parameter type annotations are evaluated."""
+impl TypeCheckPass.exit_ability(self: TypeCheckPass, <>node: uni.Ability) -> None {
+    # For abilities with ImplDef body (stubs linked to impl files), the original declaration's
+    # type annotation Name nodes are orphaned (not in the traversal tree). We need to explicitly
+    # process them to enable hover/go-to-definition on the declaration file.
+    if isinstance(<>node.body, uni.ImplDef) {
+        ability_start_line = <>node.loc.first_line;
+        ability_end_line = <>node.loc.last_line;
+        # Find orphaned Name nodes in type annotations at this ability's location
+        if module := <>node.find_parent_of_type(uni.Module) {
+            for nd in module._in_mod_nodes {
+                if (
+                    isinstance(nd, uni.Name)
+                    and nd.sym is None
+                    and ability_start_line <= nd.loc.first_line <= ability_end_line
+                    and isinstance(nd.parent, uni.SubTag)
+                ) {  # SubTag is the type annotation wrapper
+
+                    self.evaluator.get_type_of_expression(nd);
+                }
+            }
+        }
+        # The ImplDef body is not in the Ability's kid list, so it's not traversed by the pass.
+        # We need to explicitly traverse the ImplDef body to evaluate types for hover/go-to-def.
+        self._traverse_impl_body(<>node.body);
+    }
+}
+
+"""Traverse an ImplDef body and evaluate types for all expression nodes."""
+impl TypeCheckPass._traverse_impl_body(
+    self: TypeCheckPass, impl_def: uni.ImplDef
+) -> None {
+    # Recursively traverse all nodes in the ImplDef body and call type evaluation
+    def traverse_node(node: uni.UniNode) -> None {
+        if node is None {
+            return;
+        }
+
+        # Call the appropriate exit handler for expression nodes
+        if isinstance(node, uni.SpecialVarRef) {
+            self.evaluator.get_type_of_expression(node);
+        } elif isinstance(node, uni.AtomTrailer) {
+            self.evaluator.get_type_of_expression(node);
+        } elif isinstance(node, uni.FuncCall) {
+            self.evaluator.get_type_of_expression(node);
+        } elif isinstance(node, uni.BinaryExpr) {
+            self.evaluator.get_type_of_expression(node);
+        } elif isinstance(node, uni.Assignment) {
+            # Handle assignments - evaluate both sides
+            for target in node.target {
+                self.evaluator.get_type_of_expression(target);
+            }
+            if node.value {
+                self.evaluator.get_type_of_expression(node.value);
+            }
+        } elif isinstance(node, uni.ReturnStmt) {
+            if node.expr {
+                self.evaluator.get_type_of_expression(node.expr);
+            }
+        } elif isinstance(node, uni.Name) {
+            if node.sym is None {
+                self.evaluator.get_type_of_expression(node);
+            }
+        }
+
+        # Recursively traverse children
+        if node?.kid {
+            for child in node.kid {
+                if child {
+                    traverse_node(child);
+                }
+            }
+        }
+    }
+    # Start traversing from the ImplDef's children
+    for child in impl_def.kid {
+        if child {
+            traverse_node(child);
+        }
+    }
+}
+
+"""Exit an impl def node - ensure parameter type annotations are evaluated."""
+impl TypeCheckPass.exit_impl_def(self: TypeCheckPass, <>node: uni.ImplDef) -> None {
+    # For impl blocks, process type annotation Name nodes to enable hover/go-to-definition.
+    # Directly traverse the FuncSignature's params to find type annotations.
+    if isinstance(<>node.spec, uni.FuncSignature) {
+        sig = <>node.spec;
+        all_params = (
+            list(sig.posonly_params) + list(sig.params) + (
+                [sig.varargs] if sig.varargs else []
+            ) + list(sig.kwonlyargs) + ([sig.kwargs] if sig.kwargs else [])
+        );
+        for param in all_params {
+            # Process the type annotation - access via tag directly
+            if param.type_tag and isinstance(param.type_tag, uni.SubTag) {
+                tag = param.type_tag.tag;
+                if isinstance(tag, uni.Name) {
+                    # Try to resolve the symbol from the module scope if not already resolved
+                    if tag.sym is None {
+                        # Try to find the symbol from all loaded modules
+                        symbol: uni.Symbol | None = None;
+                        # Check all modules in the program hub
+                        for (path, mod) in self.prog.mod.hub.items() {
+                            if symbol := mod.lookup(
+                                tag.value, deep=True, incl_inner_scope=True
+                            ) {
+                                break;
+                            }
+                        }
+                        if symbol {
+                            symbol = self.evaluator.resolve_imported_symbols(symbol);
+                            symbol.add_use(tag);
+                            tag.sym = symbol;
+                            if symbol.decl and symbol.decl.name_of {
+                                tag.name_of = symbol.decl.name_of;
+                            }
+                        }
+                    }
+                    # Also call evaluator for full type processing
+                    self.evaluator.get_type_of_expression(tag);
+                }
+            }
+        }
+        # Also process return type annotation
+        if sig.return_type and isinstance(sig.return_type, uni.Name) {
+            self.evaluator.get_type_of_expression(sig.return_type);
         }
     }
 }
