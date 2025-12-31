@@ -7,6 +7,8 @@ import jwt;
 import from os { getenv }
 import from fastapi.middleware.cors { CORSMiddleware }
 import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
+import from fastapi { Request }
+import httpx;
 import from jac_scale.jserver.jfast_api { JFastApiServer }
 import from jac_scale.jserver.jserver {
     APIParameter,
@@ -40,7 +42,15 @@ class Operations(StrEnum) {
         REGISTER: str = 'register';
 }
 
+class EndpointMode(StrEnum) {
+    has FRONTEND: str = 'frontend',
+        BACKEND: str = 'backend',
+        ALL: str = 'all';
+}
+
 class JacAPIServer(JServer) {
+    has endpoint_mode: EndpointMode = EndpointMode.ALL;
+    
     static def create_jwt_token(username: str) -> str;
     static def validate_jwt_token(token: str) -> (str | None);
     static def refresh_jwt_token(token: str) -> (str | None);
@@ -49,7 +59,8 @@ class JacAPIServer(JServer) {
         module_name: str,
         session_path: str,
         port: int = 8000,
-        base_path: (str | None) = None
+        base_path: (str | None) = None,
+        endpoint_mode: EndpointMode = EndpointMode.ALL
     ) -> None;
 
     def login(self: JacAPIServer, username: str, password: str) -> JSONResponse;

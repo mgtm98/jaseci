@@ -1,15 +1,24 @@
 impl JacAPIServer.start(self: JacAPIServer) -> None {
     self.introspector.load();
-    self.register_create_user_endpoint();
-    self.register_login_endpoint();
-    self.register_page_endpoint();
-    self.register_refresh_token_endpoint();
-    self.register_sso_endpoints();
-    self.register_client_js_endpoint();
-    self.register_static_file_endpoint();
-    self.register_walkers_endpoints();
-    self.register_functions_endpoints();
-    self.register_root_asset_endpoint();
+    
+    # Backend endpoints (authentication and API)
+    if self.endpoint_mode in [EndpointMode.BACKEND, EndpointMode.ALL] {
+        self.register_create_user_endpoint();
+        self.register_login_endpoint();
+        self.register_refresh_token_endpoint();
+        self.register_sso_endpoints();
+        self.register_walkers_endpoints();
+        self.register_functions_endpoints();
+    }
+    
+    # Frontend endpoints (pages, static files, assets)
+    if self.endpoint_mode in [EndpointMode.FRONTEND, EndpointMode.ALL] {
+        self.register_page_endpoint();
+        self.register_client_js_endpoint();
+        self.register_static_file_endpoint();
+        self.register_root_asset_endpoint();
+    }
+    
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
     self.server_impl.run_server(port=self.port);
@@ -672,9 +681,11 @@ impl JacAPIServer.init(
     module_name: str,
     session_path: str,
     port: int = 8000,
-    base_path: (str | None) = None
+    base_path: (str | None) = None,
+    endpoint_mode: EndpointMode = EndpointMode.ALL
 ) -> None {
     super.init(module_name, session_path, port, base_path);
+    self.endpoint_mode = endpoint_mode;
     self.server_impl = JFastApiServer([]);
     self.server_impl.app.add_middleware(
         CORSMiddleware,
