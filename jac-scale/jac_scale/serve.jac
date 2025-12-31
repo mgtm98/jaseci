@@ -109,15 +109,13 @@ class JacAPIServer(JServer) {
     def register_root_asset_endpoint(self: JacAPIServer) -> None;
     def serve_root_asset(self: JacAPIServer, file_path: str) -> Response;
     def register_proxy_endpoints(self: JacAPIServer) -> None;
-    def proxy_user_register(self: JacAPIServer) -> Callable[..., Response];
-    def proxy_user_login(self: JacAPIServer) -> Callable[..., Response];
-    def proxy_user_refresh_token(self: JacAPIServer) -> Callable[..., Response];
-    def proxy_sso_initiate(self: JacAPIServer) -> Callable[..., Response];
-    def proxy_sso_callback(self: JacAPIServer) -> Callable[..., Response];
-    def proxy_walker(
-        self: JacAPIServer, walker_name: str, has_node: bool
+    def create_proxy_callback(
+        self: JacAPIServer,
+        method: HTTPMethod,
+        path: str,
+        parameters: list[APIParameter],
+        include_request: bool = False
     ) -> Callable[..., Response];
-    def proxy_function(self: JacAPIServer, func_name: str) -> Callable[..., Response];
     def _configure_openapi_security(self: JacAPIServer) -> None;
     def start(self: JacAPIServer) -> None;
 }
