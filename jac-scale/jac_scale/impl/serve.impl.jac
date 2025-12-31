@@ -19,6 +19,11 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
         self.register_root_asset_endpoint();
     }
     
+    # Frontend proxy endpoints - forward backend requests to backend server
+    if self.endpoint_mode == EndpointMode.FRONTEND {
+        self.register_proxy_endpoints();
+    }
+    
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
     self.server_impl.run_server(port=self.port);
@@ -961,4 +966,391 @@ impl JacAPIServer.register_sso_endpoints(self: JacAPIServer) -> None {
             description='Handles the callback from SSO provider after authentication'
         )
     );
+}
+
+"""Register proxy endpoints that forward requests to backend server."""
+impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
+    # Backend server is always on port + 1
+    backend_port = self.port + 1;
+    self.backend_proxy_url = f"http://localhost:{backend_port}";
+    
+    # Proxy user endpoints - each with its own callback
+    self.server_impl.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/user/register',
+            callback=self.proxy_user_register(),
+            parameters=[
+                APIParameter(
+                    name='username',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Username for new user',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='password',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Password for new user',
+                    type=ParameterType.BODY
+                )
+            ],
+            response_model=None,
+            tags=['User APIs (Proxied)'],
+            summary='Register user (proxied to backend)',
+            description='Forwards registration request to backend server'
+        )
+    );
+    
+    self.server_impl.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/user/login',
+            callback=self.proxy_user_login(),
+            parameters=[
+                APIParameter(
+                    name='username',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='username for login',
+                    type=ParameterType.BODY
+                ),
+                APIParameter(
+                    name='password',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Password for login',
+                    type=ParameterType.BODY
+                )
+            ],
+            response_model=None,
+            tags=['User APIs (Proxied)'],
+            summary='User login (proxied to backend)',
+            description='Forwards login request to backend server'
+        )
+    );
+    
+    self.server_impl.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/user/refresh-token',
+            callback=self.proxy_user_refresh_token(),
+            parameters=[
+                APIParameter(
+                    name='token',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='JWT token to refresh (with or without Bearer prefix)',
+                    type=ParameterType.BODY
+                )
+            ],
+            response_model=None,
+            tags=['User APIs (Proxied)'],
+            summary='Refresh token (proxied to backend)',
+            description='Forwards token refresh request to backend server'
+        )
+    );
+    
+    # Proxy SSO endpoints
+    self.server_impl.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/sso/{platform}/{operation}',
+            callback=self.proxy_sso_initiate(),
+            parameters=[
+                APIParameter(
+                    name='platform',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='SSO platform: google',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='operation',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Operation to perform: "login" or "register"',
+                    type=ParameterType.PATH
+                )
+            ],
+            response_model=None,
+            tags=['SSO APIs (Proxied)'],
+            summary='SSO initiate (proxied to backend)',
+            description='Forwards SSO initiation to backend server'
+        )
+    );
+    
+    self.server_impl.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/sso/{platform}/{operation}/callback',
+            callback=self.proxy_sso_callback(),
+            parameters=[
+                APIParameter(
+                    name='platform',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='SSO platform: google',
+                    type=ParameterType.PATH
+                ),
+                APIParameter(
+                    name='operation',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='Operation to perform: "login" or "register"',
+                    type=ParameterType.PATH
+                )
+            ],
+            response_model=None,
+            tags=['SSO APIs (Proxied)'],
+            summary='SSO callback (proxied to backend)',
+            description='Forwards SSO callback to backend server'
+        )
+    );
+    
+    # Proxy walker endpoints
+    for walker_name in self.get_walkers() {
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path=f"/walker/{walker_name}/{{node}}",
+                callback=self.proxy_walker(walker_name, True),
+                parameters=self.create_walker_parameters(walker_name, invoke_on_root=False),
+                response_model=None,
+                tags=['Walkers (Proxied)'],
+                summary=f'Walker {walker_name} with node (proxied)',
+                description=f'Forwards walker {walker_name} request to backend server'
+            )
+        );
+        
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path=f"/walker/{walker_name}",
+                callback=self.proxy_walker(walker_name, False),
+                parameters=self.create_walker_parameters(walker_name, invoke_on_root=True),
+                response_model=None,
+                tags=['Walkers (Proxied)'],
+                summary=f'Walker {walker_name} on root (proxied)',
+                description=f'Forwards walker {walker_name} request to backend server'
+            )
+        );
+    }
+    
+    # Proxy function endpoints
+    for func_name in self.get_functions() {
+        self.server_impl.add_endpoint(
+            JEndPoint(
+                method=HTTPMethod.POST,
+                path=f"/function/{func_name}",
+                callback=self.proxy_function(func_name),
+                parameters=self.create_function_parameters(func_name),
+                response_model=None,
+                tags=['Functions (Proxied)'],
+                summary=f'Function {func_name} (proxied)',
+                description=f'Forwards function {func_name} request to backend server'
+            )
+        );
+    }
+}
+
+"""Create proxy callback for user register endpoint."""
+impl JacAPIServer.proxy_user_register(self: JacAPIServer) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(username: str, password: str) -> Response {
+        try {
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.post(
+                    f"{backend_url}/user/register",
+                    json={'username': username, 'password': password}
+                );
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for user login endpoint."""
+impl JacAPIServer.proxy_user_login(self: JacAPIServer) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(username: str, password: str) -> Response {
+        try {
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.post(
+                    f"{backend_url}/user/login",
+                    json={'username': username, 'password': password}
+                );
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for user refresh token endpoint."""
+impl JacAPIServer.proxy_user_refresh_token(self: JacAPIServer) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(token: (str | None) = None) -> Response {
+        try {
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.post(
+                    f"{backend_url}/user/refresh-token",
+                    json={'token': token}
+                );
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for SSO initiate endpoint."""
+impl JacAPIServer.proxy_sso_initiate(self: JacAPIServer) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(platform: str, operation: str) -> Response {
+        try {
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.get(f"{backend_url}/sso/{platform}/{operation}");
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for SSO callback endpoint."""
+impl JacAPIServer.proxy_sso_callback(self: JacAPIServer) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(request: Request, platform: str, operation: str) -> Response {
+        try {
+            query = str(request.url.query);
+            full_url = f"{backend_url}/sso/{platform}/{operation}/callback";
+            if query {
+                full_url = f"{full_url}?{query}";
+            }
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.get(full_url);
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for walker endpoint."""
+impl JacAPIServer.proxy_walker(
+    self: JacAPIServer, walker_name: str, has_node: bool
+) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(node: (str | None) = None, **kwargs: JsonValue) -> Response {
+        try {
+            if has_node and node {
+                url = f"{backend_url}/walker/{walker_name}/{node}";
+            } else {
+                url = f"{backend_url}/walker/{walker_name}";
+            }
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.post(url, json=kwargs);
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
+}
+
+"""Create proxy callback for function endpoint."""
+impl JacAPIServer.proxy_function(
+    self: JacAPIServer, func_name: str
+) -> Callable[..., Response] {
+    import httpx;
+    backend_url = self.backend_proxy_url;
+    
+    async def handler(**kwargs: JsonValue) -> Response {
+        try {
+            async with httpx.AsyncClient(timeout=30.0) as client {
+                response = await client.post(f"{backend_url}/function/{func_name}", json=kwargs);
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers)
+                );
+            }
+        } except httpx.ConnectError {
+            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+        } except Exception as e {
+            return JSONResponse(status_code=500, content={'error': str(e)});
+        }
+    }
+    return handler;
 }
