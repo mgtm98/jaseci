@@ -739,7 +739,10 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
 
         """Proxy request to backend server."""
         def _proxy_request(
-            self: JacRequestHandler, method: str, path: str, data: (dict[(str, Any)] | None) = None
+            self: JacRequestHandler,
+            method: str,
+            path: str,
+            data: (dict[(str, Any)] | None) = None
         ) -> None {
             import from urllib.request { Request, urlopen }
             import from urllib.error { HTTPError, URLError }
@@ -780,7 +783,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 self.wfile.write(error_data);
                 exc.close();
             } except (URLError, Exception) as exc {
-                Jac.send_json(self, 503, {'error': f"Backend request failed: {str(exc)}"});
+                Jac.send_json(
+                    self, 503, {'error': f"Backend request failed: {str(exc)}"}
+                );
             }
         }
 
@@ -1254,7 +1259,6 @@ impl JacAPIServer.start -> None {
             print(f"Backend Proxy: {self.backend_url}");
         }
         print('\nAvailable endpoints:');
-        
         # Show backend endpoints
         if _is_backend_enabled(self.mode) {
             print('  POST /user/register - Create a new user');
@@ -1275,14 +1279,12 @@ impl JacAPIServer.start -> None {
             print('  POST /function/<name> - Proxy to backend');
             print('  POST /walker/<name> - Proxy to backend');
         }
-        
         # Show frontend endpoints
         if _is_frontend_enabled(self.mode) {
             print('  GET /page/<name> - Render HTML page for client function');
             print('  GET /static/client.js - Client JavaScript bundle');
             print('  GET /static/<path> - Static files (CSS, images, etc.)');
         }
-        
         print('\nPress Ctrl+C to stop the server');
         try {
             httpd.serve_forever();

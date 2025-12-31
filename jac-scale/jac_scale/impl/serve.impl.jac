@@ -1,6 +1,5 @@
 impl JacAPIServer.start(self: JacAPIServer) -> None {
     self.introspector.load();
-    
     # Backend endpoints (authentication and API)
     if self.endpoint_mode in [EndpointMode.BACKEND, EndpointMode.ALL] {
         self.register_create_user_endpoint();
@@ -10,7 +9,6 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
         self.register_walkers_endpoints();
         self.register_functions_endpoints();
     }
-    
     # Frontend endpoints (pages, static files, assets)
     if self.endpoint_mode in [EndpointMode.FRONTEND, EndpointMode.ALL] {
         self.register_page_endpoint();
@@ -18,12 +16,10 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
         self.register_static_file_endpoint();
         self.register_root_asset_endpoint();
     }
-    
     # Frontend proxy endpoints - forward backend requests to backend server
     if self.endpoint_mode == EndpointMode.FRONTEND {
         self.register_proxy_endpoints();
     }
-    
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
     self.server_impl.run_server(port=self.port);
@@ -973,7 +969,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
     # Backend server is always on port + 1
     backend_port = self.port + 1;
     self.backend_proxy_url = f"http://localhost:{backend_port}";
-    
     # Define reusable parameter arrays
     user_register_params = [
         APIParameter(
@@ -998,9 +993,7 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             method=HTTPMethod.POST,
             path='/user/register',
             callback=self.create_proxy_callback(
-                HTTPMethod.POST,
-                '/user/register',
-                user_register_params
+                HTTPMethod.POST, '/user/register', user_register_params
             ),
             parameters=user_register_params,
             response_model=None,
@@ -1009,7 +1002,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             description='Forwards registration request to backend server'
         )
     );
-    
     user_login_params = [
         APIParameter(
             name='username',
@@ -1033,9 +1025,7 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             method=HTTPMethod.POST,
             path='/user/login',
             callback=self.create_proxy_callback(
-                HTTPMethod.POST,
-                '/user/login',
-                user_login_params
+                HTTPMethod.POST, '/user/login', user_login_params
             ),
             parameters=user_login_params,
             response_model=None,
@@ -1044,7 +1034,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             description='Forwards login request to backend server'
         )
     );
-    
     user_refresh_params = [
         APIParameter(
             name='token',
@@ -1060,9 +1049,7 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             method=HTTPMethod.POST,
             path='/user/refresh-token',
             callback=self.create_proxy_callback(
-                HTTPMethod.POST,
-                '/user/refresh-token',
-                user_refresh_params
+                HTTPMethod.POST, '/user/refresh-token', user_refresh_params
             ),
             parameters=user_refresh_params,
             response_model=None,
@@ -1071,7 +1058,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             description='Forwards token refresh request to backend server'
         )
     );
-    
     sso_params = [
         APIParameter(
             name='platform',
@@ -1095,9 +1081,7 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             method=HTTPMethod.GET,
             path='/sso/{platform}/{operation}',
             callback=self.create_proxy_callback(
-                HTTPMethod.GET,
-                '/sso/{platform}/{operation}',
-                sso_params
+                HTTPMethod.GET, '/sso/{platform}/{operation}', sso_params
             ),
             parameters=sso_params,
             response_model=None,
@@ -1106,7 +1090,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             description='Forwards SSO initiation to backend server'
         )
     );
-    
     self.server_impl.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
@@ -1124,9 +1107,10 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             description='Forwards SSO callback to backend server'
         )
     );
-    
     for walker_name in self.get_walkers() {
-        walker_params_with_node = self.create_walker_parameters(walker_name, invoke_on_root=False);
+        walker_params_with_node = self.create_walker_parameters(
+            walker_name, invoke_on_root=False
+        );
         self.server_impl.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.POST,
@@ -1143,16 +1127,16 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
                 description=f'Forwards walker {walker_name} request to backend server'
             )
         );
-        
-        walker_params_root = self.create_walker_parameters(walker_name, invoke_on_root=True);
+
+        walker_params_root = self.create_walker_parameters(
+            walker_name, invoke_on_root=True
+        );
         self.server_impl.add_endpoint(
             JEndPoint(
                 method=HTTPMethod.POST,
                 path=f"/walker/{walker_name}",
                 callback=self.create_proxy_callback(
-                    HTTPMethod.POST,
-                    f"/walker/{walker_name}",
-                    walker_params_root
+                    HTTPMethod.POST, f"/walker/{walker_name}", walker_params_root
                 ),
                 parameters=walker_params_root,
                 response_model=None,
@@ -1162,7 +1146,6 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
             )
         );
     }
-    
     for func_name in self.get_functions() {
         func_params = self.create_function_parameters(func_name);
         self.server_impl.add_endpoint(
@@ -1170,9 +1153,7 @@ impl JacAPIServer.register_proxy_endpoints(self: JacAPIServer) -> None {
                 method=HTTPMethod.POST,
                 path=f"/function/{func_name}",
                 callback=self.create_proxy_callback(
-                    HTTPMethod.POST,
-                    f"/function/{func_name}",
-                    func_params
+                    HTTPMethod.POST, f"/function/{func_name}", func_params
                 ),
                 parameters=func_params,
                 response_model=None,
@@ -1194,24 +1175,34 @@ impl JacAPIServer.create_proxy_callback(
 ) -> Callable[..., Response] {
     import httpx;
     backend_url = self.backend_proxy_url;
-    
     # Extract path parameters and body parameters
-    path_params = [p.name for p in parameters if p.type == ParameterType.PATH];
-    body_params = [p.name for p in parameters if p.type == ParameterType.BODY];
-    
-    async def handler(request: (Request | None) = None, **kwargs: JsonValue) -> Response {
+    path_params = [
+        p.name
+        for p in parameters
+        if p.type == ParameterType.PATH
+    ];
+    body_params = [
+        p.name
+        for p in parameters
+        if p.type == ParameterType.BODY
+    ];
+    async def handler(
+        request: (Request | None) = None, **kwargs: JsonValue
+    ) -> Response {
         try {
             # Build the target URL with path parameters
             target_path = path;
             for param_name in path_params {
                 if param_name in kwargs {
-                    target_path = target_path.replace(f"{{{param_name}}}", str(kwargs[param_name]));
+                    target_path = target_path.replace(
+                        f"{{{param_name}}}", str(kwargs[param_name])
+                    );
                     kwargs.pop(param_name);
                 }
             }
-            
+
             full_url = f"{backend_url}{target_path}";
-            
+
             # Add query parameters if request object is provided
             if include_request and request {
                 query = str(request.url.query);
@@ -1219,7 +1210,7 @@ impl JacAPIServer.create_proxy_callback(
                     full_url = f"{full_url}?{query}";
                 }
             }
-            
+
             async with httpx.AsyncClient(timeout=30.0) as client {
                 if method == HTTPMethod.GET {
                     response = await client.get(full_url);
@@ -1256,7 +1247,6 @@ impl JacAPIServer.create_proxy_callback(
                         content={'error': f'Method {method} not supported'}
                     );
                 }
-                
                 return Response(
                     content=response.content,
                     status_code=response.status_code,
@@ -1264,11 +1254,12 @@ impl JacAPIServer.create_proxy_callback(
                 );
             }
         } except httpx.ConnectError {
-            return JSONResponse(status_code=503, content={'error': 'Backend unavailable'});
+            return JSONResponse(
+                status_code=503, content={'error': 'Backend unavailable'}
+            );
         } except Exception as e {
             return JSONResponse(status_code=500, content={'error': str(e)});
         }
     }
-    
     return handler;
 }
