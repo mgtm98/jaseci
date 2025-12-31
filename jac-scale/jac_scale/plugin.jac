@@ -202,7 +202,17 @@ class JacCmd {
                 if session {
                     cmd.extend(['--session', session]);
                 }
-                return subprocess.Popen(cmd, cwd=os.getcwd());
+                # Run backend server in quiet mode (suppress output)
+                if mode == 'backend' {
+                    return subprocess.Popen(
+                        cmd, 
+                        cwd=os.getcwd(),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    );
+                } else {
+                    return subprocess.Popen(cmd, cwd=os.getcwd());
+                }
             }
             
             def reload(mode: str) -> None {
