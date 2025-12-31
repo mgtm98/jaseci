@@ -234,13 +234,7 @@ impl dev(
     import threading;
     import time;
     import signal;
-    try {
-        import from watchfiles { watch }
-    } except ImportError {
-        print("Error: watchfiles package is required for dev mode.", file=sys.stderr);
-        print("Install it with: pip install watchfiles", file=sys.stderr);
-        <>exit(1);
-    }
+    import from watchfiles { watch }
     
     base_path = os.path.dirname(os.path.abspath(filename)) or '.';
     
@@ -270,12 +264,7 @@ impl dev(
         }
         # Run backend server in quiet mode (suppress output)
         if mode == 'backend' {
-            return subprocess.Popen(
-                cmd, 
-                cwd=os.getcwd(),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            );
+            return subprocess.Popen(cmd, cwd=os.getcwd());
         } else {
             return subprocess.Popen(cmd, cwd=os.getcwd());
         }
@@ -352,7 +341,13 @@ impl dev(
                 ext = os.path.splitext(changed_path)[1].lower();
                 basename = os.path.basename(changed_path);
                 
-                if ext in frontend_exts {
+                # Check if it's a .cl.jac file (frontend)
+                if changed_path.endswith('.cl.jac') {
+                    if not frontend_changed {
+                        print(f"\n[Frontend] Change detected: {basename}");
+                        frontend_changed = True;
+                    }
+                } elif ext in frontend_exts {
                     if not frontend_changed {
                         print(f"\n[Frontend] Change detected: {basename}");
                         frontend_changed = True;
