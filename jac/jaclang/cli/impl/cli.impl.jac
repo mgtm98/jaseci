@@ -233,7 +233,6 @@ impl dev(
     import time;
     import signal;
     import from watchfiles { watch }
-    
     base_path = os.path.dirname(os.path.abspath(filename)) or '.';
     # Define ports
     ports = {'frontend': port, 'backend': port + 1};
@@ -326,7 +325,7 @@ impl dev(
             for (change_type, changed_path) in changes {
                 ext = os.path.splitext(changed_path)[1].lower();
                 basename = os.path.basename(changed_path);
-                
+
                 # Check if it's a .cl.jac file (frontend)
                 if changed_path.endswith('.cl.jac') {
                     if not frontend_changed {
