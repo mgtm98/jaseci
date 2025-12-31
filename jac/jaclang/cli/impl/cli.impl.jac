@@ -137,11 +137,12 @@ impl serve(
     session: str = '',
     port: int = 8000,
     main: bool = True,
-    faux: bool = False
+    faux: bool = False,
+    mode: str = 'all'
 ) -> None {
     _ensure_jac_runtime();
     import from jaclang.pycore.runtime { JacRuntime as Jac }
-    import from jaclang.runtimelib.server { JacAPIServer }
+    import from jaclang.runtimelib.server { JacAPIServer, EndpointMode }
     (base, mod, mach) = proc_file_sess(filename, session);
     lng = filename.split('.')[-1];
     Jac.set_base_path(base);
@@ -159,9 +160,16 @@ impl serve(
         mach.close();
         <>exit(1);
     }
+    # Parse mode parameter
+    endpoint_mode = EndpointMode.ALL;
+    if mode.lower() == 'frontend' {
+        endpoint_mode = EndpointMode.FRONTEND;
+    } elif mode.lower() == 'backend' {
+        endpoint_mode = EndpointMode.BACKEND;
+    }
     session_path = session or os.path.join(base, f"{mod}.session");
     server = JacAPIServer(
-        module_name=mod, session_path=session_path, port=port, base_path=base
+        module_name=mod, session_path=session_path, port=port, base_path=base, mode=endpoint_mode
     );
     if faux {
         try {

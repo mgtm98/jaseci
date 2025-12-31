@@ -99,7 +99,8 @@ def serve(
     session: str = '',
     port: int = 8000,
     main: bool = True,
-    faux: bool = False
+    faux: bool = False,
+    mode: str = 'all'
 ) -> None;
 
 #===============================================================================

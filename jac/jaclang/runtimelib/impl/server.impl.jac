@@ -694,6 +694,16 @@ impl JacAPIServer.postinit -> None {
     );
 }
 
+"""Check if we should handle frontend endpoints (pages, static files)."""
+def _is_frontend_enabled(mode: EndpointMode) -> bool {
+    return mode == EndpointMode.FRONTEND or mode == EndpointMode.ALL;
+}
+
+"""Check if we should handle backend endpoints (API, functions, walkers)."""
+def _is_backend_enabled(mode: EndpointMode) -> bool {
+    return mode == EndpointMode.BACKEND or mode == EndpointMode.ALL;
+}
+
 """Create HTTP request handler."""
 impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
     server = self;
@@ -738,7 +748,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
         def do_GET(self: JacRequestHandler) -> None {
             parsed_path = urlparse(self.path);
             path = parsed_path.path;
+            # Frontend: Static client.js bundle
             if (path == '/static/client.js') {
+                if not _is_frontend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 try {
                     server.introspector.load();
                     server.introspector.ensure_bundle();
@@ -763,7 +778,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                     Path(path).suffix in {'.png','.jpg','.jpeg','.gif','.webp','.svg','.ico','.woff','.woff2','.ttf','.otf','.eot','.mp4','.webm','.mp3','.wav','.css'}
                 )
             );
+            # Frontend: Static files and assets
             if (is_static_path or is_asset_file) {
+                if not _is_frontend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 try {
                     # Find project root (where jac.toml is) instead of using base_path_dir
                     # base_path_dir might be src/ when serving src/app.jac, but we need project root
@@ -871,7 +891,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 );
                 return;
             }
+            # Frontend: Client pages
             if path.startswith('/page/') {
+                if not _is_frontend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 func_name = path.split('/')[-1];
                 query_params = parse_qs(parsed_path.query, keep_blank_values=True);
                 args = {
@@ -898,13 +923,28 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 }
                 return;
             }
+            # Backend: List functions
             if (path == '/functions') {
+                if not _is_backend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 self._send_response(server.introspection_handler.list_functions());
                 return;
             } elif (path == '/walkers') {
+                # Backend: List walkers
+                if not _is_backend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 self._send_response(server.introspection_handler.list_walkers());
                 return;
             } elif path.startswith('/function/') {
+                # Backend: Get function info
+                if not _is_backend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 name = path.split('/')[-1];
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
@@ -919,6 +959,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 );
                 return;
             } elif path.startswith('/walker/') {
+                # Backend: Get walker info
+                if not _is_backend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 name = path.split('/')[-1];
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {
@@ -931,6 +976,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 self._send_response(server.introspection_handler.get_walker_info(name));
                 return;
             } elif (path == '/protected') {
+                # Backend: Protected endpoint
+                if not _is_backend_enabled(server.mode) {
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 username = self._authenticate();
                 if not username {
                     Jac.send_json(self, 401, {'error': 'Unauthorized'});

@@ -18,8 +18,7 @@ import from jac_scale.jserver.jserver {
 }
 import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
-import from jaclang.runtimelib.server { JsonValue }
-import from jaclang.runtimelib.server { JsonValue }
+import from jaclang.runtimelib.server { JsonValue, EndpointMode }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.utils { generate_random_password }
@@ -40,12 +39,6 @@ class Platforms(StrEnum) {
 class Operations(StrEnum) {
     has LOGIN: str = 'login',
         REGISTER: str = 'register';
-}
-
-class EndpointMode(StrEnum) {
-    has FRONTEND: str = 'frontend',
-        BACKEND: str = 'backend',
-        ALL: str = 'all';
 }
 
 class JacAPIServer(JServer) {

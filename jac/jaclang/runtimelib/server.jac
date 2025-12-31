@@ -7,6 +7,7 @@ import os;
 import secrets;
 import from collections.abc { Callable }
 import from contextlib { suppress }
+import from enum { StrEnum }
 import from http.server { BaseHTTPRequestHandler, HTTPServer }
 import from pathlib { Path }
 import from typing { TYPE_CHECKING, Any, Literal, TypeAlias, get_type_hints }
@@ -24,6 +25,13 @@ glob JsonValue: TypeAlias = None | str | int | float | bool | <>list['JsonValue'
          (str, 'JsonValue')
      ],
      StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)];
+
+"""Endpoint mode for server operation."""
+class EndpointMode(StrEnum) {
+    has FRONTEND: str = 'frontend',
+        BACKEND: str = 'backend',
+        ALL: str = 'all';
+}
 
 """Base response container."""
 obj Response {
