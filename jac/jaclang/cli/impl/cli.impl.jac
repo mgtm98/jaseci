@@ -167,9 +167,21 @@ impl serve(
     } elif mode.lower() == 'backend' {
         endpoint_mode = EndpointMode.BACKEND;
     }
+    
+    # Auto-configure backend URL for frontend mode
+    backend_proxy_url = None;
+    if (endpoint_mode == EndpointMode.FRONTEND) {
+        backend_proxy_url = f"http://127.0.0.1:{port + 1}";
+    }
+    
     session_path = session or os.path.join(base, f"{mod}.session");
     server = JacAPIServer(
-        module_name=mod, session_path=session_path, port=port, base_path=base, mode=endpoint_mode
+        module_name=mod, 
+        session_path=session_path, 
+        port=port, 
+        base_path=base, 
+        mode=endpoint_mode,
+        backend_url=backend_proxy_url
     );
     if faux {
         try {
@@ -191,6 +203,183 @@ impl serve(
         print(f"Server error: {e}", file=sys.stderr);
         mach.close();
         <>exit(1);
+    }
+}
+
+"""Start development servers with hot-reload for frontend and backend.
+    Runs two separate servers on consecutive ports with file watching.
+    Frontend server (port) handles pages, static files, and assets.
+    Backend server (port+1) handles API, authentication, walkers, and functions.
+
+    Args:
+        filename: Path to the .jac file to serve
+        session: Session identifier for persistent state (default: auto-generated)
+        port: Base port number (frontend uses port, backend uses port+1, default: 8000)
+        main: Treat the module as __main__ (default: True)
+        faux: Unused for dev command
+
+    Examples:
+        jac dev myprogram.jac
+        jac dev myprogram.jac --port 3000
+        jac dev myprogram.jac --session myapp.session
+    """
+impl dev(
+    filename: str,
+    session: str = '',
+    port: int = 8000,
+    main: bool = True,
+    faux: bool = False
+) -> None {
+    import subprocess;
+    import threading;
+    import time;
+    import signal;
+    try {
+        import from watchfiles { watch }
+    } except ImportError {
+        print("Error: watchfiles package is required for dev mode.", file=sys.stderr);
+        print("Install it with: pip install watchfiles", file=sys.stderr);
+        <>exit(1);
+    }
+    
+    base_path = os.path.dirname(os.path.abspath(filename)) or '.';
+    
+    # Define ports
+    ports = {
+        'frontend': port,
+        'backend': port + 1
+    };
+    
+    # Server process tracking
+    servers = {
+        'frontend': None,
+        'backend': None
+    };
+    
+    # Flag to control watcher thread and main loop
+    stop_watching = {'value': False};
+    shutdown_requested = {'value': False};
+    
+    def start(mode: str) -> subprocess.Popen {
+        cmd = [
+            sys.executable, '-m', 'jaclang', 'serve',
+            filename, '--port', str(ports[mode]), '--mode', mode
+        ];
+        if session {
+            cmd.extend(['--session', session]);
+        }
+        # Run backend server in quiet mode (suppress output)
+        if mode == 'backend' {
+            return subprocess.Popen(
+                cmd, 
+                cwd=os.getcwd(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            );
+        } else {
+            return subprocess.Popen(cmd, cwd=os.getcwd());
+        }
+    }
+    
+    def reload(mode: str) -> None {
+        if shutdown_requested['value'] {
+            return;
+        }
+        print(f"Reloading...");
+        if servers[mode] {
+            servers[mode].terminate();
+            try {
+                servers[mode].wait(timeout=2);
+            } except subprocess.TimeoutExpired {
+                servers[mode].kill();
+                servers[mode].wait();
+            }
+        }
+        servers[mode] = start(mode);
+    }
+    
+    def cleanup_servers() -> None {
+        stop_watching['value'] = True;
+        shutdown_requested['value'] = True;
+        
+        for mode in ['frontend', 'backend'] {
+            if servers[mode] {
+                servers[mode].terminate();
+                try {
+                    servers[mode].wait(timeout=2);
+                } except subprocess.TimeoutExpired {
+                    servers[mode].kill();
+                    servers[mode].wait();
+                }
+                servers[mode] = None;
+            }
+        }
+    }
+
+    servers['frontend'] = start('frontend');
+    time.sleep(0.5);
+    servers['backend'] = start('backend');
+    
+    # File extension sets
+    frontend_exts = {
+        '.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx',
+        '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
+        '.woff', '.woff2', '.ttf', '.otf', '.eot'
+    };
+    backend_exts = {'.jac', '.py'};
+    
+    try {
+        # Use watchfiles in the main loop instead of separate thread
+        for changes in watch(base_path, recursive=True, debounce=1000, stop_event=None) {
+            if shutdown_requested['value'] {
+                break;
+            }
+            
+            # Check if processes are alive
+            if servers['frontend'] and servers['frontend'].poll() is not None {
+                print("[Frontend] Process stopped unexpectedly, restarting...");
+                servers['frontend'] = start('frontend');
+            }
+            if servers['backend'] and servers['backend'].poll() is not None {
+                print("[Backend] Process stopped unexpectedly, restarting...");
+                servers['backend'] = start('backend');
+            }
+            
+            frontend_changed = False;
+            backend_changed = False;
+            
+            for (change_type, changed_path) in changes {
+                ext = os.path.splitext(changed_path)[1].lower();
+                basename = os.path.basename(changed_path);
+                
+                if ext in frontend_exts {
+                    if not frontend_changed {
+                        print(f"\n[Frontend] Change detected: {basename}");
+                        frontend_changed = True;
+                    }
+                } elif ext in backend_exts {
+                    if not backend_changed {
+                        print(f"\n[Backend] Change detected: {basename}");
+                        backend_changed = True;
+                    }
+                }
+            }
+            
+            if frontend_changed {
+                reload('frontend');
+            }
+            if backend_changed {
+                reload('backend');
+            }
+        }
+    } except (KeyboardInterrupt, SystemExit) {
+
+    } except Exception as e {
+        if not shutdown_requested['value'] {
+            print(f"\nError: {e}", file=sys.stderr);
+        }
+    } finally {
+        cleanup_servers();
     }
 }
 

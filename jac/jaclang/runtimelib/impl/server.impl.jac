@@ -737,6 +737,53 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             Jac.send_json(self, response.status, response.body);
         }
 
+        """Proxy request to backend server."""
+        def _proxy_request(
+            self: JacRequestHandler, method: str, path: str, data: (dict[(str, Any)] | None) = None
+        ) -> None {
+            import from urllib.request { Request, urlopen }
+            import from urllib.error { HTTPError, URLError }
+            if not server.backend_url {
+                Jac.send_json(self, 503, {'error': 'Backend URL not configured'});
+                return;
+            }
+            try {
+                url = f"{server.backend_url}{path}";
+                headers = {'Content-Type': 'application/json'};
+                # Forward Authorization header if present
+                auth_header = self.headers.get('Authorization');
+                if auth_header {
+                    headers['Authorization'] = auth_header;
+                }
+                if data {
+                    req_data = json.dumps(data).encode('utf-8');
+                    req = Request(url, data=req_data, headers=headers, method=method);
+                } else {
+                    req = Request(url, headers=headers, method=method);
+                }
+                with urlopen(req, timeout=30) as resp {
+                    resp_data = resp.read();
+                    # Forward the response
+                    self.send_response(resp.status);
+                    self.send_header('Content-Type', 'application/json');
+                    ResponseBuilder._add_cors_headers(self);
+                    self.end_headers();
+                    self.wfile.write(resp_data);
+                }
+            } except HTTPError as exc {
+                # Forward error response
+                error_data = exc.read();
+                self.send_response(exc.code);
+                self.send_header('Content-Type', 'application/json');
+                ResponseBuilder._add_cors_headers(self);
+                self.end_headers();
+                self.wfile.write(error_data);
+                exc.close();
+            } except (URLError, Exception) as exc {
+                Jac.send_json(self, 503, {'error': f"Backend request failed: {str(exc)}"});
+            }
+        }
+
         """Handle OPTIONS requests (CORS preflight)."""
         def do_OPTIONS(self: JacRequestHandler) -> None {
             self.send_response(200);
@@ -926,6 +973,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             # Backend: List functions
             if (path == '/functions') {
                 if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('GET', path);
+                        return;
+                    }
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
                 }
@@ -934,6 +986,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif (path == '/walkers') {
                 # Backend: List walkers
                 if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('GET', path);
+                        return;
+                    }
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
                 }
@@ -942,6 +999,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/function/') {
                 # Backend: Get function info
                 if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('GET', path);
+                        return;
+                    }
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
                 }
@@ -961,6 +1023,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 # Backend: Get walker info
                 if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('GET', path);
+                        return;
+                    }
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
                 }
@@ -978,6 +1045,11 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif (path == '/protected') {
                 # Backend: Protected endpoint
                 if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('GET', path);
+                        return;
+                    }
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
                 }
@@ -1005,6 +1077,15 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 return;
             }
             if (path == '/user/register') {
+                if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('POST', path, data);
+                        return;
+                    }
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 response = server.auth_handler.create_user(
                     data.get('username', ''), data.get('password', '')
                 );
@@ -1012,6 +1093,15 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 return;
             }
             if (path == '/user/login') {
+                if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('POST', path, data);
+                        return;
+                    }
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 response = server.auth_handler.login(
                     data.get('username', ''), data.get('password', '')
                 );
@@ -1019,6 +1109,15 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 return;
             }
             if path.startswith('/function/') {
+                if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('POST', path, data);
+                        return;
+                    }
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 name = path.split('/')[-1];
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
@@ -1043,6 +1142,15 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 );
                 self._send_response(response);
             } elif path.startswith('/walker/') {
+                if not _is_backend_enabled(server.mode) {
+                    # In frontend mode with backend_url, proxy the request
+                    if (server.mode == EndpointMode.FRONTEND and server.backend_url) {
+                        self._proxy_request('POST', path, data);
+                        return;
+                    }
+                    Jac.send_json(self, 404, {'error': 'Not found'});
+                    return;
+                }
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
@@ -1141,15 +1249,40 @@ impl JacAPIServer.start -> None {
         print(f"Jac API Server running on http://0.0.0.0:{self.port}");
         print(f"Module: {self.module_name}");
         print(f"Session: {self.session_path}");
+        print(f"Mode: {self.mode.value}");
+        if (self.mode == EndpointMode.FRONTEND and self.backend_url) {
+            print(f"Backend Proxy: {self.backend_url}");
+        }
         print('\nAvailable endpoints:');
-        print('  POST /user/register - Create a new user');
-        print('  POST /user/login - Login and get auth token');
-        print('  GET /functions - List all functions');
-        print('  GET /walkers - List all walkers');
-        print('  GET /function/<name> - Get function signature');
-        print('  GET /walker/<name> - Get walker info');
-        print('  POST /function/<name> - Call a function');
-        print('  POST /walker/<name> - Spawn a walker');
+        
+        # Show backend endpoints
+        if _is_backend_enabled(self.mode) {
+            print('  POST /user/register - Create a new user');
+            print('  POST /user/login - Login and get auth token');
+            print('  GET /functions - List all functions');
+            print('  GET /walkers - List all walkers');
+            print('  GET /function/<name> - Get function signature');
+            print('  GET /walker/<name> - Get walker info');
+            print('  POST /function/<name> - Call a function');
+            print('  POST /walker/<name> - Spawn a walker');
+        } elif (self.mode == EndpointMode.FRONTEND and self.backend_url) {
+            print('  POST /user/register - Proxy to backend');
+            print('  POST /user/login - Proxy to backend');
+            print('  GET /functions - Proxy to backend');
+            print('  GET /walkers - Proxy to backend');
+            print('  GET /function/<name> - Proxy to backend');
+            print('  GET /walker/<name> - Proxy to backend');
+            print('  POST /function/<name> - Proxy to backend');
+            print('  POST /walker/<name> - Proxy to backend');
+        }
+        
+        # Show frontend endpoints
+        if _is_frontend_enabled(self.mode) {
+            print('  GET /page/<name> - Render HTML page for client function');
+            print('  GET /static/client.js - Client JavaScript bundle');
+            print('  GET /static/<path> - Static files (CSS, images, etc.)');
+        }
+        
         print('\nPress Ctrl+C to stop the server');
         try {
             httpd.serve_forever();

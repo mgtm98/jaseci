@@ -182,7 +182,9 @@ obj JacAPIServer {
     has module_name: str,
         session_path: str,
         port: int = 8000,
-        base_path: (str | None) = None;
+        base_path: (str | None) = None,
+        mode: EndpointMode = EndpointMode.ALL,
+        backend_url: (str | None) = None;
 
     def postinit -> None;
     def create_handler -> type[BaseHTTPRequestHandler];

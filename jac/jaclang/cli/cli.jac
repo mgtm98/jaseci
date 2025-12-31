@@ -103,6 +103,15 @@ def serve(
     mode: str = 'all'
 ) -> None;
 
+@cmd_registry.register
+def dev(
+    filename: str,
+    session: str = '',
+    port: int = 8000,
+    main: bool = True,
+    faux: bool = False
+) -> None;
+
 #===============================================================================
 # PROJECT MANAGEMENT COMMANDS
 #===============================================================================
