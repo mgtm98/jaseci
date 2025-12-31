@@ -102,11 +102,13 @@ class JacCmd {
                 }
             }
             session_path = session or os.path.join(base, f"{mod}.session");
-            endpoint_mode = EndpointMode(mode) if mode in EndpointMode else EndpointMode.ALL;
+            endpoint_mode = EndpointMode(mode)
+            if mode in EndpointMode
+            else EndpointMode.ALL;
             server = JacAPIServer(
-                module_name=mod, 
-                session_path=session_path, 
-                port=port, 
+                module_name=mod,
+                session_path=session_path,
+                port=port,
                 base_path=base,
                 endpoint_mode=endpoint_mode
             );

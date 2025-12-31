@@ -43,7 +43,7 @@ class Operations(StrEnum) {
 
 class JacAPIServer(JServer) {
     has endpoint_mode: EndpointMode = EndpointMode.ALL;
-    
+
     static def create_jwt_token(username: str) -> str;
     static def validate_jwt_token(token: str) -> (str | None);
     static def refresh_jwt_token(token: str) -> (str | None);
@@ -109,6 +109,7 @@ class JacAPIServer(JServer) {
         parameters: list[APIParameter],
         include_request: bool = False
     ) -> Callable[..., Response];
+
     def _configure_openapi_security(self: JacAPIServer) -> None;
     def start(self: JacAPIServer) -> None;
 }
