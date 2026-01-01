@@ -1194,7 +1194,7 @@ walker greet {
             max_retries = 30
             retry_interval = 2
             success = False
-            
+
             for attempt in range(max_retries):
                 try:
                     response = requests.post(
@@ -1206,8 +1206,10 @@ walker greet {
                         # Backend not ready yet, retry
                         time.sleep(retry_interval)
                         continue
-                    
-                    assert response.status_code == 200, f"Expected 200 but got {response.status_code}"
+
+                    assert response.status_code == 200, (
+                        f"Expected 200 but got {response.status_code}"
+                    )
                     data = response.json()["reports"][0]
                     assert "Content 1" in data["message"], (
                         f"Expected 'Content 1' but got: {data['message']}"
@@ -1218,12 +1220,14 @@ walker greet {
                     if attempt == max_retries - 1:
                         raise
                     time.sleep(retry_interval)
-            
-            assert success, f"Walker endpoint did not become available after {max_retries * retry_interval} seconds"
+
+            assert success, (
+                f"Walker endpoint did not become available after {max_retries * retry_interval} seconds"
+            )
 
             # Modify the file to content2
             test_file.write_text(content2)
-            
+
             # Wait for hot reload to complete (backend server restart)
             time.sleep(5)
 
@@ -1240,8 +1244,10 @@ walker greet {
                         # Backend reloading, retry
                         time.sleep(retry_interval)
                         continue
-                    
-                    assert response.status_code == 200, f"Expected 200 but got {response.status_code}"
+
+                    assert response.status_code == 200, (
+                        f"Expected 200 but got {response.status_code}"
+                    )
                     data = response.json()["reports"][0]
                     assert "Content 2" in data["message"], (
                         f"Expected 'Content 2' but got: {data['message']}"
@@ -1252,8 +1258,10 @@ walker greet {
                     if attempt == max_retries - 1:
                         raise
                     time.sleep(retry_interval)
-            
-            assert success, f"Walker endpoint did not return updated content after {max_retries * retry_interval} seconds"
+
+            assert success, (
+                f"Walker endpoint did not return updated content after {max_retries * retry_interval} seconds"
+            )
 
         finally:
             # Clean up: stop the server process

@@ -259,7 +259,7 @@ impl dev(
         # Run backend server in quiet mode (suppress output)
         if mode == 'backend' {
             return subprocess.Popen(
-                cmd, 
+                cmd,
                 cwd=os.getcwd(),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
