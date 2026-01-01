@@ -25,6 +25,7 @@ The `jac dev` command runs two separate server processes:
 ### Port Assignment
 
 By default:
+
 - Frontend server: Port 8000
 - Backend server: Port 8001
 
@@ -44,6 +45,7 @@ The command spawns two independent server processes:
 The command uses a file watcher (watchfiles library) to monitor the project directory for changes:
 
 **Frontend-triggering files:**
+
 - Client-side Jac files: `.cl.jac`
 - Web assets: `.html`, `.htm`, `.css`
 - JavaScript/TypeScript: `.js`, `.jsx`, `.ts`, `.tsx`
@@ -51,6 +53,7 @@ The command uses a file watcher (watchfiles library) to monitor the project dire
 - Fonts: `.woff`, `.woff2`, `.ttf`, `.otf`, `.eot`
 
 **Backend-triggering files:**
+
 - Server-side Jac files: `.jac` (excluding `.cl.jac`)
 - Python files: `.py`
 
@@ -65,6 +68,7 @@ When a file change is detected:
 5. **State Preservation**: Session data and persistent state remain intact
 
 This selective approach means:
+
 - Changing a CSS file only restarts the frontend (fast)
 - Changing a Jac backend file only restarts the backend (preserves frontend state)
 - Both servers can reload independently without affecting each other
@@ -79,6 +83,7 @@ In frontend mode, API requests are automatically proxied to the backend:
 4. Frontend server forwards the response back to the client
 
 **Proxied Endpoints:**
+
 - Authentication: `/user/register`, `/user/login`
 - API discovery: `/functions`, `/walkers`
 - Function execution: `/function/<name>`
@@ -90,6 +95,7 @@ This allows developers to access all backend APIs through the frontend server UR
 ### Process Lifecycle
 
 **Startup Sequence:**
+
 1. Parse command-line arguments (filename, port, session)
 2. Start frontend server process
 3. Wait 0.5 seconds for initialization
@@ -97,6 +103,7 @@ This allows developers to access all backend APIs through the frontend server UR
 5. Begin file watching loop
 
 **Shutdown Sequence:**
+
 1. Detect shutdown signal (Ctrl+C or exception)
 2. Set shutdown flag to stop file watcher
 3. Terminate both server processes
@@ -105,6 +112,7 @@ This allows developers to access all backend APIs through the frontend server UR
 6. Clean up resources and exit
 
 **Auto-Recovery:**
+
 - If a server process crashes unexpectedly, it's automatically restarted
 - Process health is checked on each file watch iteration
 - Backend runs quietly (suppressed output) to reduce console noise
@@ -112,17 +120,20 @@ This allows developers to access all backend APIs through the frontend server UR
 ## Benefits
 
 ### Developer Experience
+
 - **Fast Iteration**: Only affected server restarts, reducing downtime
 - **Clear Separation**: Frontend and backend concerns are explicitly separated
 - **Auto-Configuration**: No manual proxy setup or CORS configuration needed
 - **Instant Feedback**: File changes trigger immediate reloads
 
 ### Performance
+
 - **Parallel Development**: Frontend and backend can be developed independently
 - **Efficient Reloads**: Changing CSS doesn't restart your API server
 - **Resource Optimization**: Each server loads only what it needs
 
 ### Scalability
+
 - **Production-Ready Pattern**: Mirrors production deployment with separate frontend/backend
 - **Easy Transition**: Same code structure works in dev and production
 - **Flexible Deployment**: Can deploy frontend and backend independently
@@ -130,21 +141,27 @@ This allows developers to access all backend APIs through the frontend server UR
 ## Usage Examples
 
 ### Basic Usage
+
 ```bash
 jac dev myapp.jac
 ```
+
 Starts frontend on port 8000, backend on port 8001.
 
 ### Custom Port
+
 ```bash
 jac dev myapp.jac --port 3000
 ```
+
 Starts frontend on port 3000, backend on port 3001.
 
 ### With Session
+
 ```bash
 jac dev myapp.jac --session myapp.session
 ```
+
 Uses persistent session storage for both servers.
 
 ## Comparison with `jac serve`
