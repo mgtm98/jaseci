@@ -18,6 +18,7 @@ import from jaclang.compiler.type_system.type_utils { get_completion_items }
 import from jaclang.compiler.type_system.types {
     ClassType,
     FunctionType,
+    OverloadedType,
     ModuleType,
     TypeBase
 }
@@ -30,18 +31,29 @@ import lsprotocol.types as lspt;
 import from . { utils }
 import from .module_manager { ModuleManager }
 
-class Task {
-    has _task_id: int = 0;
+obj Task {
+    has file_uri: str,
+        task_id: int = 0,
+        cancel_token: threading.Event | None = None;
 
-    def init(self: Task, file_uri: str);
+    static has _task_id: int = 0;
+
+    def postinit -> None;
 }
 
 """Jac Language Server, manages JacProgram and LSP."""
-class JacLangServer(JacProgram , LanguageServer) {
+class JacLangServer(JacProgram, LanguageServer) {
+    has module_manager: ModuleManager,
+        sem_managers: dict,
+        queue: Queue,
+        worker_thread: threading.Thread,
+        last_task: Task | None = None,
+        _shutdown_called: bool = False;
+
     def init(self: JacLangServer) -> None;
     def dispatcher(self: JacLangServer) -> None;
     @property
-    def diagnostics(self: JacLangServer,) -> dict[str, list];
+    def diagnostics(self: JacLangServer) -> dict[str, list];
 
     def _clear_alerts_for_file(self: JacLangServer, file_path: str) -> None;
     def get_ir(self: JacLangServer, file_path: str) -> Optional[uni.Module];
@@ -53,10 +65,7 @@ class JacLangServer(JacProgram , LanguageServer) {
         self: JacLangServer,
         file_uri: str,
         cancel_token: Event | None = None,
-        annex_view: Optional[str] = None,
-        # This parameter will be passed recursively
-        # and dont need to pass when the function itself is called
-        # outside.
+        annex_view: Optional[str] = None
     ) -> bool;
 
     def type_check(self: JacLangServer, file_uri: str) -> None;
@@ -180,3 +189,6 @@ class JacLangServer(JacProgram , LanguageServer) {
     def log_py(self: JacLangServer, message: str) -> None;
     def shutdown(self: JacLangServer) -> None;
 }
+# This parameter will be passed recursively
+# and dont need to pass when the function itself is called
+# outside.

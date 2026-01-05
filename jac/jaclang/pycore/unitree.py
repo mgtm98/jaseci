@@ -19,6 +19,7 @@ from typing import (
     cast,
 )
 
+from jaclang.pycore.bccache import discover_base_file
 from jaclang.pycore.codeinfo import CodeGenTarget, CodeLocInfo
 from jaclang.pycore.constant import (
     DELIM_MAP,
@@ -36,7 +37,7 @@ from jaclang.pycore.constant import (
     JacSemTokenType as SemTokType,
 )
 from jaclang.pycore.constant import Tokens as Tok
-from jaclang.pycore.module_resolver import resolve_relative_path
+from jaclang.pycore.modresolver import resolve_relative_path
 
 if TYPE_CHECKING:
     from jaclang.compiler.type_system.types import TypeBase
@@ -350,6 +351,7 @@ class UniScopeNode(UniNode):
         self.parent_scope = parent_scope
         self.kid_scope: list[UniScopeNode] = []
         self.names_in_scope: dict[str, Symbol] = {}
+        self.names_in_scope_overload: dict[str, list[Symbol]] = {}
         self.inherited_scope: list[InheritedSymbolTable] = []
 
     def get_type(self) -> SymbolType:
@@ -418,18 +420,24 @@ class UniScopeNode(UniNode):
             if single and node.sym_name in self.names_in_scope
             else None
         )
+
+        symbol = node.name_spec.create_symbol(
+            access=(
+                access_spec
+                if isinstance(access_spec, SymbolAccess)
+                else access_spec.access_type
+                if access_spec
+                else SymbolAccess.PUBLIC
+            ),
+            parent_tab=self,
+            imported=imported,
+        )
+
+        if node.sym_name in self.names_in_scope:
+            self.names_in_scope_overload.setdefault(node.sym_name, []).append(symbol)
+
         if force_overwrite or node.sym_name not in self.names_in_scope:
-            self.names_in_scope[node.sym_name] = node.name_spec.create_symbol(
-                access=(
-                    access_spec
-                    if isinstance(access_spec, SymbolAccess)
-                    else access_spec.access_type
-                    if access_spec
-                    else SymbolAccess.PUBLIC
-                ),
-                parent_tab=self,
-                imported=imported,
-            )
+            self.names_in_scope[node.sym_name] = symbol
         else:
             self.names_in_scope[node.sym_name].add_defn(node.name_spec)
         node.name_spec.sym = self.names_in_scope[node.sym_name]
@@ -998,38 +1006,17 @@ class Module(AstDocNode, UniScopeNode):
 
     @property
     def annexable_by(self) -> str | None:
-        """Get annexable by."""
-        if not self.stub_only and (
-            self.loc.mod_path.endswith(".impl.jac")
-            or self.loc.mod_path.endswith(".test.jac")
-            or self.loc.mod_path.endswith(".cl.jac")
-        ):
-            head_mod_name = self.name.split(".")[0]
-            potential_path = os.path.join(
-                os.path.dirname(self.loc.mod_path),
-                f"{head_mod_name}.jac",
-            )
-            if os.path.exists(potential_path) and potential_path != self.loc.mod_path:
-                return potential_path
-            annex_dir = os.path.split(os.path.dirname(self.loc.mod_path))[-1]
-            if (
-                annex_dir.endswith(".impl")
-                or annex_dir.endswith(".test")
-                or annex_dir.endswith(".cl")
-            ):
-                head_mod_name = os.path.split(os.path.dirname(self.loc.mod_path))[
-                    -1
-                ].split(".")[0]
-                potential_path = os.path.join(
-                    os.path.dirname(os.path.dirname(self.loc.mod_path)),
-                    f"{head_mod_name}.jac",
-                )
-                if (
-                    os.path.exists(potential_path)
-                    and potential_path != self.loc.mod_path
-                ):
-                    return potential_path
-        return None
+        """Get the base module path that this annex file belongs to.
+
+        Uses discover_base_file to find the base .jac file for annex files
+        (.impl.jac, .test.jac, .cl.jac). Handles all discovery scenarios:
+        - Same directory: foo.impl.jac -> foo.jac
+        - Module-specific folder: foo.impl/bar.impl.jac -> foo.jac
+        - Shared folder: impl/foo.impl.jac -> foo.jac
+        """
+        if self.stub_only:
+            return None
+        return discover_base_file(self.loc.mod_path)
 
     def normalize(self, deep: bool = False) -> bool:
         res = True
@@ -5202,6 +5189,8 @@ class SpecialVarRef(Name):
     def py_resolve_name(self) -> str:
         if self.orig.name == Tok.KW_SELF:
             return "self"
+        if self.orig.name == Tok.KW_PROPS:
+            return "props"
         elif self.orig.name == Tok.KW_SUPER:
             return "super"
         elif self.orig.name == Tok.KW_ROOT:

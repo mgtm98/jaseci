@@ -19,7 +19,7 @@ with entry {
 def get_nodes_edges(dot_file: str) -> tuple[dict, list] {
     import pydot;
     import from streamlit_agraph { Edge, Node }
-    ;
+
     graphs = pydot.graph_from_dot_file(dot_file);
     graph: pydot.Graph = graphs[0];
     node_list: list[pydot.Node] = graph.get_node_list();
@@ -45,12 +45,11 @@ with entry {
     st.title('Visualize DOT file');
 }
 
-glob
-    selected_dot_file = args.dot_file,
-    vis_opt = st.radio(
-        'Visualization options',
-        ['Use pygraphviz (Static)', 'Use streamlit-agraph (Interactive)']
-    );
+glob selected_dot_file = args.dot_file,
+     vis_opt = st.radio(
+         'Visualization options',
+         ['Use pygraphviz (Static)', 'Use streamlit-agraph (Interactive)']
+     );
 
 with entry {
     if selected_dot_file {

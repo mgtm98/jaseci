@@ -4,7 +4,8 @@ Sets up proxy mode and mock delegation based on config.
 Configures logging when using real LLM backends.
 """
 impl Model.postinit -> None {
-    self.proxy = bool(self.config.get("proxy", False));
+    # Check instance config first, then fall back to global config
+    self.proxy = bool(self.config.get("proxy", _model_config.get("proxy", False)));
     # When model_name is 'mockllm', delegate to MockLLM behavior
     if self.model_name == MODEL_MOCK {
         self._mock_delegate = MockLLM(model_name=self.model_name, config=self.config);
@@ -12,7 +13,8 @@ impl Model.postinit -> None {
     if not self._mock_delegate {
         logging.getLogger("httpx").setLevel(logging.WARNING);
         _disable_debugging();
-        litellm.drop_params = True;
+        # Use drop_params from config
+        litellm.drop_params = _litellm_config.get("drop_params", True);
     }
 }
 
@@ -43,7 +45,7 @@ impl Model.model_call_no_stream(params: dict) -> dict {
 Uses OpenAI client if proxy mode is enabled, otherwise uses LiteLLM.
 Returns a generator that yields response chunks.
 """
-impl Model.model_call_with_stream(params: dict) -> Generator[str, None, None] {
+impl Model.model_call_with_stream(params: dict) {
     if self.proxy {
         client = OpenAI(base_url=self.api_base, api_key=self.api_key,);
         response = client.chat.completions.create(stream=True, **params);

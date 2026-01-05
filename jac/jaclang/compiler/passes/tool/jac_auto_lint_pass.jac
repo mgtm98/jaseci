@@ -8,7 +8,13 @@ This pass applies automatic linting corrections to Jac code, including:
 - Converting `def __init__` to `can init` (Jac style)
 - Converting `def __post_init__` to `can postinit` (Jac style)
 - Removing empty parentheses from function/method declarations (def foo() -> def foo)
-- Removing unnecessary <> from names that are not actual keywords
+- Removing unnecessary angle bracket escaping from names that are not actual keywords
+- Converting hasattr(obj, "attr") to null-safe access
+- Propagating null-safe access consistency
+- Simplifying ternary expressions (x if x else default -> x or default)
+- Removing `import from __future__ { annotations }` (not needed in Jac)
+- Fixing signature mismatches between declarations and implementations
+- Removing trailing semicolons from `import from X { ... }` style imports
 - (Future) Import organization
 - (Future) Redundant code removal
 """
@@ -22,6 +28,7 @@ class JacAutoLintPass(UniPass) {
     """Initialize the pass with linting options."""
     with entry {
         lint_enabled: bool = True;
+        main_module: uni.Module | None = None;
     }
 
     def enter_module(self: JacAutoLintPass, node: uni.Module) -> None;
@@ -45,6 +52,7 @@ class JacAutoLintPass(UniPass) {
     def enter_archetype(self: JacAutoLintPass, node: uni.Archetype) -> None;
     def enter_enum(self: JacAutoLintPass, node: uni.Enum) -> None;
     def enter_impl_def(self: JacAutoLintPass, node: uni.ImplDef) -> None;
+    def exit_impl_def(self: JacAutoLintPass, <>node: uni.ImplDef) -> None;
     def enter_ability(self: JacAutoLintPass, ability_node: uni.Ability) -> None;
     def _remove_staticmethod_from_kids(
         self: JacAutoLintPass, ability_node: uni.Ability
@@ -54,4 +62,56 @@ class JacAutoLintPass(UniPass) {
     def enter_name(self: JacAutoLintPass, <>node: uni.Name) -> None;
     def enter_special_var_ref(self: JacAutoLintPass, <>node: uni.SpecialVarRef) -> None;
     def enter_builtin_type(self: JacAutoLintPass, <>node: uni.BuiltinType) -> None;
+    def exit_func_call(self: JacAutoLintPass, node: uni.FuncCall) -> None;
+    def _convert_hasattr_to_null_ok(
+        self: JacAutoLintPass, node: uni.FuncCall
+    ) -> (uni.AtomTrailer | None);
+
+    def _is_matching_attr_access(
+        self: JacAutoLintPass,
+        trailer: uni.AtomTrailer,
+        obj_expr: uni.Expr,
+        attr_name: str
+    ) -> bool;
+
+    def _make_null_ok(self: JacAutoLintPass, trailer: uni.AtomTrailer) -> None;
+    def _collect_atom_trailers(
+        self: JacAutoLintPass, uni_node: uni.UniNode, results: list
+    ) -> None;
+
+    def _expr_to_key(self: JacAutoLintPass, expr: uni.Expr) -> (str | None);
+    def _get_trailer_key(
+        self: JacAutoLintPass, trailer: uni.AtomTrailer
+    ) -> (str | None);
+
+    def _exprs_are_identical(
+        self: JacAutoLintPass, expr1: uni.Expr, expr2: uni.Expr
+    ) -> bool;
+
+    def _convert_ternary_to_or(
+        self: JacAutoLintPass, if_else_node: uni.IfElseExpr
+    ) -> bool;
+
+    def exit_if_else_expr(self: JacAutoLintPass, if_else_node: uni.IfElseExpr) -> None;
+    def exit_bool_expr(self: JacAutoLintPass, bool_node: uni.BoolExpr) -> None;
+    def _is_future_annotations_import(self: JacAutoLintPass, stmt: uni.UniNode) -> bool;
+    def _fix_impl_signature_mismatch(
+        self: JacAutoLintPass, impl_node: uni.ImplDef
+    ) -> None;
+
+    def _signatures_match(
+        self: JacAutoLintPass, decl_sig: uni.FuncSignature, impl_sig: uni.FuncSignature
+    ) -> bool;
+
+    def enter_import(self: JacAutoLintPass, import_node: uni.Import) -> None;
+    def _remove_empty_parens_from_sig(
+        self: JacAutoLintPass,
+        target_node: uni.UniNode,
+        sig: uni.FuncSignature,
+        sig_attr: str
+    ) -> None;
+
+    def _extract_string_literal_value(
+        self: JacAutoLintPass, expr: uni.Expr
+    ) -> (str | None);
 }

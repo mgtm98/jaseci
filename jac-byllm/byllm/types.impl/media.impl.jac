@@ -2,7 +2,7 @@
 # Media Implementations
 #-------------------------------------------------------------------------------
 """Convert the content to a dictionary. Subclasses must implement."""
-impl Media.to_dict()  -> list[dict] {
+impl Media.to_dict -> list[dict] {
     raise NotImplementedError("Subclasses must implement this method.") ;
 }
 
@@ -10,7 +10,7 @@ impl Media.to_dict()  -> list[dict] {
 # Text
 #-------------------------------------------------------------------------------
 """Convert the text content to a dictionary."""
-impl Text.to_dict()  -> list[dict] {
+impl Text.to_dict -> list[dict] {
     return [{"type": "text", "text": self.text}];
 }
 
@@ -28,7 +28,7 @@ Supported inputs:
 - os.PathLike
 - PIL.Image.Image instances
 """
-impl Image.postinit()  -> None {
+impl Image.postinit -> None {
     value = self.url;
     # Handle path-like inputs by converting to string
     if isinstance(value, os.PathLike) {
@@ -85,7 +85,7 @@ impl Image.postinit()  -> None {
         return;
     }
     # File-like object (e.g., BytesIO, IO[bytes])
-    if hasattr(value, "read") and callable(value.read) {
+    if value?.read and callable(value?.read) {
         # Safely read without permanently moving the cursor
         stream: IO[bytes] = value;  # type: ignore[assignment]
         pos = None;
@@ -96,10 +96,10 @@ impl Image.postinit()  -> None {
         }
         try {
             # Prefer getvalue if available (e.g., BytesIO)
-            if hasattr(stream, "getvalue") and callable(stream.getvalue) {
+            if stream?.getvalue and callable(stream?.getvalue) {
                 raw = stream.getvalue();  # type: ignore[call-arg]
             } else {
-                if hasattr(stream, "seek") {
+                if stream?.seek {
                     with suppress(Exception) {
                         stream.seek(0);
                     }
@@ -110,7 +110,7 @@ impl Image.postinit()  -> None {
             fmt = img.format or "PNG";
             self.url = self._data_url_from_bytes(raw, fmt);
         } finally {
-            if pos is not None and hasattr(stream, "seek") {
+            if pos is not None and stream?.seek {
                 with suppress(Exception) {
                     stream.seek(pos);
                 }
@@ -152,7 +152,7 @@ impl Image._data_url_from_bytes(data: bytes, fmt: str | None) -> str {
 }
 
 """Convert the image to a dictionary for LLM API calls."""
-impl Image.to_dict()  -> list[dict] {
+impl Image.to_dict -> list[dict] {
     image_url = {"url": self.url};
     if self.mime_type {
         image_url["format"] = self.mime_type;
@@ -164,14 +164,14 @@ impl Image.to_dict()  -> list[dict] {
 # Video
 #-------------------------------------------------------------------------------
 """Validate that the video path exists."""
-impl Video.postinit()  -> None {
+impl Video.postinit -> None {
     if not os.path.exists(self.path) {
         raise ValueError(f"Video file does not exist: {self.path}") ;
     }
 }
 
 """Load video frames as base64-encoded images at the specified FPS."""
-impl Video.load_frames()  -> None {
+impl Video.load_frames -> None {
     try {
         import cv2;
     } except ImportError {
@@ -202,7 +202,7 @@ impl Video.load_frames()  -> None {
 }
 
 """Convert the video frames to a list of image dictionaries."""
-impl Video.to_dict()  -> list[dict] {
+impl Video.to_dict -> list[dict] {
     if self._base64frames is None {
         self.load_frames();
     }

@@ -28,18 +28,26 @@ def test_parameter_count_mismatch(fixture_path: Callable[[str], str]) -> None:
 
     expected_stdout_values = (
         "Parameter count mismatch for ability impl.SomeObj.foo.",
-        "    5 |",
-        "    6 | # Miss match parameter count.",
-        "    7 | impl SomeObj.foo(param1: str) -> str {",
+        "    6 |",
+        "    7 | # Miss match parameter count.",
+        "    8 | impl SomeObj.foo(param1: str) -> str {",
         "      |      ^^^^^^^^^^^",
-        '    8 |     return "foo";',
-        "    9 | }",
+        '    9 |     return "foo";',
+        "   10 | }",
         "From the declaration of foo.",
         "    1 | obj SomeObj {",
         "    2 |     def foo(param1: str, param2: int) -> str;",
         "      |         ^^^",
         "    3 |     def bar(param1: str, param2: int) -> str;",
-        "    4 | }",
+        "    4 |     def baz -> str;",
+        # Check for explicit self mismatch error
+        "Parameter count mismatch for ability impl.SomeObj.baz.",
+        "   17 | # Explicit self when decl has no params.",
+        "   18 | impl SomeObj.baz(self: SomeObj) -> str {",
+        "      |      ^^^^^^^^^^^",
+        "From the declaration of baz.",
+        "    4 |     def baz -> str;",
+        "      |         ^^^",
     )
 
     errors_output = ""
@@ -165,3 +173,45 @@ def test_inner_mod_impl(
         Jac.jac_import("enumerations", base_path=fixture_path("./"))
     stdout_value = captured_output.getvalue()
     assert stdout_value == "1\n"
+
+
+def test_impl_body_symbol_resolution(fixture_path: Callable[[str], str]) -> None:
+    """Test that symbols like 'self' and 'self.attr' are resolved in impl bodies.
+
+    This tests the fix for symbol resolution in .impl.jac files, where symbols
+    weren't being resolved because impl files are compiled before being linked
+    to their base module.
+    """
+    state = (out := JacProgram()).compile(fixture_path("impl_symbol_resolution.jac"))
+    assert not out.errors_had, f"Compilation errors: {out.errors_had}"
+
+    # Find the impl module
+    assert len(state.impl_mod) == 1, "Expected one impl module"
+    impl_mod = state.impl_mod[0]
+
+    # Get the ImplDef nodes
+    impl_defs = [
+        node
+        for node in impl_mod.get_all_sub_nodes(uni.ImplDef)
+        if isinstance(node, uni.ImplDef)
+    ]
+    assert len(impl_defs) == 2, f"Expected 2 ImplDef nodes, got {len(impl_defs)}"
+
+    # Check that AtomTrailer chains (self.count, self.name) have their first
+    # element (self) resolved. In Jac, 'self' is represented as SpecialVarRef.
+    for impl_def in impl_defs:
+        atom_trailers = impl_def.get_all_sub_nodes(uni.AtomTrailer)
+        assert len(atom_trailers) > 0, (
+            f"Expected AtomTrailer nodes in {impl_def.sym_name}"
+        )
+
+        for trailer in atom_trailers:
+            chain = trailer.as_attr_list
+            if chain and chain[0].sym_name == "self":
+                assert chain[0].sym is not None, (
+                    f"'self' in chain not resolved in {impl_def.sym_name}"
+                )
+                # Verify the symbol has the expected name
+                assert chain[0].sym.sym_name == "self", (
+                    f"Expected 'self' symbol, got {chain[0].sym.sym_name}"
+                )

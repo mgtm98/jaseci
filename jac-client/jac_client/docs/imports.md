@@ -1,5 +1,19 @@
 # Imports in Jac: Working with Modules and Libraries
 
+> **️ Version Compatibility Warning**
+>
+> **For jac-client < 0.2.4:**
+>
+> - All `def` functions are **automatically exported** - no `:pub` needed
+> - You **cannot export variables** (globals) - only functions can be imported
+> - When importing functions, they don't need to be marked with `:pub` in the source file
+>
+> **For jac-client >= 0.2.4:**
+>
+> - Functions and variables **must be explicitly exported** with `:pub` to be importable
+> - Only functions/variables marked with `:pub` can be imported
+> - This documentation assumes version 0.2.4 or later
+
 Learn how to import third-party libraries, other Jac files, and JavaScript modules in your Jac applications.
 
 ---
@@ -89,10 +103,10 @@ cl {
     def LoginForm() -> any {
         async def handleLogin(e: any) -> None {
             e.preventDefault();
-            email = document.getElementById("email").value;
+            username = document.getElementById("username").value;
             password = document.getElementById("password").value;
 
-            success = await jacLogin(email, password);
+            success = await jacLogin(username, password);
 
             if success {
                 navigate("/dashboard");
@@ -102,7 +116,7 @@ cl {
         }
 
         return <form onSubmit={handleLogin}>
-            <input id="email" type="email" placeholder="Email" />
+            <input id="username" type="text" placeholder="Username" />
             <input id="password" type="password" placeholder="Password" />
             <button type="submit">Login</button>
         </form>;
@@ -119,10 +133,10 @@ cl {
     def SignupForm() -> any {
         async def handleSignup(e: any) -> None {
             e.preventDefault();
-            email = document.getElementById("email").value;
+            username = document.getElementById("username").value;
             password = document.getElementById("password").value;
 
-            result = await jacSignup(email, password);
+            result = await jacSignup(username, password);
 
             if result.success {
                 alert("Account created successfully!");
@@ -133,7 +147,7 @@ cl {
         }
 
         return <form onSubmit={handleSignup}>
-            <input id="email" type="email" placeholder="Email" />
+            <input id="username" type="text" placeholder="Username" />
             <input id="password" type="password" placeholder="Password" />
             <button type="submit">Sign Up</button>
         </form>;
@@ -278,10 +292,10 @@ cl {
 
         async def handleLogin(e: any) -> None {
             e.preventDefault();
-            email = document.getElementById("email").value;
+            username = document.getElementById("username").value;
             password = document.getElementById("password").value;
 
-            success = await jacLogin(email, password);
+            success = await jacLogin(username, password);
 
             if success {
                 navigate("/dashboard");
@@ -295,9 +309,9 @@ cl {
             {error and <p style={{"color": "red"}}>{error}</p>}
             <form onSubmit={handleLogin}>
                 <input
-                    id="email"
-                    type="email"
-                    placeholder="Email"
+                    id="username"
+                    type="text"
+                    placeholder="Username"
                     style={{"width": "100%", "padding": "10px", "marginBottom": "10px"}}
                 />
                 <input
@@ -470,8 +484,10 @@ Jac supports importing any npm package that's compatible with ES modules. This i
 Before importing third-party libraries, you need:
 
 1. **Node.js** installed (for npm)
-2. **package.json** in your project root
-3. **Vite** configured in your project (automatically set up with `jac create_jac_app`)
+2. **package.json** in your project root (automatically generated from `jac.toml`)
+3. **Vite** configured in your project (automatically set up with `jac create --cl`)
+
+> **Recommended**: Use `jac add --cl <package>` to add packages. This automatically updates `jac.toml` and regenerates `package.json`.
 
 ### Why Third-Party Libraries?
 
@@ -790,7 +806,7 @@ cl import from .module_name {
 ```jac
 """Button component."""
 
-cl def CustomButton(props: dict) -> any {
+cl def:pub CustomButton(props: dict) -> any {
     return <button
         style={{
             "padding": "10px 20px",
@@ -806,7 +822,7 @@ cl def CustomButton(props: dict) -> any {
     </button>;
 }
 
-cl def PrimaryButton(props: dict) -> any {
+cl def:pub PrimaryButton(props: dict) -> any {
     return <button
         style={{
             "padding": "10px 20px",
@@ -833,7 +849,7 @@ cl import from .button {
     PrimaryButton
 }
 
-cl def App() -> any {
+cl def:pub App() -> any {
     return <div>
         <CustomButton onClick={lambda -> None { console.log("Clicked!"); }}>
             Custom Button
@@ -844,7 +860,7 @@ cl def App() -> any {
     </div>;
 }
 
-cl def jac_app() -> any {
+cl def:pub jac_app() -> any {
     return App();
 }
 ```
@@ -903,7 +919,7 @@ cl import from .utils {
     MessageFormatter
 }
 
-cl def JsImportTest() -> any {
+cl def:pub JsImportTest() -> any {
     greeting = formatMessage("Jac");
     sum = calculateSum(5, 3);
     formatter = MessageFormatter("JS");
@@ -918,7 +934,7 @@ cl def JsImportTest() -> any {
     </div>;
 }
 
-cl def jac_app() -> any {
+cl def:pub jac_app() -> any {
     return JsImportTest();
 }
 ```
@@ -966,7 +982,7 @@ cl def ValidationForm() -> any {
 
     return <form>
         <input
-            type="email"
+            type="text"
             onBlur={lambda e: any -> None {
                 if not emailValidator.validate(e.target.value) {
                     alert("Invalid email");
@@ -1150,5 +1166,9 @@ Type errors with imported functions
 - **Jac Files**: Import with `cl import from .module_name`
 - **JavaScript Files**: Import with `cl import from .filename`
 - **Best Practices**: Organize imports, import only what you need, document exports
+
+## Related Documentation
+
+- [Exporting Functions and Variables](exporting-functions-and-variables.md) - Learn how to export functions and variables for import
 
 Imports in Jac make it easy to use third-party libraries and organize your code!

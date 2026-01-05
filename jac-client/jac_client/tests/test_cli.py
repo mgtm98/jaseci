@@ -1,13 +1,13 @@
 """Test create-jac-app command."""
 
-import json
 import os
 import tempfile
+import tomllib
 from subprocess import PIPE, Popen, run
 
 
 def test_create_jac_app() -> None:
-    """Test create-jac-app command without TypeScript."""
+    """Test jac create --cl command."""
     test_project_name = "test-jac-app"
 
     # Create a temporary directory for testing
@@ -17,36 +17,34 @@ def test_create_jac_app() -> None:
             # Change to temp directory
             os.chdir(temp_dir)
 
-            # Run create-jac-app command with 'n' for TypeScript
+            # Run jac create --cl command
             process = Popen(
-                ["jac", "create_jac_app", test_project_name],
+                ["jac", "create", "--cl", test_project_name],
                 stdin=PIPE,
                 stdout=PIPE,
                 stderr=PIPE,
                 text=True,
             )
-            stdout, stderr = process.communicate(input="n\n")
+            stdout, stderr = process.communicate()
             result_code = process.returncode
 
             # Check that command succeeded
             assert result_code == 0
-            assert (
-                f"Successfully created Jac application '{test_project_name}'!" in stdout
-            )
+            assert f"Project '{test_project_name}' created successfully!" in stdout
 
             # Verify project directory was created
             project_path = os.path.join(temp_dir, test_project_name)
             assert os.path.exists(project_path)
             assert os.path.isdir(project_path)
 
-            # Verify app.jac file was created
-            app_jac_path = os.path.join(project_path, "app.jac")
+            # Verify src/app.jac file was created
+            app_jac_path = os.path.join(project_path, "src", "app.jac")
             assert os.path.exists(app_jac_path)
 
             with open(app_jac_path) as f:
                 app_jac_content = f.read()
 
-            assert "app()" in app_jac_content
+            assert "def:pub app()" in app_jac_content
 
             # Verify README.md was created
             readme_path = os.path.join(project_path, "README.md")
@@ -56,7 +54,16 @@ def test_create_jac_app() -> None:
                 readme_content = f.read()
 
             assert f"# {test_project_name}" in readme_content
-            assert "jac serve app.jac" in readme_content
+            assert "jac serve src/app.jac" in readme_content
+
+            # Verify jac.toml was created
+            jac_toml_path = os.path.join(project_path, "jac.toml")
+            assert os.path.exists(jac_toml_path)
+
+            with open(jac_toml_path, "rb") as f:
+                config_data = tomllib.load(f)
+
+            assert config_data["project"]["name"] == test_project_name
 
             # Verify .gitignore was created with correct content
             gitignore_path = os.path.join(project_path, ".gitignore")
@@ -66,13 +73,27 @@ def test_create_jac_app() -> None:
                 gitignore_content = f.read()
 
             assert "node_modules" in gitignore_content
-            assert "app.session.bak" in gitignore_content
-            assert "app.session.dat" in gitignore_content
-            assert "app.session.dir" in gitignore_content
-            assert "app.session.users.json" in gitignore_content
 
-            components_dir = os.path.join(project_path, "components")
-            assert not os.path.exists(components_dir)
+            # Verify src/components directory exists
+            components_dir = os.path.join(project_path, "src", "components")
+            assert os.path.exists(components_dir)
+
+            # Verify default packages installation (package.json should be generated)
+            package_json_path = os.path.join(
+                project_path, ".jac", "client", "configs", "package.json"
+            )
+            # Note: packages may or may not be installed depending on npm availability
+            # but package.json should be generated with default packages
+            if os.path.exists(package_json_path):
+                import json
+
+                with open(package_json_path) as f:
+                    package_data = json.load(f)
+
+                # Verify default dependencies are in package.json
+                assert "react" in package_data.get("dependencies", {})
+                assert "react-dom" in package_data.get("dependencies", {})
+                assert "vite" in package_data.get("devDependencies", {})
 
         finally:
             # Return to original directory
@@ -80,7 +101,7 @@ def test_create_jac_app() -> None:
 
 
 def test_create_jac_app_invalid_name() -> None:
-    """Test create-jac-app command with invalid project name."""
+    """Test jac create --cl command with invalid project name."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
@@ -88,7 +109,7 @@ def test_create_jac_app_invalid_name() -> None:
 
             # Test with invalid name containing spaces
             result = run(
-                ["jac", "create_jac_app", "invalid name with spaces"],
+                ["jac", "create", "--cl", "invalid name with spaces"],
                 capture_output=True,
                 text=True,
             )
@@ -105,7 +126,7 @@ def test_create_jac_app_invalid_name() -> None:
 
 
 def test_create_jac_app_existing_directory() -> None:
-    """Test create-jac-app command when directory already exists."""
+    """Test jac create --cl command when directory already exists."""
     test_project_name = "existing-test-app"
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -117,16 +138,14 @@ def test_create_jac_app_existing_directory() -> None:
             os.makedirs(test_project_name)
 
             # Try to create app with same name
-            # Note: We still need to provide input for the TypeScript prompt,
-            # but the command should fail before that due to existing directory
             process = Popen(
-                ["jac", "create_jac_app", test_project_name],
+                ["jac", "create", "--cl", test_project_name],
                 stdin=PIPE,
                 stdout=PIPE,
                 stderr=PIPE,
                 text=True,
             )
-            stdout, stderr = process.communicate(input="n\n")
+            stdout, stderr = process.communicate()
             result_code = process.returncode
 
             # Should fail with non-zero exit code
@@ -138,7 +157,7 @@ def test_create_jac_app_existing_directory() -> None:
 
 
 def test_create_jac_app_with_typescript() -> None:
-    """Test create-jac-app command with TypeScript support."""
+    """Test jac create --cl command with TypeScript support (enabled by default)."""
     test_project_name = "test-jac-app-ts"
 
     # Create a temporary directory for testing
@@ -148,49 +167,37 @@ def test_create_jac_app_with_typescript() -> None:
             # Change to temp directory
             os.chdir(temp_dir)
 
-            # Run create-jac-app command with 'y' for TypeScript
+            # Run jac create --cl command (TypeScript is enabled by default)
             process = Popen(
-                ["jac", "create_jac_app", test_project_name],
+                ["jac", "create", "--cl", test_project_name],
                 stdin=PIPE,
                 stdout=PIPE,
                 stderr=PIPE,
                 text=True,
             )
-            stdout, stderr = process.communicate(input="y\n")
+            stdout, stderr = process.communicate()
             result_code = process.returncode
 
             # Check that command succeeded
             assert result_code == 0
-            assert (
-                f"Successfully created Jac application '{test_project_name}'!" in stdout
-            )
+            assert f"Project '{test_project_name}' created successfully!" in stdout
 
             # Verify project directory was created
             project_path = os.path.join(temp_dir, test_project_name)
             assert os.path.exists(project_path)
             assert os.path.isdir(project_path)
 
-            # Verify package.json was created and has TypeScript dependencies
-            package_json_path = os.path.join(project_path, "config.json")
-            assert os.path.exists(package_json_path)
+            # Verify jac.toml was created
+            jac_toml_path = os.path.join(project_path, "jac.toml")
+            assert os.path.exists(jac_toml_path)
 
-            with open(package_json_path) as f:
-                package_data = json.load(f)
+            with open(jac_toml_path, "rb") as f:
+                config_data = tomllib.load(f)
 
-            assert package_data["package"]["name"] == test_project_name
+            assert config_data["project"]["name"] == test_project_name
 
-            # Verify tsconfig.json was created
-            tsconfig_path = os.path.join(project_path, "tsconfig.json")
-            assert os.path.exists(tsconfig_path)
-
-            with open(tsconfig_path) as f:
-                tsconfig_content = f.read()
-
-            assert '"jsx": "react-jsx"' in tsconfig_content
-            assert '"include": ["components/**/*"]' in tsconfig_content
-
-            # Verify components directory and Button.tsx were created
-            components_dir = os.path.join(project_path, "components")
+            # Verify src/components directory and Button.tsx were created
+            components_dir = os.path.join(project_path, "src", "components")
             assert os.path.exists(components_dir)
             assert os.path.isdir(components_dir)
 
@@ -203,8 +210,8 @@ def test_create_jac_app_with_typescript() -> None:
             assert "interface ButtonProps" in button_content
             assert "export const Button" in button_content
 
-            # Verify app.jac includes TypeScript import
-            app_jac_path = os.path.join(project_path, "app.jac")
+            # Verify src/app.jac includes TypeScript import
+            app_jac_path = os.path.join(project_path, "src", "app.jac")
             assert os.path.exists(app_jac_path)
 
             with open(app_jac_path) as f:
@@ -225,140 +232,232 @@ def test_create_jac_app_with_typescript() -> None:
             assert "TypeScript Support" in readme_content
             assert "components/Button.tsx" in readme_content
 
+            # Verify default packages installation (package.json should be generated)
+            package_json_path = os.path.join(
+                project_path, ".jac", "client", "configs", "package.json"
+            )
+            # Note: packages may or may not be installed depending on npm availability
+            # but package.json should be generated with default packages
+            if os.path.exists(package_json_path):
+                import json
+
+                with open(package_json_path) as f:
+                    package_data = json.load(f)
+
+                # Verify default dependencies are in package.json
+                assert "react" in package_data.get("dependencies", {})
+                assert "react-dom" in package_data.get("dependencies", {})
+                assert "vite" in package_data.get("devDependencies", {})
+                assert "typescript" in package_data.get("devDependencies", {})
+
+        finally:
+            # Return to original directory
+            os.chdir(original_cwd)
+
+
+def test_create_jac_app_with_skip_flag() -> None:
+    """Test jac create --cl --skip command skips package installation."""
+    test_project_name = "test-jac-app-skip"
+
+    # Create a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        original_cwd = os.getcwd()
+        try:
+            # Change to temp directory
+            os.chdir(temp_dir)
+
+            # Run jac create --cl --skip command
+            process = Popen(
+                ["jac", "create", "--cl", "--skip", test_project_name],
+                stdin=PIPE,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+            stdout, stderr = process.communicate()
+            result_code = process.returncode
+
+            # Check that command succeeded
+            assert result_code == 0
+            assert f"Project '{test_project_name}' created successfully!" in stdout
+
+            # Verify project directory was created
+            project_path = os.path.join(temp_dir, test_project_name)
+            assert os.path.exists(project_path)
+            assert os.path.isdir(project_path)
+
+            # Verify that "Installing default packages" message is NOT in output
+            assert "Installing default packages" not in stdout
+            assert "Default packages installed successfully" not in stdout
+
+            # Verify jac.toml was created
+            jac_toml_path = os.path.join(project_path, "jac.toml")
+            assert os.path.exists(jac_toml_path)
+
+        finally:
+            # Return to original directory
+            os.chdir(original_cwd)
+
+
+def test_create_jac_app_installs_default_packages() -> None:
+    """Test jac create --cl command attempts to install default packages."""
+    test_project_name = "test-jac-app-install"
+
+    # Create a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        original_cwd = os.getcwd()
+        try:
+            # Change to temp directory
+            os.chdir(temp_dir)
+
+            # Run jac create --cl command
+            process = Popen(
+                ["jac", "create", "--cl", test_project_name],
+                stdin=PIPE,
+                stdout=PIPE,
+                stderr=PIPE,
+                text=True,
+            )
+            stdout, stderr = process.communicate()
+            result_code = process.returncode
+
+            # Check that command succeeded
+            assert result_code == 0
+            assert f"Project '{test_project_name}' created successfully!" in stdout
+
+            # Verify project directory was created
+            project_path = os.path.join(temp_dir, test_project_name)
+            assert os.path.exists(project_path)
+
+            # Verify that installation was attempted (message should be in output)
+            assert "Installing default packages" in stdout
+
+            # Verify package.json was generated (even if npm install failed)
+            package_json_path = os.path.join(
+                project_path, ".jac", "client", "configs", "package.json"
+            )
+            # package.json should be generated with default packages
+            if os.path.exists(package_json_path):
+                import json
+
+                with open(package_json_path) as f:
+                    package_data = json.load(f)
+
+                # Verify default dependencies are in package.json
+                deps = package_data.get("dependencies", {})
+                dev_deps = package_data.get("devDependencies", {})
+
+                assert "react" in deps
+                assert "react-dom" in deps
+                assert "react-router-dom" in deps
+                assert "vite" in dev_deps
+                assert "@babel/core" in dev_deps
+                assert "typescript" in dev_deps
+                assert "@types/react" in dev_deps
+
         finally:
             # Return to original directory
             os.chdir(original_cwd)
 
 
 def test_generate_client_config() -> None:
-    """Test generate_client_config command creates config.json."""
+    """Test that generate_client_config command no longer exists (use jac init instead)."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Run generate_client_config command
+            # Run generate_client_config command - should not exist
             result = run(
                 ["jac", "generate_client_config"],
                 capture_output=True,
                 text=True,
             )
 
-            # Check that command succeeded
-            assert result.returncode == 0
-            assert "Successfully created config.json" in result.stdout
-
-            # Verify config.json was created
-            config_path = os.path.join(temp_dir, "config.json")
-            assert os.path.exists(config_path)
-
-            # Verify config.json has correct structure
-            with open(config_path) as f:
-                config_data = json.load(f)
-
-            assert "vite" in config_data
-            assert "ts" in config_data
-            assert "plugins" in config_data["vite"]
-            assert "lib_imports" in config_data["vite"]
-            assert "build" in config_data["vite"]
-            assert "server" in config_data["vite"]
-            assert "resolve" in config_data["vite"]
-
-            # Verify default values
-            assert config_data["vite"]["plugins"] == []
-            assert config_data["vite"]["lib_imports"] == []
-            assert config_data["vite"]["build"] == {}
-            assert config_data["vite"]["server"] == {}
-            assert config_data["vite"]["resolve"] == {}
-            assert config_data["ts"] == {}
+            # Command should not exist anymore
+            assert result.returncode != 0
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_generate_client_config_existing_file() -> None:
-    """Test generate_client_config command when config.json already exists."""
+    """Test that generate_client_config command no longer exists."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Create existing config.json
-            existing_config = {"vite": {"plugins": ["existing()"]}}
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(existing_config, f)
-
-            # Run generate_client_config command
+            # Run generate_client_config command - should not exist
             result = run(
                 ["jac", "generate_client_config"],
                 capture_output=True,
                 text=True,
             )
 
-            # Should fail with non-zero exit code
+            # Command should not exist anymore
             assert result.returncode != 0
-            assert "config.json already exists" in result.stderr
-
-            # Verify existing config was not overwritten
-            with open(config_path) as f:
-                config_data = json.load(f)
-            assert config_data["vite"]["plugins"] == ["existing()"]
 
         finally:
             os.chdir(original_cwd)
 
 
+def _create_jac_toml(temp_dir: str, deps: str = "", dev_deps: str = "") -> str:
+    """Create a minimal jac.toml file for testing.
+
+    Note: These CLI tests run jac commands as subprocesses and include npm install.
+    For faster tests, consider using unit tests with mocked PackageInstaller.
+    """
+    deps_section = f"\n{deps}" if deps else ""
+    dev_deps_section = f"\n{dev_deps}" if dev_deps else ""
+
+    toml_content = f"""[project]
+name = "test-project"
+version = "1.0.0"
+description = "Test project"
+entry-point = "app.jac"
+
+[dependencies.npm]{deps_section}
+
+[dev-dependencies.npm]{dev_deps_section}
+"""
+    config_path = os.path.join(temp_dir, "jac.toml")
+    with open(config_path, "w") as f:
+        f.write(toml_content)
+    return config_path
+
+
 def test_install_without_cl_flag() -> None:
-    """Test add command without --cl flag should fail."""
+    """Test add command without --cl flag should fail when no jac.toml exists."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Run add command without --cl flag
+            # Run add command without --cl flag and without jac.toml
             result = run(
                 ["jac", "add", "lodash"],
                 capture_output=True,
                 text=True,
             )
 
-            # Should fail with non-zero exit code
+            # Should fail with non-zero exit code because no jac.toml
             assert result.returncode != 0
-            assert "--cl flag is required" in result.stderr
+            assert "No jac.toml found" in result.stderr
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_install_all_packages() -> None:
-    """Test add --cl command installs all packages from config.json."""
+    """Test add --cl command installs all packages from jac.toml."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Create config.json with some dependencies
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {"lodash": "^4.17.21"},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml with some dependencies
+            _create_jac_toml(temp_dir, deps='lodash = "^4.17.21"')
 
             # Run add --cl command without package name
             result = run(
@@ -369,8 +468,8 @@ def test_install_all_packages() -> None:
 
             # Should succeed
             assert result.returncode == 0
-            assert "Installing all packages from config.json" in result.stdout
-            assert "Successfully installed all packages" in result.stdout
+            assert "Installing all npm packages" in result.stdout
+            assert "Installed all npm packages successfully" in result.stdout
 
         finally:
             os.chdir(original_cwd)
@@ -383,27 +482,8 @@ def test_install_package_to_dependencies() -> None:
         try:
             os.chdir(temp_dir)
 
-            # Create config.json
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml
+            config_path = _create_jac_toml(temp_dir)
 
             # Run add --cl command with package name
             result = run(
@@ -414,14 +494,14 @@ def test_install_package_to_dependencies() -> None:
 
             # Should succeed
             assert result.returncode == 0
-            assert "Added lodash to dependencies" in result.stdout
+            assert "Adding lodash (npm)" in result.stdout
+            assert "Added 1 package(s) to [dependencies.npm]" in result.stdout
 
-            # Verify package was added to config.json
-            with open(config_path) as f:
-                updated_config = json.load(f)
+            # Verify package was added to jac.toml
+            with open(config_path, "rb") as f:
+                updated_config = tomllib.load(f)
 
-            assert "lodash" in updated_config["package"]["dependencies"]
-            assert "lodash" not in updated_config["package"]["devDependencies"]
+            assert "lodash" in updated_config["dependencies"]["npm"]
 
         finally:
             os.chdir(original_cwd)
@@ -434,27 +514,8 @@ def test_install_package_with_version() -> None:
         try:
             os.chdir(temp_dir)
 
-            # Create config.json
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml
+            config_path = _create_jac_toml(temp_dir)
 
             # Run add --cl command with package and version
             result = run(
@@ -465,77 +526,58 @@ def test_install_package_with_version() -> None:
 
             # Should succeed
             assert result.returncode == 0
-            assert "Added lodash@^4.17.21 to dependencies" in result.stdout
+            assert "Adding lodash (npm)" in result.stdout
+            assert "Added 1 package(s) to [dependencies.npm]" in result.stdout
 
             # Verify package was added with correct version
-            with open(config_path) as f:
-                updated_config = json.load(f)
+            with open(config_path, "rb") as f:
+                updated_config = tomllib.load(f)
 
-            assert updated_config["package"]["dependencies"]["lodash"] == "^4.17.21"
+            assert updated_config["dependencies"]["npm"]["lodash"] == "^4.17.21"
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_install_package_to_devdependencies() -> None:
-    """Test add --cl -D command adds package to devDependencies."""
+    """Test add --cl -d command adds package to dev-dependencies."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Create config.json
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml
+            config_path = _create_jac_toml(temp_dir)
 
-            # Run add --cl -D command
+            # Run add --cl -d command
             run(
                 ["jac", "add", "--cl", "-d", "@types/react"],
                 capture_output=True,
                 text=True,
             )
 
-            # Verify package was added to devDependencies in config.json
-            # (config.json is updated before npm install, so check it even if npm fails)
-            with open(config_path) as f:
-                updated_config = json.load(f)
+            # Verify package was added to dev-dependencies in jac.toml
+            with open(config_path, "rb") as f:
+                updated_config = tomllib.load(f)
 
-            assert "@types/react" in updated_config["package"]["devDependencies"]
-            assert "@types/react" not in updated_config["package"]["dependencies"]
-
-            # Note: npm install might fail in test environment, but config.json should still be updated
-            # The important part is that the package was added to the correct section in config.json
+            npm_deps = updated_config["dependencies"]["npm"]
+            assert "@types/react" in npm_deps.get("dev", {})
+            # Check it's not in regular deps (excluding the "dev" key)
+            regular_deps = {k: v for k, v in npm_deps.items() if k != "dev"}
+            assert "@types/react" not in regular_deps
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_install_without_config_json() -> None:
-    """Test add --cl command when config.json doesn't exist."""
+    """Test add --cl command when jac.toml doesn't exist."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Run add --cl command without config.json
+            # Run add --cl command without jac.toml
             result = run(
                 ["jac", "add", "--cl", "lodash"],
                 capture_output=True,
@@ -544,29 +586,29 @@ def test_install_without_config_json() -> None:
 
             # Should fail with non-zero exit code
             assert result.returncode != 0
-            assert "config.json not found" in result.stderr
+            assert "No jac.toml found" in result.stderr
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_uninstall_without_cl_flag() -> None:
-    """Test remove command without --cl flag should fail."""
+    """Test remove command without --cl flag should fail when no jac.toml exists."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Run remove command without --cl flag
+            # Run remove command without --cl flag and without jac.toml
             result = run(
                 ["jac", "remove", "lodash"],
                 capture_output=True,
                 text=True,
             )
 
-            # Should fail with non-zero exit code
+            # Should fail with non-zero exit code because no jac.toml
             assert result.returncode != 0
-            assert "--cl flag is required" in result.stderr
+            assert "No jac.toml found" in result.stderr
 
         finally:
             os.chdir(original_cwd)
@@ -579,27 +621,8 @@ def test_uninstall_without_package_name() -> None:
         try:
             os.chdir(temp_dir)
 
-            # Create config.json
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml
+            _create_jac_toml(temp_dir)
 
             # Run remove --cl command without package name
             result = run(
@@ -610,7 +633,7 @@ def test_uninstall_without_package_name() -> None:
 
             # Should fail with non-zero exit code
             assert result.returncode != 0
-            assert "Package name is required" in result.stderr
+            assert "No packages specified" in result.stderr
 
         finally:
             os.chdir(original_cwd)
@@ -623,27 +646,8 @@ def test_uninstall_package_from_dependencies() -> None:
         try:
             os.chdir(temp_dir)
 
-            # Create config.json with a package
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {"lodash": "^4.17.21"},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml with a package
+            config_path = _create_jac_toml(temp_dir, deps='lodash = "^4.17.21"')
 
             # Run remove --cl command
             result = run(
@@ -654,48 +658,34 @@ def test_uninstall_package_from_dependencies() -> None:
 
             # Should succeed
             assert result.returncode == 0
-            assert "Removed lodash from dependencies" in result.stdout
+            assert "Removing lodash (npm)" in result.stdout
+            assert "Removed 1 package(s)" in result.stdout
 
-            # Verify package was removed from config.json
-            with open(config_path) as f:
-                updated_config = json.load(f)
+            # Verify package was removed from jac.toml
+            with open(config_path, "rb") as f:
+                updated_config = tomllib.load(f)
 
-            assert "lodash" not in updated_config["package"]["dependencies"]
+            npm_deps = updated_config.get("dependencies", {}).get("npm", {})
+            regular_deps = {k: v for k, v in npm_deps.items() if k != "dev"}
+            assert "lodash" not in regular_deps
 
         finally:
             os.chdir(original_cwd)
 
 
 def test_uninstall_package_from_devdependencies() -> None:
-    """Test remove --cl -D command removes package from devDependencies."""
+    """Test remove --cl -d command removes package from dev-dependencies."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Create config.json with a devDependency
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {"@types/react": "^18.0.0"},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml with a dev-dependency
+            config_path = _create_jac_toml(
+                temp_dir, dev_deps='"@types/react" = "^18.0.0"'
+            )
 
-            # Run remove --cl -D command
+            # Run remove --cl -d command
             result = run(
                 ["jac", "remove", "--cl", "-d", "@types/react"],
                 capture_output=True,
@@ -704,13 +694,15 @@ def test_uninstall_package_from_devdependencies() -> None:
 
             # Should succeed
             assert result.returncode == 0
-            assert "Removed @types/react from devDependencies" in result.stdout
+            assert "Removing @types/react (npm)" in result.stdout
+            assert "Removed 1 package(s)" in result.stdout
 
-            # Verify package was removed from config.json
-            with open(config_path) as f:
-                updated_config = json.load(f)
+            # Verify package was removed from jac.toml
+            with open(config_path, "rb") as f:
+                updated_config = tomllib.load(f)
 
-            assert "@types/react" not in updated_config["package"]["devDependencies"]
+            npm_deps = updated_config.get("dependencies", {}).get("npm", {})
+            assert "@types/react" not in npm_deps.get("dev", {})
 
         finally:
             os.chdir(original_cwd)
@@ -723,27 +715,8 @@ def test_uninstall_nonexistent_package() -> None:
         try:
             os.chdir(temp_dir)
 
-            # Create config.json without the package
-            config_data = {
-                "vite": {
-                    "plugins": [],
-                    "lib_imports": [],
-                    "build": {},
-                    "server": {},
-                    "resolve": {},
-                },
-                "ts": {},
-                "package": {
-                    "name": "test-project",
-                    "version": "1.0.0",
-                    "description": "Test project",
-                    "dependencies": {},
-                    "devDependencies": {},
-                },
-            }
-            config_path = os.path.join(temp_dir, "config.json")
-            with open(config_path, "w") as f:
-                json.dump(config_data, f)
+            # Create jac.toml without the package
+            _create_jac_toml(temp_dir)
 
             # Run remove --cl command with non-existent package
             result = run(
@@ -760,14 +733,14 @@ def test_uninstall_nonexistent_package() -> None:
             os.chdir(original_cwd)
 
 
-def test_uninstall_without_config_json() -> None:
-    """Test remove --cl command when config.json doesn't exist."""
+def test_uninstall_without_config_toml() -> None:
+    """Test remove --cl command when jac.toml doesn't exist."""
     with tempfile.TemporaryDirectory() as temp_dir:
         original_cwd = os.getcwd()
         try:
             os.chdir(temp_dir)
 
-            # Run remove --cl command without config.json
+            # Run remove --cl command without jac.toml
             result = run(
                 ["jac", "remove", "--cl", "lodash"],
                 capture_output=True,
@@ -776,7 +749,7 @@ def test_uninstall_without_config_json() -> None:
 
             # Should fail with non-zero exit code
             assert result.returncode != 0
-            assert "config.json not found" in result.stderr
+            assert "No jac.toml found" in result.stderr
 
         finally:
             os.chdir(original_cwd)

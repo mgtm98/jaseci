@@ -1,5 +1,17 @@
 # Nested Folder Imports
 
+> **️ Version Compatibility Warning**
+>
+> **For jac-client < 0.2.4:**
+>
+> - All `def` functions are **automatically exported** - no `:pub` needed
+> - You **cannot export variables** (globals)
+>
+> **For jac-client >= 0.2.4:**
+>
+> - Functions **must be explicitly exported** with `:pub` to be importable
+> - This documentation assumes version 0.2.4 or later
+
 Jac preserves folder structure during compilation, similar to TypeScript transpilation. This allows you to organize code in nested folders and use relative imports across multiple directory levels.
 
 ## Folder Structure Preservation
@@ -9,10 +21,11 @@ When Jac compiles your files, it preserves the folder structure in the `compiled
 ```
 Source Structure:              Compiled Structure:
 my-app/                        compiled/
-├── app.jac        →          ├── app.js
-├── ButtonRoot.jac  →          ├── ButtonRoot.js
-└── level1/                    └── level1/
-    ├── ButtonSecondL.jac →        ├── ButtonSecondL.js
+├── src/                       ├── app.js
+│   ├── app.jac        →      ├── ButtonRoot.js
+│   ├── ButtonRoot.jac  →     └── level1/
+│   └── level1/                    ├── ButtonSecondL.js
+    ├── ButtonSecondL.jac →
     ├── Card.jac          →        ├── Card.js
     └── level2/                    └── level2/
         └── ButtonThirdL.jac →         └── ButtonThirdL.js
@@ -111,13 +124,15 @@ Here's a complete example demonstrating nested folder imports:
 
 ```
 nested-advance/
-├── app.jac                    # Root entry point
-├── ButtonRoot.jac            # Root level button
-└── level1/
-    ├── ButtonSecondL.jac     # Second level button
-    ├── Card.jac              # Card component (imports from root and level2)
-    └── level2/
-        └── ButtonThirdL.jac  # Third level button
+├── src/
+│   ├── app.jac                # Root entry point
+│   ├── ButtonRoot.jac        # Root level button
+│   └── level1/
+│       ├── ButtonSecondL.jac # Second level button
+│       ├── Card.jac          # Card component (imports from root and level2)
+│       └── level2/
+│           └── ButtonThirdL.jac  # Third level button
+└── jac.toml                  # entry-point = "src/app.jac"
 ```
 
 **app.jac:**
@@ -136,7 +151,7 @@ cl import from .level1.Card {
     Card
 }
 
-cl def app() -> any {
+cl def:pub app() -> any {
     return <div>
         <ButtonRoot />
         <ButtonSecondL />
@@ -153,7 +168,7 @@ cl import from ..ButtonRoot {
     ButtonRoot
 }
 
-cl def ButtonSecondL() -> any {
+cl def:pub ButtonSecondL() -> any {
     return <div>
         <Button>Second Level</Button>
         <ButtonRoot />
@@ -172,7 +187,7 @@ cl import from .level2.ButtonThirdL {
     ButtonThirdL
 }
 
-cl def Card() -> any {
+cl def:pub Card() -> any {
     return <div>
         <ButtonRoot />
         <ButtonThirdL />
@@ -190,7 +205,7 @@ cl import from ..ButtonSecondL {
     ButtonSecondL
 }
 
-cl def ButtonThirdL() -> any {
+cl def:pub ButtonThirdL() -> any {
     return <div>
         <Button>Third Level</Button>
         <ButtonRoot />
@@ -298,15 +313,16 @@ cl import from ..todos.TodoList { TodoList }
 ### Pattern 3: Mixed Structure
 
 ```
-app.jac                    # Root entry
-components/
-├── ui/
-│   └── Button.jac
-utils/
-├── helpers/
-│   └── format.jac
-hooks/
-└── useCounter.jac
+src/
+├── app.jac                # Root entry
+├── components/
+│   └── ui/
+│       └── Button.jac
+├── utils/
+│   └── helpers/
+│       └── format.jac
+└── hooks/
+    └── useCounter.jac
 ```
 
 **Usage:**
@@ -353,11 +369,12 @@ Run any example:
 ```bash
 cd jac-client/jac_client/examples/nested-folders/<example-name>
 npm install
-jac serve app.jac
+jac serve src/app.jac
 ```
 
 ## Related Documentation
 
 - [Backend/Frontend Separation](backend-frontend.md)
 - [Import System](../imports.md)
+- [Exporting Functions and Variables](../exporting-functions-and-variables.md)
 - [File System Organization](intro.md)

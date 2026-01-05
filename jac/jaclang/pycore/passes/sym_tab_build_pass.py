@@ -42,6 +42,11 @@ class SymTabBuildPass(UniPass):
         """Pop scope."""
         return self.cur_sym_tab.pop()
 
+    @property
+    def cur_scope(self) -> UniScopeNode:
+        """Return current scope."""
+        return self.cur_sym_tab[-1]
+
     def find_python_scope_node_of(self, node: uni.UniNode) -> UniScopeNode | None:
         """Find scope node of a given node."""
         scope_types = uni.UniScopeNode.get_python_scoping_nodes()
@@ -51,10 +56,15 @@ class SymTabBuildPass(UniPass):
             node = node.parent
         return None
 
-    @property
-    def cur_scope(self) -> UniScopeNode:
-        """Return current scope."""
-        return self.cur_sym_tab[-1]
+    def _bind_import_path_symbols(self, module_path: uni.ModulePath) -> None:
+        """Create symbols for Name nodes in a module path."""
+        if module_path.path:
+            for n in module_path.path:
+                if isinstance(n, uni.Name):
+                    n.sym = n.create_symbol(
+                        access=SymbolAccess.PUBLIC,
+                        imported=True,
+                    )
 
     def enter_module(self, node: uni.Module) -> None:
         self.push_scope_and_link(node)
@@ -92,6 +102,22 @@ class SymTabBuildPass(UniPass):
                 else:
                     sym.add_use(i.name_spec)
 
+    def exit_binary_expr(self, node: uni.BinaryExpr) -> None:
+        """Handle walrus operator (:=) assignments."""
+        from jaclang.pycore.constant import Tokens as Tok
+
+        if not (isinstance(node.op, uni.Token) and node.op.name == Tok.WALRUS_EQ):
+            return
+
+        # The left side of walrus operator is the variable being assigned
+        if isinstance(node.left, uni.Name):
+            if (
+                sym := node.left.sym_tab.lookup(node.left.sym_name, deep=False)
+            ) is None:
+                node.left.sym_tab.def_insert(node.left, single_decl="walrus var")
+            else:
+                sym.add_use(node.left.name_spec)
+
     def enter_test(self, node: uni.Test) -> None:
         self.push_scope_and_link(node)
         import unittest
@@ -122,7 +148,8 @@ class SymTabBuildPass(UniPass):
                 )
             except Exception:
                 return
-
+        # create and bind symbols
+        self._bind_import_path_symbols(import_all_module_path_node)
         # 1. TODO: Check if the module has __all__ defined.
         # 2. Import all public symbols from the module
         if module:
@@ -159,13 +186,7 @@ class SymTabBuildPass(UniPass):
         # import from math {sqrt}  <- math will have a symbol but no symtab entry
         # import math as m  <- m will have a symbol and symtab entry
         if node.path and (node.is_import_from or (node.alias)):
-            for n in node.path:
-                # Only create symbols for Name nodes, not String literals
-                if isinstance(n, uni.Name):
-                    n.sym = n.create_symbol(
-                        access=SymbolAccess.PUBLIC,
-                        imported=True,
-                    )
+            self._bind_import_path_symbols(node)
 
     def exit_module_item(self, node: uni.ModuleItem) -> None:
         # Check Name first (since Name is a subclass of Token)

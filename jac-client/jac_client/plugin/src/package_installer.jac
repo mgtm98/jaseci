@@ -1,6 +1,5 @@
-"""Package installer for managing npm dependencies in config.json."""
-import from __future__ { annotations }
-import json;
+"""Package installer for managing npm dependencies in jac.toml."""
+
 import shutil;
 import subprocess;
 import from pathlib { Path }
@@ -23,5 +22,5 @@ class PackageInstaller {
         self: PackageInstaller, package_name: str, is_dev: bool = False
     ) -> None;
 
-    def list_packages(self: PackageInstaller) -> dict[str, dict[str, str]];
+    def list_packages(self: PackageInstaller) -> dict[str, dict[(str, str)]];
 }

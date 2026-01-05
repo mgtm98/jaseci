@@ -1,5 +1,5 @@
 """Common code for command line interface tool for the Jac language."""
-import from __future__ { annotations }
+
 import argparse;
 import inspect;
 import os;
@@ -23,12 +23,10 @@ class CommandPriority(IntEnum) {
 
 """Represents a command in the command line interface."""
 class Command {
-    with entry {
-        func: Callable;
-        sig: inspect.Signature;
-        priority: CommandPriority;
+    has func: Callable,
+        sig: inspect.Signature,
+        priority: CommandPriority,
         source: str;
-    }
 
     def init(
         self: Command,
@@ -44,22 +42,19 @@ def extract_param_descriptions(docstring: str) -> dict[str, str];
 
 """Registry for managing commands in the command line interface."""
 class CommandRegistry {
-    with entry {
-        registry: dict[(str, Command)];
-        pending_commands: dict[(str, list[Command])];
-        sub_parsers: argparse._SubParsersAction;
-        parser: argparse.ArgumentParser;
-        args: argparse.Namespace;
+    has registry: dict[(str, Command)],
+        pending_commands: dict[(str, list[Command])],
+        sub_parsers: argparse._SubParsersAction,
+        parser: argparse.ArgumentParser,
+        args: argparse.Namespace,
         _finalized: bool;
-    }
 
     def init(self: CommandRegistry) -> None;
-    def _add_settings_arguments(self: CommandRegistry) -> None;
     def register(
         self: CommandRegistry,
         func: (Callable | None) = None,
         *,
-        priority: CommandPriority = CommandPriority.CORE,
+        priority: (int | CommandPriority) = CommandPriority.CORE,
         source: str = 'core'
     ) -> Callable;
 

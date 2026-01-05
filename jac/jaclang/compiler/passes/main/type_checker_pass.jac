@@ -20,6 +20,9 @@ class TypeCheckPass(UniPass) {
 
     def _insert_builtin_symbols(self: TypeCheckPass) -> None;
     def enter_ability(self: TypeCheckPass, <>node: uni.Ability) -> None;
+    def exit_ability(self: TypeCheckPass, <>node: uni.Ability) -> None;
+    def _traverse_impl_body(self: TypeCheckPass, impl_def: uni.ImplDef) -> None;
+    def exit_impl_def(self: TypeCheckPass, <>node: uni.ImplDef) -> None;
     def exit_import(self: TypeCheckPass, <>node: uni.Import) -> None;
     def exit_assignment(self: TypeCheckPass, <>node: uni.Assignment) -> None;
     def exit_atom_trailer(self: TypeCheckPass, <>node: uni.AtomTrailer) -> None;
@@ -30,4 +33,5 @@ class TypeCheckPass(UniPass) {
     def exit_formatted_value(self: TypeCheckPass, <>node: uni.FormattedValue) -> None;
     def exit_edge_ref_trailer(self: TypeCheckPass, <>node: uni.EdgeRefTrailer) -> None;
     def exit_special_var_ref(self: TypeCheckPass, <>node: uni.SpecialVarRef) -> None;
+    def exit_name(self: TypeCheckPass, <>node: uni.Name) -> None;
 }

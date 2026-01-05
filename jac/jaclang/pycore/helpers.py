@@ -6,13 +6,11 @@ import marshal
 import os
 import pdb
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import fields, is_dataclass
 from functools import lru_cache
 from traceback import TracebackException
 from typing import get_args, get_origin
-
-from jaclang.pycore.settings import settings
 
 
 @lru_cache(maxsize=256)
@@ -85,11 +83,11 @@ def extract_headings(file_path: str) -> dict[str, tuple[int, int]]:
 def auto_generate_refs() -> str:
     """Auto generate lang reference for docs."""
     file_path = os.path.join(
-        os.path.split(os.path.dirname(__file__))[0], "../pycore/jac.lark"
+        os.path.split(os.path.dirname(__file__))[0], "pycore/jac.lark"
     )
     result = extract_headings(file_path)
 
-    # Create the reference subdirectory if it doesn't exist
+    # Create the reference subdirectory if it doesn't exist.
     docs_ref_dir = os.path.join(
         os.path.split(os.path.dirname(__file__))[0], "../../docs/docs/learn/jac_ref"
     )
@@ -182,7 +180,7 @@ def dump_traceback(e: Exception) -> str:
 
     # Process and print frames, collapsing consecutive internal runtime calls
     seen_runtime_marker: bool = False
-    collapse_internal: bool = not settings.show_internal_stack_errs
+    collapse_internal: bool = True
 
     for idx, frame in enumerate(tb.stack):
         is_internal: bool = is_internal_runtime_frame(frame.filename)
@@ -484,6 +482,6 @@ def _describe_node(obj: object) -> str:
     return " — ".join(parts)
 
 
-def _describe_nodes_list(objects: list[object]) -> str:
+def _describe_nodes_list(objects: Sequence[object]) -> str:
     """One object per line, index-friendly for returning list[int]."""
     return "\n".join(f"{i}) {_describe_node(obj)}" for i, obj in enumerate(objects))

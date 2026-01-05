@@ -17,27 +17,27 @@ with entry {
 # FIX: py2jac bug - module-level constants must be declared with glob outside with entry block
 # Otherwise they become Field descriptors when accessed from functions
 glob BINARY_OPERATOR_MAP:
-    dict[str, tuple[str, str]] = {
-    Tok.PLUS: ('__add__', '__radd__'),
-    Tok.MINUS: ('__sub__', '__rsub__'),
-    Tok.STAR_MUL: ('__mul__', '__rmul__'),
-    Tok.FLOOR_DIV: ('__floordiv__', '__rfloordiv__'),
-    Tok.DIV: ('__truediv__', '__rtruediv__'),
-    Tok.MOD: ('__mod__', '__rmod__'),
-    Tok.STAR_POW: ('__pow__', '__rpow__'),
-    Tok.DECOR_OP: ('__matmul__', '__rmatmul__'),
-    Tok.BW_AND: ('__and__', '__rand__'),
-    Tok.BW_OR: ('__or__', '__ror__'),
-    Tok.BW_XOR: ('__xor__', '__rxor__'),
-    Tok.LSHIFT: ('__lshift__', '__rlshift__'),
-    Tok.RSHIFT: ('__rshift__', '__rrshift__'),
-    Tok.EE: ('__eq__', '__eq__'),
-    Tok.NE: ('__ne__', '__ne__'),
-    Tok.LT: ('__lt__', '__gt__'),
-    Tok.LTE: ('__le__', '__ge__'),
-    Tok.GT: ('__gt__', '__lt__'),
-    Tok.GTE: ('__ge__', '__le__')
-};
+         dict[str, tuple[str, str]] = {
+         Tok.PLUS: ('__add__', '__radd__'),
+         Tok.MINUS: ('__sub__', '__rsub__'),
+         Tok.STAR_MUL: ('__mul__', '__rmul__'),
+         Tok.FLOOR_DIV: ('__floordiv__', '__rfloordiv__'),
+         Tok.DIV: ('__truediv__', '__rtruediv__'),
+         Tok.MOD: ('__mod__', '__rmod__'),
+         Tok.STAR_POW: ('__pow__', '__rpow__'),
+         Tok.DECOR_OP: ('__matmul__', '__rmatmul__'),
+         Tok.BW_AND: ('__and__', '__rand__'),
+         Tok.BW_OR: ('__or__', '__ror__'),
+         Tok.BW_XOR: ('__xor__', '__rxor__'),
+         Tok.LSHIFT: ('__lshift__', '__rlshift__'),
+         Tok.RSHIFT: ('__rshift__', '__rrshift__'),
+         Tok.EE: ('__eq__', '__eq__'),
+         Tok.NE: ('__ne__', '__ne__'),
+         Tok.LT: ('__lt__', '__gt__'),
+         Tok.LTE: ('__le__', '__ge__'),
+         Tok.GT: ('__gt__', '__lt__'),
+         Tok.GTE: ('__ge__', '__le__')
+     };
 
 """Return the binary operator's jtype."""
 def get_type_of_binary_operation(
@@ -59,16 +59,30 @@ def get_type_of_binary_operation(
         #
         # TODO: Pyright checks if the types support '__or__' and '__ror__' before returning UnionType
         # If they support, we can treat them as binary operands, instead of Union types.
+        def is_annotation_type(ty: jtypes.TypeBase) -> bool {
+            if ty.is_instantiable() or isinstance(ty, jtypes.UnionType) {
+                return True;
+            }
+            # Althought None is not a valid class, it can be used as a class in the type annotation.
+            if isinstance(ty, jtypes.ClassType) {
+                return ty.shared == evaluator.prefetch.none_type_class.shared;
+            }
+            return False;
+        }
         if expr.op.name == Tok.BW_OR {
             # TODO: Handle None instance used
-            if left_type.is_instantiable() and right_type.is_instantiable() {
+            if is_annotation_type(left_type) and is_annotation_type(right_type) {
                 return jtypes.UnionType([left_type, right_type]);
             }
         }
         (magic, rmagic) = BINARY_OPERATOR_MAP[expr.op.name];
         return (
-            evaluator.get_type_of_magic_method_call(left_type, magic)
-            or evaluator.get_type_of_magic_method_call(right_type, rmagic)
+            evaluator.get_type_of_magic_method_call(
+                left_type, magic, [expr.right], expr
+            )
+            or evaluator.get_type_of_magic_method_call(
+                right_type, rmagic, [expr.left], expr
+            )
             or jtypes.UnknownType()
         );
     }
@@ -136,6 +150,15 @@ def get_type_of_binary_operation(
             }
             return right_type;
         }
+    }
+    #  walrus assignment
+    if isinstance(expr.op, uni.Token) and expr.op.name == Tok.WALRUS_EQ {
+        # Walrus operator: (x := expr) assigns right to left and returns right's type
+        if isinstance(expr.left, uni.Name) and expr.left.sym {
+            expr.left.sym.type = right_type;
+            expr.left.type = right_type;
+        }
+        return right_type;
     }
     return jtypes.UnknownType();
 }

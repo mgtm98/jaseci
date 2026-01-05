@@ -586,15 +586,19 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
             )
 
         merged_body = self._merge_module_bodies(node)
-        body_items: list[ast3.AST | list[ast3.AST] | None] = [*self.preamble]
-        body_items.extend(item.gen.py_ast for item in merged_body)
+        body_items: list[ast3.AST | list[ast3.AST] | None] = []
 
+        # If there's a docstring, it must come first (before __future__ imports)
         if node.doc:
             doc_stmt = self.sync(
                 ast3.Expr(value=cast(ast3.expr, node.doc.gen.py_ast[0])),
                 jac_node=node.doc,
             )
-            body_items.insert(0, doc_stmt)
+            body_items.append(doc_stmt)
+
+        # Add preamble (which includes __future__ imports) after docstring
+        body_items.extend(self.preamble)
+        body_items.extend(item.gen.py_ast for item in merged_body)
 
         new_body = self._flatten_ast_list(body_items)
         node.gen.py_ast = [
@@ -724,6 +728,14 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
 
     def exit_import(self, node: uni.Import) -> None:
         """Exit import node."""
+        # Skip __future__ imports as we always add them in the preamble
+        # This prevents duplicate __future__ imports which cause SyntaxError
+        if node.from_loc and node.from_loc.path:
+            module_parts = [p.value for p in node.from_loc.path if hasattr(p, "value")]
+            if module_parts == ["__future__"]:
+                node.gen.py_ast = []
+                return
+
         py_nodes: list[ast3.AST] = []
         if node.doc:
             py_nodes.append(
@@ -2848,18 +2860,14 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                     )
                 )
             elif isinstance(node.gen.py_ast[0], ast3.Call):
-                # For FilterCompr and AssignCompr, update the relevant argument(s) to use tmp_ref
                 call_node = node.gen.py_ast[0]
-                # Check if this is a filter_on call (FilterCompr)
                 if isinstance(call_node.func, ast3.Attribute) or (
                     isinstance(call_node.func, ast3.Name)
                     and call_node.func.id == "filter_on"
                 ):
-                    # Replace the 'items' keyword argument with tmp_ref
                     for kw in call_node.keywords:
                         if kw.arg == "items":
                             kw.value = tmp_ref
-                # Check if this is an assign_all call (AssignCompr)
                 if (
                     isinstance(call_node.func, ast3.Attribute)
                     or (
@@ -2870,10 +2878,21 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                     call_node.args[0] = tmp_ref
                 body_expr = cast(ast3.expr, call_node)
             else:
-                # For subscripts and other operations, update reference and use as-is
-                if isinstance(node.gen.py_ast[0], (ast3.Attribute, ast3.Subscript)):
-                    node.gen.py_ast[0].value = tmp_ref
-                body_expr = cast(ast3.expr, node.gen.py_ast[0])
+                if isinstance(node.gen.py_ast[0], ast3.Subscript):
+                    # Use safe_subscript helper that handles all cases safely
+                    index_expr = node.gen.py_ast[0].slice
+
+                    body_expr = self.sync(
+                        ast3.Call(
+                            func=self.jaclib_obj("safe_subscript"),
+                            args=[tmp_ref, index_expr],
+                            keywords=[],
+                        )
+                    )
+                else:
+                    # Fallback for any other operation type
+                    node.gen.py_ast[0].value = tmp_ref  # type: ignore[attr-defined]
+                    body_expr = cast(ast3.expr, node.gen.py_ast[0])
 
             # Generate: body_expr if (__jac_tmp := target) is not None else None
             node.gen.py_ast = [
