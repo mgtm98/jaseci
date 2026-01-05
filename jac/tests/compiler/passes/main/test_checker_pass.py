@@ -16,7 +16,7 @@ def test_explicit_type_annotation_in_assignment(
 ) -> None:
     """Test explicit type annotation in assignment."""
     program = JacProgram()
-    program.build(fixture_path("type_annotation_assignment.jac"), type_check=True)
+    program.compile(fixture_path("type_annotation_assignment.jac"), type_check=True)
     assert len(program.errors_had) == 2
     _assert_error_pretty_found(
         """
@@ -807,7 +807,7 @@ def test_jac_importing_ts(fixture_path: Callable[[str], str]) -> None:
     """Test Jac module importing from TypeScript."""
     path = fixture_path("ts_imports/main.jac")
     program = JacProgram()
-    mod = program.build(path, type_check=True)
+    mod = program.compile(path, type_check=True)
     # The main.jac imports TypeScript/JS modules - verify it compiles
     assert mod is not None
 
@@ -1021,3 +1021,65 @@ def test_function_overload_decorator(fixture_path: Callable[[str], str]) -> None
     """,
         cast_error,
     )
+
+
+def test_object_type_assignment(fixture_path: Callable[[str], str]) -> None:
+    """Test that assigning node types and instances to object type works correctly."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("object_type_assignment.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - both node class and node instance should be assignable to object
+    assert len(program.errors_had) == 0
+
+
+def test_walrus_operator(fixture_path: Callable[[str], str]) -> None:
+    """Test walrus operator (:=) type checking."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_walrus_operator.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Expect 5 errors: multiple type assignment errors with walrus operator
+    assert len(program.errors_had) == 5
+
+    expected_errors = [
+        """
+        glob result3: str = result1;
+        ^^^^^^^^^^^^^^^^^^^^^^
+        """,
+        """
+        glob result4: str = z;
+        ^^^^^^^^^^^^^^^^
+        """,
+        """
+        y = "hello";
+        ^^^^^^^^^^^^
+        """,
+        """
+        p: AnotherNode = n;
+        ^^^^^^^^^^^^^^^^^^^
+        """,
+        """
+        a = AnotherNode();
+        ^^^^^^^^^^^^^^^^^^
+        """,
+    ]
+
+    for i, expected in enumerate(expected_errors):
+        _assert_error_pretty_found(expected, program.errors_had[i].pretty_print())
+
+
+def test_builtin_constructors(fixture_path: Callable[[str], str]) -> None:
+    """Test that builtin constructors (set(), list(), dict()) work correctly."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_builtin_constructors.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # All constructors should work without errors
+    assert len(program.errors_had) == 0
+
+
+def test_union_type_annotation(fixture_path: Callable[[str], str]) -> None:
+    """Test union type annotation with None (e.g., int | None)."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_union_type_annotation.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - int | None annotation should be valid
+    assert len(program.errors_had) == 0
