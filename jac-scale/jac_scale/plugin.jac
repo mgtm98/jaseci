@@ -134,11 +134,19 @@ class JacCmd {
 
 """Jac Scale Plugin Implementation."""
 class JacScalePlugin {
+    with entry {
+        context: (JScaleExecutionContext | None) = None;
+    }
+
+    @classmethod
     @hookimpl
-    static def create_j_context(
-        session: (str | None) = None, <>root: (str | None) = None
+    def create_j_context(
+        cls: Any, session: (str | None) = None, <>root: (str | None) = None
     ) -> ExecutionContext {
-        return JScaleExecutionContext(session=session, <>root=<>root);
+        if (cls.context is None) {
+            cls.context = JScaleExecutionContext(session=session, <>root=<>root);
+        }
+        return cls.context;
     }
 }
 
