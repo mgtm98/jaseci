@@ -1087,11 +1087,23 @@ class TestJacScaleServe:
             timeout=5,
         )
         assert response.status_code == 200
-        data = response.json()["reports"][0]
-        assert "message" in data
-        assert data["message"] == "This is a public endpoint"
-        assert "auth_required" in data
-        assert data["auth_required"] is False
+        data = response.json()
+        
+        # The walker should return reports
+        assert "reports" in data
+        reports = data["reports"]
+        
+        # Find the report from PublicInfo walker (filter out any node artifacts)
+        public_info_report = None
+        for report in reports:
+            if isinstance(report, dict) and "message" in report and "auth_required" in report:
+                public_info_report = report
+                break
+        
+        # Assert we found the expected report
+        assert public_info_report is not None, f"Expected PublicInfo report not found in {reports}"
+        assert public_info_report["message"] == "This is a public endpoint"
+        assert public_info_report["auth_required"] is False
 
     def test_public_walker_200_with_auth(self) -> None:
         """Test that public walker also works with authentication."""
@@ -1111,6 +1123,19 @@ class TestJacScaleServe:
             timeout=5,
         )
         assert response.status_code == 200
-        data = response.json()["reports"][0]
-        assert "message" in data
-        assert data["message"] == "This is a public endpoint"
+        data = response.json()
+        
+        # The walker should return reports
+        assert "reports" in data
+        reports = data["reports"]
+        
+        # Find the report from PublicInfo walker (filter out any node artifacts)
+        public_info_report = None
+        for report in reports:
+            if isinstance(report, dict) and "message" in report and "auth_required" in report:
+                public_info_report = report
+                break
+        
+        # Assert we found the expected report
+        assert public_info_report is not None, f"Expected PublicInfo report not found in {reports}"
+        assert public_info_report["message"] == "This is a public endpoint"
