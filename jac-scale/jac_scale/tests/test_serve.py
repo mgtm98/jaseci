@@ -28,7 +28,7 @@ def get_free_port() -> int:
 class TestJacScaleServe:
     """Test jac-scale serve REST API functionality."""
 
-    # Class attributes with type annotations for clarity
+    # Class attributes with type annotations
     fixtures_dir: Path
     test_file: Path
     port: int
