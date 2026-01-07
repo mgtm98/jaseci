@@ -132,8 +132,10 @@ class JacScaleTestRunner:
                 time.sleep(0.2)
 
         if not server_ready:
-            self.stop_server()
-            raise RuntimeError(f"Server failed to start after {timeout} seconds")
+            stdout, stderr = self.server_process.communicate(timeout=5)
+            raise RuntimeError(
+                f"Server failed to become ready.\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+            )
 
     def stop_server(self) -> None:
         """Stop the jac-scale server and clean up session files."""
@@ -404,7 +406,7 @@ class TestJacClientExamples:
         ) as runner:
             assert "background-image" in runner.request_raw("GET", "/styles.css")
             assert "PNG" in runner.request_raw("GET", "/static/assets/burger.png")
-            assert "/static/client.js" in runner.request_raw("GET", "/page/app")
+            assert "/static/client.js" in runner.request_raw("GET", "/cl/app")
             assert (
                 runner.request_raw("GET", "/static/client.js")
                 != "Static file not found"
@@ -424,7 +426,7 @@ class TestJacClientExamples:
             example_file, session_name="js_styling_test", setup_npm=True
         ) as runner:
             assert "const countDisplay" in runner.request_raw("GET", "/styles.js")
-            assert "/static/client.js" in runner.request_raw("GET", "/page/app")
+            assert "/static/client.js" in runner.request_raw("GET", "/cl/app")
 
     def test_material_ui(self) -> None:
         """Test Material-UI styling example."""
@@ -434,7 +436,7 @@ class TestJacClientExamples:
         with JacScaleTestRunner(
             example_file, session_name="material_ui_test", setup_npm=True
         ) as runner:
-            assert "/static/client.js" in runner.request_raw("GET", "/page/app")
+            assert "/static/client.js" in runner.request_raw("GET", "/cl/app")
 
     def test_pure_css(self) -> None:
         """Test Pure CSS example."""
@@ -444,7 +446,7 @@ class TestJacClientExamples:
         with JacScaleTestRunner(
             example_file, session_name="pure_css_test", setup_npm=True
         ) as runner:
-            page_content = runner.request_raw("GET", "/page/app")
+            page_content = runner.request_raw("GET", "/cl/app")
             assert "/static/client.js" in page_content
             assert ".container {" in runner.request_raw("GET", "/styles.css")
 
@@ -456,5 +458,5 @@ class TestJacClientExamples:
         with JacScaleTestRunner(
             example_file, session_name="styled_components_test", setup_npm=True
         ) as runner:
-            assert "/static/client.js" in runner.request_raw("GET", "/page/app")
+            assert "/static/client.js" in runner.request_raw("GET", "/cl/app")
             assert "import styled from" in runner.request_raw("GET", "/styled.js")
