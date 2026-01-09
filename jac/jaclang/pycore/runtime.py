@@ -1522,7 +1522,7 @@ class JacAPIServer:
         port: int,
         base_path: str,
         mode: str,
-        backend_url: str = None,
+        backend_url: str | None = None,
     ) -> JacServer:
         from jaclang.runtimelib.server import JacAPIServer
 
@@ -1572,9 +1572,7 @@ class JacAPIServer:
         ]
         if len(session) > 0:
             cmd.extend(["--session", session])
-        return subprocess.Popen(
-            cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
+        return subprocess.Popen(cmd, cwd=os.getcwd())
 
     @staticmethod
     def restart_backend_server(
