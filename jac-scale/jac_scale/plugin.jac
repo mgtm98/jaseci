@@ -155,7 +155,7 @@ class JacScalePlugin {
 # But _multicall only passes argnames to hook implementations.
 # JacRuntimeInterfaceImpl strips defaults via generate_plugin_helpers, so we must too.
 import inspect;
-glob func = JacScalePlugin.create_j_context,
+glob func = JacScalePlugin.create_j_context.__func__,
      sig = inspect.signature(func),
      sig_nodef = sig.replace(
          parameters=[
