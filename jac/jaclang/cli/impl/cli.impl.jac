@@ -1,6 +1,7 @@
 """Start the command line interface."""
 
 import subprocess;
+import from jaclang.cli.cmdreg { cmd_registry }
 
 impl start_cli -> None {
     import from jaclang.pycore.runtime { JacRuntime as Jac }
@@ -144,18 +145,28 @@ impl serve(
 ) -> None {
     _ensure_jac_runtime();
     import from jaclang.pycore.runtime { JacRuntime as Jac }
-    import from jaclang.runtimelib.server { JacAPIServer, EndpointMode }
-    # Compute session_path BEFORE proc_file_sess so context has proper persistence
+    import from jaclang.runtimelib.server { EndpointMode }
+
+    mach = None;
     (base, mod) = os.path.split(filename);
     base = base or os.getcwd();
+
+    # Compute session_path BEFORE proc_file_sess so context has proper persistence
     if (filename.endswith('.jac') or filename.endswith('.jir')) {
         mod = mod[:-4];
     } elif filename.endswith('.py') {
         mod = mod[:-3];
     }
     session_path = session or os.path.join(base, f"{mod}.session");
-    # Now call proc_file_sess with the computed session_path
-    (base, mod, mach) = proc_file_sess(filename, session_path);
+
+    if mode.lower() != 'frontend' {
+        (base, mod, mach) = proc_file_sess(filename, session_path);
+    } else {
+        (base, mod, _) = proc_file_sess(
+            filename, session_path, ignore_context_creation=True
+        );
+    }
+    
     lng = filename.split('.')[-1];
     Jac.set_base_path(base);
     try {
@@ -171,12 +182,12 @@ impl serve(
             for error in Jac.program.errors_had {
                 print(f"Error: {error}", file=sys.stderr);
             }
-            mach.close();
+            if mach { mach.close(); }
             <>exit(1);
         }
     } except Exception as e {
         print(f"Error loading {filename}: {e}", file=sys.stderr);
-        mach.close();
+        if mach { mach.close(); }
         <>exit(1);
     }
     # Parse mode parameter
@@ -189,10 +200,10 @@ impl serve(
     # Auto-configure backend URL for frontend mode
     backend_proxy_url = None;
     if (endpoint_mode == EndpointMode.FRONTEND) {
-        backend_proxy_url = f"http://127.0.0.1:{port + 1}";
+        backend_proxy_url = f"http://0.0.0.0:{port + 1}";
     }
     session_path = session or os.path.join(base, f"{mod}.session");
-    server = JacAPIServer(
+    server = Jac.create_server(
         module_name=mod,
         session_path=session_path,
         port=port,
@@ -203,11 +214,11 @@ impl serve(
     if faux {
         try {
             server.print_endpoint_docs();
-            mach.close();
+            if mach { mach.close(); }
             return;
         } except Exception as e {
             print(f"Error generating endpoint documentation: {e}", file=sys.stderr);
-            mach.close();
+            if mach { mach.close(); }
             <>exit(1);
         }
     }
@@ -215,10 +226,10 @@ impl serve(
         server.start();
     } except KeyboardInterrupt {
         print('\nServer stopped.');
-        mach.close();
+        if mach { mach.close(); }
     } except Exception as e {
         print(f"Server error: {e}", file=sys.stderr);
-        mach.close();
+        if mach { mach.close(); }
         <>exit(1);
     }
 }
@@ -240,43 +251,6 @@ impl serve(
         jac dev myprogram.jac --port 3000
         jac dev myprogram.jac --session myapp.session
     """
-
-def Jac_start_frontend_server(port: int, session: Optional[str] = None) -> subprocess.Popen{
-    cmd = [
-        sys.executable,
-        '-m',
-        'jaclang',
-        'serve',
-        filename,
-        '--port',
-        str(port),
-        '--mode',
-        "frontend"
-    ];
-    if session {
-        cmd.extend(['--session', session]);
-    }
-    return subprocess.Popen(cmd, cwd=os.getcwd());
-}
-
-def Jac_start_backend_server(port: int, session: Optional[str] = None) -> subprocess.Popen{
-    cmd = [
-        sys.executable,
-        '-m',
-        'jaclang',
-        'serve',
-        filename,
-        '--port',
-        str(port),
-        '--mode',
-        "backend"
-    ];
-    if session {
-        cmd.extend(['--session', session]);
-    }
-    return subprocess.Popen(cmd, cwd=os.getcwd());
-}
-
 impl dev(
     filename: str,
     session: str = '',
@@ -288,6 +262,8 @@ impl dev(
     import time;
     import signal;
     import from watchfiles { watch }
+    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    
     base_path = os.path.dirname(os.path.abspath(filename)) or '.';
 
     ports = {'frontend': port, 'backend': port + 1};
@@ -297,9 +273,10 @@ impl dev(
 
     def start(mode: str) -> subprocess.Popen {
         if mode == 'backend' {
-            return Jac_start_backend_server(ports[mode], session);
+            return Jac.start_backend_server(filename, ports[mode], session);
         } else {
-            return Jac_start_frontend_server(ports[mode], session);
+            return Jac.start_frontend_server(filename, ports[mode], session);
+        }
     }
 
     def reload(mode: str) -> None {
@@ -1029,7 +1006,7 @@ impl run(
 }
 
 """Create JacRuntime and return the base path, module name, and runtime state."""
-impl proc_file_sess(filename: str, session: str, <>root: (str | None) = None) -> tuple {
+impl proc_file_sess(filename: str, session: str, <>root: (str | None) = None, ignore_context_creation: bool = False) -> tuple {
     import from jaclang.pycore.runtime { JacRuntime as Jac }
     import from jaclang.pycore.runtime { JacUtils }
     if (session == '') {
@@ -1048,8 +1025,13 @@ impl proc_file_sess(filename: str, session: str, <>root: (str | None) = None) ->
         );
         <>exit(1);
     }
-    mach = Jac.create_j_context(session=session, <>root=<>root);
-    Jac.set_context(mach);
+    if not ignore_context_creation {
+        mach = Jac.create_j_context(session=session, <>root=<>root);
+        Jac.set_context(mach);
+    } else {
+        mach = None;
+    }
+    
     return (base, mod, mach);
 }
 

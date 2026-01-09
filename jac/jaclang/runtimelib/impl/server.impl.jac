@@ -1337,9 +1337,7 @@ impl JacAPIServer.start -> None {
         }
         # Show frontend endpoints
         if _is_frontend_enabled(self.mode) {
-            print('  GET /page/<name> - Render HTML page for client function');
-            print('  GET /static/client.js - Client JavaScript bundle');
-            print('  GET /static/<path> - Static files (CSS, images, etc.)');
+            print(f'  GET /{cl_route_prefix}/<name> - Render HTML page for client function');
         }
         print('\nPress Ctrl+C to stop the server');
         try {

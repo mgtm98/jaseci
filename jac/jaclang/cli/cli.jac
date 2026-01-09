@@ -19,7 +19,7 @@ def gen_parser -> str;
 @cmd_registry.register(source='jaclang')
 def format(paths: list, to_screen: bool = False, fix: bool = False) -> None;
 
-def proc_file_sess(filename: str, session: str, <>root: (str | None) = None) -> tuple;
+def proc_file_sess(filename: str, session: str, <>root: (str | None) = None, ignore_context_creation: bool = False) -> tuple;
 
 @cmd_registry.register(source='jaclang')
 def run(
