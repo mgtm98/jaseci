@@ -1,5 +1,7 @@
 """Start the command line interface."""
 
+import subprocess;
+
 impl start_cli -> None {
     import from jaclang.pycore.runtime { JacRuntime as Jac }
     # Auto-discover and load jac.toml project configuration
@@ -238,6 +240,43 @@ impl serve(
         jac dev myprogram.jac --port 3000
         jac dev myprogram.jac --session myapp.session
     """
+
+def Jac_start_frontend_server(port: int, session: Optional[str] = None) -> subprocess.Popen{
+    cmd = [
+        sys.executable,
+        '-m',
+        'jaclang',
+        'serve',
+        filename,
+        '--port',
+        str(port),
+        '--mode',
+        "frontend"
+    ];
+    if session {
+        cmd.extend(['--session', session]);
+    }
+    return subprocess.Popen(cmd, cwd=os.getcwd());
+}
+
+def Jac_start_backend_server(port: int, session: Optional[str] = None) -> subprocess.Popen{
+    cmd = [
+        sys.executable,
+        '-m',
+        'jaclang',
+        'serve',
+        filename,
+        '--port',
+        str(port),
+        '--mode',
+        "backend"
+    ];
+    if session {
+        cmd.extend(['--session', session]);
+    }
+    return subprocess.Popen(cmd, cwd=os.getcwd());
+}
+
 impl dev(
     filename: str,
     session: str = '',
@@ -245,46 +284,24 @@ impl dev(
     main: bool = True,
     faux: bool = False
 ) -> None {
-    import subprocess;
     import threading;
     import time;
     import signal;
     import from watchfiles { watch }
     base_path = os.path.dirname(os.path.abspath(filename)) or '.';
-    # Define ports
+
     ports = {'frontend': port, 'backend': port + 1};
-    # Server process tracking
     servers = {'frontend': None, 'backend': None};
-    # Flag to control watcher thread and main loop
-    stop_watching = {'value': False};
-    shutdown_requested = {'value': False};
+    stop_watching = False;
+    shutdown_requested = False;
+
     def start(mode: str) -> subprocess.Popen {
-        cmd = [
-            sys.executable,
-            '-m',
-            'jaclang',
-            'serve',
-            filename,
-            '--port',
-            str(ports[mode]),
-            '--mode',
-            mode
-        ];
-        if session {
-            cmd.extend(['--session', session]);
-        }
-        # Run backend server in quiet mode (suppress output)
         if mode == 'backend' {
-            return subprocess.Popen(
-                cmd,
-                cwd=os.getcwd(),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            );
+            return Jac_start_backend_server(ports[mode], session);
         } else {
-            return subprocess.Popen(cmd, cwd=os.getcwd());
-        }
+            return Jac_start_frontend_server(ports[mode], session);
     }
+
     def reload(mode: str) -> None {
         if shutdown_requested['value'] {
             return;
@@ -301,9 +318,10 @@ impl dev(
         }
         servers[mode] = start(mode);
     }
-    def cleanup_servers -> None {
-        stop_watching['value'] = True;
-        shutdown_requested['value'] = True;
+
+    def cleanup_servers() -> None {
+        stop_watching = True;
+        shutdown_requested = True;
 
         for mode in ['frontend', 'backend'] {
             if servers[mode] {
@@ -318,6 +336,7 @@ impl dev(
             }
         }
     }
+
     servers['frontend'] = start('frontend');
     time.sleep(0.5);
     servers['backend'] = start('backend');
@@ -327,7 +346,7 @@ impl dev(
     try {
         # Use watchfiles in the main loop instead of separate thread
         for changes in watch(base_path, recursive=True, debounce=1000, stop_event=None) {
-            if shutdown_requested['value'] {
+            if shutdown_requested {
                 break;
             }
 
@@ -375,7 +394,7 @@ impl dev(
             }
         }
     } except (KeyboardInterrupt, SystemExit) { } except Exception as e {
-        if not shutdown_requested['value'] {
+        if not shutdown_requested {
             print(f"\nError: {e}", file=sys.stderr);
         }
     } finally {
