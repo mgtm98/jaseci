@@ -16,7 +16,7 @@ def test_explicit_type_annotation_in_assignment(
 ) -> None:
     """Test explicit type annotation in assignment."""
     program = JacProgram()
-    program.build(fixture_path("type_annotation_assignment.jac"), type_check=True)
+    program.compile(fixture_path("type_annotation_assignment.jac"), type_check=True)
     assert len(program.errors_had) == 2
     _assert_error_pretty_found(
         """
@@ -32,6 +32,21 @@ def test_explicit_type_annotation_in_assignment(
              ^^^^^^^^^^^^^^^^^^^^^^
     """,
         program.errors_had[1].pretty_print(),
+    )
+
+
+def test_list_assignment_to_int(fixture_path: Callable[[str], str]) -> None:
+    """Test that assigning a list to an int variable produces an error."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_list_assignment.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    assert len(program.errors_had) == 1
+    _assert_error_pretty_found(
+        """
+        foo = [1,2,3];  # <-- Error
+        ^^^^^^^^^^^^^^
+    """,
+        program.errors_had[0].pretty_print(),
     )
 
 
@@ -97,20 +112,6 @@ def test_imported_sym(fixture_path: Callable[[str], str]) -> None:
       a: str = foo();  # <-- Ok
       b: int = foo();  # <-- Error
       ^^^^^^^^^^^^^^
-    """,
-        program.errors_had[0].pretty_print(),
-    )
-
-
-def test_datetime_import(fixture_path: Callable[[str], str]) -> None:
-    program = JacProgram()
-    mod = program.compile(fixture_path("checker_import_star/main.jac"))
-    TypeCheckPass(ir_in=mod, prog=program)
-    assert len(program.errors_had) == 1
-    _assert_error_pretty_found(
-        """
-      d: str = datetime.date();
-      ^^^^^^^^^^^^^^^^^^^^^^
     """,
         program.errors_had[0].pretty_print(),
     )
@@ -726,6 +727,17 @@ def test_connect_filter(fixture_path: Callable[[str], str]) -> None:
         _assert_error_pretty_found(expected, program.errors_had[i].pretty_print())
 
 
+def test_connect_any_type(fixture_path: Callable[[str], str]) -> None:
+    """Test that connection operations with any type (from untyped list) don't produce errors."""
+    program = JacProgram()
+    path = fixture_path("checker_connect_any_type.jac")
+    mod = program.compile(path)
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - any type in connection operations is allowed (for now)
+    # TODO: In strict mode, this should produce an error
+    assert len(program.errors_had) == 0
+
+
 def test_root_type(fixture_path: Callable[[str], str]) -> None:
     program = JacProgram()
     path = fixture_path("checker_root_type.jac")
@@ -807,7 +819,7 @@ def test_jac_importing_ts(fixture_path: Callable[[str], str]) -> None:
     """Test Jac module importing from TypeScript."""
     path = fixture_path("ts_imports/main.jac")
     program = JacProgram()
-    mod = program.build(path, type_check=True)
+    mod = program.compile(path, type_check=True)
     # The main.jac imports TypeScript/JS modules - verify it compiles
     assert mod is not None
 
@@ -889,6 +901,15 @@ def test_classmethod(fixture_path: Callable[[str], str]) -> None:
     TypeCheckPass(ir_in=mod, prog=program)
 
 
+def test_datetime_now(fixture_path: Callable[[str], str]) -> None:
+    """Test datetime.now() classmethod - cls parameter should be skipped for parameter check."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_datetime_now.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - datetime.now() is a classmethod and cls parameter should be skipped
+    assert len(program.errors_had) == 0
+
+
 def test_any_type_works_with_any_type(fixture_path: Callable[[str], str]) -> None:
     """Test stdlib typing module imports and Any type work correctly."""
     program = JacProgram()
@@ -960,8 +981,8 @@ def test_overload_decorator(fixture_path: Callable[[str], str]) -> None:
     program = JacProgram()
     mod = program.compile(fixture_path("checker_overload.jac"))
     TypeCheckPass(ir_in=mod, prog=program)
-    # Expect 3 errors: __pow__ with float**float, do_something with str, and __add__ with str
-    assert len(program.errors_had) == 3
+    # Expect 2 errors: do_something with str, and __add__ with str
+    assert len(program.errors_had) == 2
 
     # Find the specific errors we care about
     error_messages = [err.pretty_print() for err in program.errors_had]
@@ -1021,3 +1042,125 @@ def test_function_overload_decorator(fixture_path: Callable[[str], str]) -> None
     """,
         cast_error,
     )
+
+
+def test_object_type_assignment(fixture_path: Callable[[str], str]) -> None:
+    """Test that assigning node types and instances to object type works correctly."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("object_type_assignment.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - both node class and node instance should be assignable to object
+    assert len(program.errors_had) == 0
+
+
+def test_walrus_operator(fixture_path: Callable[[str], str]) -> None:
+    """Test walrus operator (:=) type checking."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_walrus_operator.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Expect 5 errors: multiple type assignment errors with walrus operator
+    assert len(program.errors_had) == 5
+
+    expected_errors = [
+        """
+        glob result3: str = result1;
+        ^^^^^^^^^^^^^^^^^^^^^^
+        """,
+        """
+        glob result4: str = z;
+        ^^^^^^^^^^^^^^^^
+        """,
+        """
+        y = "hello";
+        ^^^^^^^^^^^^
+        """,
+        """
+        p: AnotherNode = n;
+        ^^^^^^^^^^^^^^^^^^^
+        """,
+        """
+        a = AnotherNode();
+        ^^^^^^^^^^^^^^^^^^
+        """,
+    ]
+
+    for i, expected in enumerate(expected_errors):
+        _assert_error_pretty_found(expected, program.errors_had[i].pretty_print())
+
+
+def test_builtin_constructors(fixture_path: Callable[[str], str]) -> None:
+    """Test that builtin constructors (set(), list(), dict()) work correctly."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_builtin_constructors.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # All constructors should work without errors
+    assert len(program.errors_had) == 0
+
+
+def test_union_type_annotation(fixture_path: Callable[[str], str]) -> None:
+    """Test union type annotation with None (e.g., int | None) and union subset checking."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_union_type_annotation.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have 1 error - int | str is not subset of int | None
+    assert len(program.errors_had) == 1
+    _assert_error_pretty_found(
+        """
+        a: int | None = get_int_or_str();  # <-- Error: int | str is not subset of int | None
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    """,
+        program.errors_had[0].pretty_print(),
+    )
+
+
+def test_list_indexing(fixture_path: Callable[[str], str]) -> None:
+    """Test that list indexing works correctly and can be used with len()."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_list_indexing.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - len(some[0]) should work correctly
+    assert len(program.errors_had) == 0
+
+
+def test_range_function(fixture_path: Callable[[str], str]) -> None:
+    """Test that range() function works correctly with different argument counts."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_range.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Should have no errors - range() should work with 1 or 2 arguments
+    assert len(program.errors_had) == 0
+
+
+def test_varargs_type_checking(fixture_path: Callable[[str], str]) -> None:
+    """Test type checking for variadic parameters (*args, **kwargs)."""
+    program = JacProgram()
+    mod = program.compile(fixture_path("checker_varargs_type.jac"))
+    TypeCheckPass(ir_in=mod, prog=program)
+    # Expect 4 errors:
+    # 1. y: int = b; (b is tuple, not int)
+    # 2. z: str = c; (c is dict, not str)
+    # 3. i: str = b[1]; (b[1] is int, not str)
+    # 4. k: int = c["a"]; (c["a"] is str, not int)
+    assert len(program.errors_had) == 4
+
+    expected_errors = [
+        """
+        y: int = b;  # <-- Error
+        ^^^^^^^^^^^
+        """,
+        """
+        z: str = c;  # <-- Error
+        ^^^^^^^^^^^
+        """,
+        """
+        i: str = b[1]; # <-- Error
+        ^^^^^^^^^^^^^
+        """,
+        """
+        k: int = c["a"]; # <-- Error
+        ^^^^^^^^^^^^^^^
+        """,
+    ]
+
+    for i, expected in enumerate(expected_errors):
+        _assert_error_pretty_found(expected, program.errors_had[i].pretty_print())

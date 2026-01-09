@@ -343,12 +343,12 @@ jac serve app.jac
 
 **Access your application:**
 
-- Frontend: http://localhost:8000/page/app
+- Frontend: http://localhost:8000/cl/app
 - Backend: http://localhost:8000
 - Swagger Documentation: http://localhost:8000/docs
 
 you can add new todo tasks
- from the frontend at http://localhost:8000/page/app
+ from the frontend at http://localhost:8000/cl/app
 
 ### 9. Set Up Kubernetes (For JAC Scale)
 
@@ -378,7 +378,7 @@ jac scale app.jac
 
 **Access your application:**
 
-- Frontend: http://localhost:30001/page/app
+- Frontend: http://localhost:30001/cl/app
 - Backend: http://localhost:30001
 - Swagger Documentation: http://localhost:30001/docs
 
@@ -398,7 +398,7 @@ jac scale app.jac -b
 
 **Access your application:**
 
-- Frontend: http://localhost:30001/page/app
+- Frontend: http://localhost:30001/cl/app
 - Backend: http://localhost:30001
 - Swagger Documentation: http://localhost:30001/docs
 
@@ -434,6 +434,15 @@ jac destroy app.jac
 | `DOCKER_PASSWORD` | DockerHub password or access token | - |
 | `K8s_NAMESPACE` | Kubernetes namespace to deploy the application | `default` |
 | `K8s_NODE_PORT` | Port in which your local kubernetes application will run on| `30001` |
+| `K8s_CPU_REQUEST` | CPU request for the application container | - |
+| `K8s_CPU_LIMIT` | CPU limit for the application container | - |
+| `K8s_MEMORY_REQUEST` | Memory request for the application container | - |
+| `K8s_MEMORY_LIMIT` | Memory limit for the application container | - |
+| `K8s_READINESS_INITIAL_DELAY` | Seconds before readiness probe first checks the pod | `10` |
+| `K8s_READINESS_PERIOD` | Seconds between readiness probe checks | `20` |
+| `K8s_LIVENESS_INITIAL_DELAY` | Seconds before liveness probe first checks the pod | `10` |
+| `K8s_LIVENESS_PERIOD` | Seconds between liveness probe checks | `20` |
+| `K8s_LIVENESS_FAILURE_THRESHOLD` | Consecutive liveness probe failures before restart | `80` |
 | `K8s_MONGODB` | Whether MongoDB is needed (`True`/`False`) | `True` |
 | `K8s_REDIS` | Whether Redis is needed (`True`/`False`) | `True` |
 | `MONGODB_URI` | URL of MongoDB database | - |

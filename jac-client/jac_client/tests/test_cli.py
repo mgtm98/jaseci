@@ -44,7 +44,7 @@ def test_create_jac_app() -> None:
             with open(app_jac_path) as f:
                 app_jac_content = f.read()
 
-            assert "def app()" in app_jac_content
+            assert "def:pub app()" in app_jac_content
 
             # Verify README.md was created
             readme_path = os.path.join(project_path, "README.md")
@@ -65,6 +65,10 @@ def test_create_jac_app() -> None:
 
             assert config_data["project"]["name"] == test_project_name
 
+            # Verify serve config includes base_route_app for CL apps
+            assert "serve" in config_data
+            assert config_data["serve"]["base_route_app"] == "app"
+
             # Verify .gitignore was created with correct content
             gitignore_path = os.path.join(project_path, ".gitignore")
             assert os.path.exists(gitignore_path)
@@ -80,7 +84,7 @@ def test_create_jac_app() -> None:
 
             # Verify default packages installation (package.json should be generated)
             package_json_path = os.path.join(
-                project_path, ".client-build", ".jac-client.configs", "package.json"
+                project_path, ".jac", "client", "configs", "package.json"
             )
             # Note: packages may or may not be installed depending on npm availability
             # but package.json should be generated with default packages
@@ -91,9 +95,8 @@ def test_create_jac_app() -> None:
                     package_data = json.load(f)
 
                 # Verify default dependencies are in package.json
-                assert "react" in package_data.get("dependencies", {})
-                assert "react-dom" in package_data.get("dependencies", {})
-                assert "vite" in package_data.get("devDependencies", {})
+                assert "jac-client-node" in package_data.get("dependencies", {})
+                assert "@jac-client/dev-deps" in package_data.get("devDependencies", {})
 
         finally:
             # Return to original directory
@@ -196,6 +199,10 @@ def test_create_jac_app_with_typescript() -> None:
 
             assert config_data["project"]["name"] == test_project_name
 
+            # Verify serve config includes base_route_app for CL apps
+            assert "serve" in config_data
+            assert config_data["serve"]["base_route_app"] == "app"
+
             # Verify src/components directory and Button.tsx were created
             components_dir = os.path.join(project_path, "src", "components")
             assert os.path.exists(components_dir)
@@ -234,7 +241,7 @@ def test_create_jac_app_with_typescript() -> None:
 
             # Verify default packages installation (package.json should be generated)
             package_json_path = os.path.join(
-                project_path, ".client-build", ".jac-client.configs", "package.json"
+                project_path, ".jac", "client", "configs", "package.json"
             )
             # Note: packages may or may not be installed depending on npm availability
             # but package.json should be generated with default packages
@@ -245,10 +252,8 @@ def test_create_jac_app_with_typescript() -> None:
                     package_data = json.load(f)
 
                 # Verify default dependencies are in package.json
-                assert "react" in package_data.get("dependencies", {})
-                assert "react-dom" in package_data.get("dependencies", {})
-                assert "vite" in package_data.get("devDependencies", {})
-                assert "typescript" in package_data.get("devDependencies", {})
+                assert "jac-client-node" in package_data.get("dependencies", {})
+                assert "@jac-client/dev-deps" in package_data.get("devDependencies", {})
 
         finally:
             # Return to original directory
@@ -334,7 +339,7 @@ def test_create_jac_app_installs_default_packages() -> None:
 
             # Verify package.json was generated (even if npm install failed)
             package_json_path = os.path.join(
-                project_path, ".client-build", ".jac-client.configs", "package.json"
+                project_path, ".jac", "client", "configs", "package.json"
             )
             # package.json should be generated with default packages
             if os.path.exists(package_json_path):
@@ -343,17 +348,9 @@ def test_create_jac_app_installs_default_packages() -> None:
                 with open(package_json_path) as f:
                     package_data = json.load(f)
 
-                # Verify default dependencies are in package.json
-                deps = package_data.get("dependencies", {})
-                dev_deps = package_data.get("devDependencies", {})
-
-                assert "react" in deps
-                assert "react-dom" in deps
-                assert "react-router-dom" in deps
-                assert "vite" in dev_deps
-                assert "@babel/core" in dev_deps
-                assert "typescript" in dev_deps
-                assert "@types/react" in dev_deps
+                # Verify default dependencies are in package.
+                assert "jac-client-node" in package_data.get("dependencies", {})
+                assert "@jac-client/dev-deps" in package_data.get("devDependencies", {})
 
         finally:
             # Return to original directory

@@ -5,7 +5,8 @@ import pickle;
 import sys;
 import from dotenv { load_dotenv }
 import from jaclang.cli.cmdreg { CommandPriority, cmd_registry }
-import from jaclang.pycore.runtime { ExecutionContext, hookimpl, plugin_manager }
+import from jaclang.pycore.runtime { hookimpl, plugin_manager }
+import from jaclang.runtimelib.context { ExecutionContext }
 import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from .context { JScaleExecutionContext }
 import from .kubernetes.docker_impl { build_and_push_docker }
@@ -18,7 +19,7 @@ class JacCmd {
     @hookimpl
     static def create_cmd -> None {
         """Jac Scale functionality.""";
-        @cmd_registry.register
+        @cmd_registry.register(priority=CommandPriority.PLUGIN, source='jac-scale')
         def scale(file_path: str, build: bool = False) -> None {
             if not os.path.exists(file_path) {
                 raise FileNotFoundError(f"File not found: '{file_path}'") ;
@@ -35,7 +36,7 @@ class JacCmd {
             deploy_K8s(code_folder, base_file_path, build);
         }
         """Jac Destroys functionality.""";
-        @cmd_registry.register
+        @cmd_registry.register(priority=CommandPriority.PLUGIN, source='jac-scale')
         def destroy(file_path: str) -> None {
             if not os.path.exists(file_path) {
                 raise FileNotFoundError(f"File not found: '{file_path}'") ;
@@ -150,6 +151,20 @@ class JacScalePlugin {
     }
 }
 
+# Pluggy's varnames() puts parameters with defaults into kwargnames, not argnames.
+# But _multicall only passes argnames to hook implementations.
+# JacRuntimeInterfaceImpl strips defaults via generate_plugin_helpers, so we must too.
+import inspect;
+glob func = JacScalePlugin.create_j_context,
+     sig = inspect.signature(func),
+     sig_nodef = sig.replace(
+         parameters=[
+             p.replace(default=inspect.Parameter.empty)
+             for p in sig.parameters.values()
+         ]
+     );
+
 with entry {
+    func.__signature__ = sig_nodef;
     plugin_manager.register(JacScalePlugin());
 }

@@ -59,9 +59,19 @@ def get_type_of_binary_operation(
         #
         # TODO: Pyright checks if the types support '__or__' and '__ror__' before returning UnionType
         # If they support, we can treat them as binary operands, instead of Union types.
+        def is_annotation_type(ty: jtypes.TypeBase) -> bool {
+            if ty.is_instantiable() or isinstance(ty, jtypes.UnionType) {
+                return True;
+            }
+            # Althought None is not a valid class, it can be used as a class in the type annotation.
+            if isinstance(ty, jtypes.ClassType) {
+                return ty.shared == evaluator.prefetch.none_type_class.shared;
+            }
+            return False;
+        }
         if expr.op.name == Tok.BW_OR {
             # TODO: Handle None instance used
-            if left_type.is_instantiable() and right_type.is_instantiable() {
+            if is_annotation_type(left_type) and is_annotation_type(right_type) {
                 return jtypes.UnionType([left_type, right_type]);
             }
         }
@@ -79,19 +89,27 @@ def get_type_of_binary_operation(
 
     # Connection operations
     if isinstance(expr.op, (uni.ConnectOp, uni.DisconnectOp)) {
+        # TODO: In strict mode, UnknownType, AnyType, TypeVarType, and object should be errors
         if (
-            not isinstance(left_type, jtypes.ClassType)
-            or not left_type.is_node_type()
-            or not left_type.is_instance()
+            not left_type.is_any_type()
+            and (
+                not isinstance(left_type, jtypes.ClassType)
+                or not left_type.is_node_type()
+                or not left_type.is_instance()
+            )
         ) {
             evaluator.add_diagnostic(
                 expr.left, 'Connection left operand must be a node instance'
             );
         }
+        # TODO: In strict mode, UnknownType, AnyType, TypeVarType, and object should be errors
         if (
-            not isinstance(right_type, jtypes.ClassType)
-            or not right_type.is_node_type()
-            or not right_type.is_instance()
+            not right_type.is_any_type()
+            and (
+                not isinstance(right_type, jtypes.ClassType)
+                or not right_type.is_node_type()
+                or not right_type.is_instance()
+            )
         ) {
             evaluator.add_diagnostic(
                 expr.right, 'Connection right operand must be a node instance'
@@ -140,6 +158,15 @@ def get_type_of_binary_operation(
             }
             return right_type;
         }
+    }
+    #  walrus assignment
+    if isinstance(expr.op, uni.Token) and expr.op.name == Tok.WALRUS_EQ {
+        # Walrus operator: (x := expr) assigns right to left and returns right's type
+        if isinstance(expr.left, uni.Name) and expr.left.sym {
+            expr.left.sym.type = right_type;
+            expr.left.type = right_type;
+        }
+        return right_type;
     }
     return jtypes.UnknownType();
 }

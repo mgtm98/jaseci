@@ -2,7 +2,15 @@
 
 This document provides a summary of new features, improvements, and bug fixes in each version of **Jac-Client**. For details on changes that might require updates to your existing code, please refer to the [Breaking Changes](../breaking_changes.md) page.
 
-## jac-client 0.2.4 (Unreleased)
+## jac-client 0.2.5 (Unreleased)
+
+- **Configurable Client Route Prefix**: Changed the default URL path for client-side apps from `/page/<app>` to `/cl/<app>`. The route prefix is now configurable via `cl_route_prefix` in the `[serve]` section of `jac.toml`. This allows customizing the URL structure for client apps (e.g., `/pages/MyApp` instead of `/cl/MyApp`). [Documentation](https://docs.jaseci.org/learn/tools/jac_serve/#routing-configuration)
+
+- **Base Route App Configuration**: Added `base_route_app` option in `jac.toml` `[serve]` section to serve a client app directly at the root `/` path. When configured, visiting `/` renders the specified client app instead of the API info page, making it easy to create single-page applications with clean URLs. Projects created with `jac create --cl` now default to `base_route_app = "app"`, so the app is served at `/` out of the box. [Documentation](https://docs.jaseci.org/learn/tools/project_config/#serve-section)
+
+## jac-client 0.2.4 (Latest Release)
+
+- **`jac-client-node` and `@jac-client/dev-deps` npm packages**: Introduced the new npm libraries  to centralize and abstract default dependencies for Jac client applications. These two package includes React, Vite, Babel, TypeScript, and other essential dependencies.
 
 - **Explicit Export Requirement**: Functions and variables must now be explicitly exported using the `:pub` modifier to be available for import. In previous versions (< 0.2.4), all `def` functions were automatically exported and variables (globals) could not be exported. Starting with 0.2.4, functions and variables are private by default and must be marked with `:pub` to be importable. This provides better control over module APIs and prevents accidental exports. The `app()` function in your entry file must be exported as `def:pub app()`. [Breaking Change - See Migration Guide]
 
@@ -18,7 +26,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - **TypeScript Support (Enabled by Default)**: TypeScript is now automatically supported in all Jac projects by default. No configuration or prompts needed - TypeScript dependencies are automatically included in `package.json` during build time, and `tsconfig.json` is automatically generated during the first build. TypeScript files (`.ts`, `.tsx`) are automatically processed by Vite bundling, enabling seamless integration of TypeScript/TSX components alongside Jac code. The `components/` directory with a sample `Button.tsx` component is created automatically during project setup. [Documentation](https://docs.jaseci.org/jac-client/working-with-ts/)
 
-## jac-client 0.2.3 (Latest Release)
+## jac-client 0.2.3
 
 - **Nested Folder Structure Preservation**: Implemented folder structure preservation during compilation, similar to TypeScript transpilation. Files in nested directories now maintain their relative paths in the compiled output, enabling proper relative imports across multiple directory levels and preventing file name conflicts. This allows developers to organize code in nested folders just like in modern JavaScript/TypeScript projects.
 
