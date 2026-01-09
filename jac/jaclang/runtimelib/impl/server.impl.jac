@@ -997,7 +997,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 return;
             }
             # Frontend: Client pages
-            if path.startswith('/page/') {
+            if path.startswith(cl_route_path) {
                 if not _is_frontend_enabled(server.mode) {
                     Jac.send_json(self, 404, {'error': 'Not found'});
                     return;
