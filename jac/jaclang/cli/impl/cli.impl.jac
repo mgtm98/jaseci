@@ -279,21 +279,27 @@ impl dev(
         }
     }
 
-    def reload(mode: str) -> None {
-        if shutdown_requested['value'] {
+    def reload(mode: str, reload_reason: list[str]) -> None {
+        if shutdown_requested {
             return;
         }
-        print(f"Reloading...");
-        if servers[mode] {
-            servers[mode].terminate();
-            try {
-                servers[mode].wait(timeout=2);
-            } except subprocess.TimeoutExpired {
-                servers[mode].kill();
-                servers[mode].wait();
-            }
+        if mode == 'backend' {
+            return Jac.restart_backend_server(
+                server_process=servers[mode], 
+                filename=filename, 
+                port=ports[mode], 
+                session=session,
+                reload_reason=reload_reason
+            );
+        } else {
+            return Jac.restart_frontend_server(
+                server_process=servers[mode], 
+                filename=filename, 
+                port=ports[mode], 
+                session=session, 
+                reload_reason=reload_reason
+            );
         }
-        servers[mode] = start(mode);
     }
 
     def cleanup_servers() -> None {
@@ -339,6 +345,8 @@ impl dev(
 
             frontend_changed = False;
             backend_changed = False;
+            changed_frontend_files = [];
+            changed_backend_files = [];
 
             for (change_type, changed_path) in changes {
                 ext = os.path.splitext(changed_path)[1].lower();
@@ -346,16 +354,19 @@ impl dev(
 
                 # Check if it's a .cl.jac file (frontend)
                 if changed_path.endswith('.cl.jac') {
+                    changed_frontend_files.append(changed_path);
                     if not frontend_changed {
                         print(f"\n[Frontend] Change detected: {basename}");
                         frontend_changed = True;
                     }
                 } elif ext in frontend_exts {
+                    changed_frontend_files.append(changed_path);
                     if not frontend_changed {
                         print(f"\n[Frontend] Change detected: {basename}");
                         frontend_changed = True;
                     }
                 } elif ext in backend_exts {
+                    changed_backend_files.append(changed_path);
                     if not backend_changed {
                         print(f"\n[Backend] Change detected: {basename}");
                         backend_changed = True;
@@ -364,10 +375,10 @@ impl dev(
             }
 
             if frontend_changed {
-                reload('frontend');
+                reload('frontend', changed_frontend_files);
             }
             if backend_changed {
-                reload('backend');
+                reload('backend', changed_backend_files);
             }
         }
     } except (KeyboardInterrupt, SystemExit) { } except Exception as e {

@@ -1534,6 +1534,7 @@ class JacAPIServer:
             backend_url=backend_url
         )
 
+    @staticmethod
     def start_frontend_server(filename: str, port: int, session: str = "") -> subprocess.Popen:
         cmd = [
             sys.executable,
@@ -1551,6 +1552,7 @@ class JacAPIServer:
         
         return subprocess.Popen(cmd, cwd=os.getcwd())
 
+    @staticmethod
     def start_backend_server(filename: str, port: int, session: str = "") -> subprocess.Popen:
         cmd = [
             sys.executable,
@@ -1567,6 +1569,39 @@ class JacAPIServer:
             cmd.extend(['--session', session])
         return subprocess.Popen(cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    @staticmethod
+    def restart_backend_server(
+        server_process: subprocess.Popen,
+        reload_reason: list[str],
+        filename: str,
+        port: int,
+        session: str = ""
+    ) -> subprocess.Popen:
+        print(reload_reason)
+        server_process.terminate()
+        try:
+            server_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+            server_process.wait()
+        return JacAPIServer.start_backend_server(filename, port, session)
+    
+    @staticmethod
+    def restart_frontend_server(
+        server_process: subprocess.Popen, 
+        reload_reason: list[str],
+        filename: str, 
+        port: int, 
+        session: str = ""
+    ) -> subprocess.Popen:
+        print(reload_reason)
+        server_process.terminate()
+        try:
+            server_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
+            server_process.wait()
+        return JacAPIServer.start_frontend_server(filename, port, session)
 
 
 class JacResponseBuilder:
