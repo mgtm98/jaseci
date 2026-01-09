@@ -1536,7 +1536,9 @@ class JacAPIServer:
         )
 
     @staticmethod
-    def start_frontend_server(filename: str, port: int, session: str = "") -> subprocess.Popen:
+    def start_frontend_server(
+        filename: str, port: int, session: str = ""
+    ) -> subprocess.Popen:
         cmd = [
             sys.executable,
             "-m",
@@ -1554,7 +1556,9 @@ class JacAPIServer:
         return subprocess.Popen(cmd, cwd=os.getcwd())
 
     @staticmethod
-    def start_backend_server(filename: str, port: int, session: str = "") -> subprocess.Popen:
+    def start_backend_server(
+        filename: str, port: int, session: str = ""
+    ) -> subprocess.Popen:
         cmd = [
             sys.executable,
             "-m",
@@ -1567,8 +1571,10 @@ class JacAPIServer:
             "backend",
         ]
         if len(session) > 0:
-            cmd.extend(['--session', session])
-        return subprocess.Popen(cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd.extend(["--session", session])
+        return subprocess.Popen(
+            cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
     @staticmethod
     def restart_backend_server(
@@ -1576,7 +1582,7 @@ class JacAPIServer:
         reload_reason: list[str],
         filename: str,
         port: int,
-        session: str = ""
+        session: str = "",
     ) -> subprocess.Popen:
         print(reload_reason)
         server_process.terminate()
@@ -1586,14 +1592,14 @@ class JacAPIServer:
             server_process.kill()
             server_process.wait()
         return JacAPIServer.start_backend_server(filename, port, session)
-    
+
     @staticmethod
     def restart_frontend_server(
-        server_process: subprocess.Popen, 
+        server_process: subprocess.Popen,
         reload_reason: list[str],
-        filename: str, 
-        port: int, 
-        session: str = ""
+        filename: str,
+        port: int,
+        session: str = "",
     ) -> subprocess.Popen:
         print(reload_reason)
         server_process.terminate()

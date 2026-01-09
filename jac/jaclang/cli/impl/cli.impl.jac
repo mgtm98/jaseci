@@ -283,31 +283,29 @@ impl dev(
             return Jac.start_frontend_server(filename, ports[mode], session);
         }
     }
-
     def reload(mode: str, reload_reason: list[str]) -> None {
         if shutdown_requested {
             return;
         }
         if mode == 'backend' {
             return Jac.restart_backend_server(
-                server_process=servers[mode], 
-                filename=filename, 
-                port=ports[mode], 
+                server_process=servers[mode],
+                filename=filename,
+                port=ports[mode],
                 session=session,
                 reload_reason=reload_reason
             );
         } else {
             return Jac.restart_frontend_server(
-                server_process=servers[mode], 
-                filename=filename, 
-                port=ports[mode], 
-                session=session, 
+                server_process=servers[mode],
+                filename=filename,
+                port=ports[mode],
+                session=session,
                 reload_reason=reload_reason
             );
         }
     }
-
-    def cleanup_servers() -> None {
+    def cleanup_servers -> None {
         stop_watching = True;
         shutdown_requested = True;
 
