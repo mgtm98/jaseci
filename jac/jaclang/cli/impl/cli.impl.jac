@@ -324,9 +324,9 @@ impl dev(
             }
         }
     }
-    servers['frontend'] = start('frontend');
-    time.sleep(0.5);
     servers['backend'] = start('backend');
+    time.sleep(0.5);
+    servers['frontend'] = start('frontend');
     # File extension sets
     frontend_exts = {'.html','.htm','.css','.js','.jsx','.ts','.tsx','.png','.jpg','.jpeg','.gif','.svg','.ico','.webp','.woff','.woff2','.ttf','.otf','.eot'};
     backend_exts = {'.jac','.py'};
