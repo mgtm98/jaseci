@@ -88,8 +88,8 @@ glob func = JacScalePlugin.create_j_context,
              p.replace(default=inspect.Parameter.empty)
              for p in sig.parameters.values()
          ]
-     );
-glob func2 = JacScalePlugin.create_server,
+     ),
+     func2 = JacScalePlugin.create_server,
      sig2 = inspect.signature(func2),
      sig_nodef2 = sig2.replace(
          parameters=[
@@ -97,7 +97,6 @@ glob func2 = JacScalePlugin.create_server,
              for p in sig2.parameters.values()
          ]
      );
-
 
 with entry {
     func.__signature__ = sig_nodef;
