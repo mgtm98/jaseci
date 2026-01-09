@@ -1121,6 +1121,11 @@ class TestJacScaleServe:
         fixtures_dir = Path(__file__).parent / "fixtures"
         fixtures_dir.mkdir(exist_ok=True)
 
+        # Clean up any leftover __hot_reload__test* files from previous runs
+        for old_file in fixtures_dir.glob("__hot_reload__test*"):
+            with contextlib.suppress(Exception):
+                old_file.unlink()
+
         test_file = fixtures_dir / "__hot_reload__test.jac"
         port = get_free_port()
         server_process = None
