@@ -146,11 +146,9 @@ impl serve(
     _ensure_jac_runtime();
     import from jaclang.pycore.runtime { JacRuntime as Jac }
     import from jaclang.runtimelib.server { EndpointMode }
-
     mach = None;
     (base, mod) = os.path.split(filename);
     base = base or os.getcwd();
-
     # Compute session_path BEFORE proc_file_sess so context has proper persistence
     if (filename.endswith('.jac') or filename.endswith('.jir')) {
         mod = mod[:-4];
@@ -158,7 +156,6 @@ impl serve(
         mod = mod[:-3];
     }
     session_path = session or os.path.join(base, f"{mod}.session");
-
     if mode.lower() != 'frontend' {
         (base, mod, mach) = proc_file_sess(filename, session_path);
     } else {
@@ -166,7 +163,6 @@ impl serve(
             filename, session_path, ignore_context_creation=True
         );
     }
-    
     lng = filename.split('.')[-1];
     Jac.set_base_path(base);
     try {
@@ -182,12 +178,16 @@ impl serve(
             for error in Jac.program.errors_had {
                 print(f"Error: {error}", file=sys.stderr);
             }
-            if mach { mach.close(); }
+            if mach {
+                mach.close();
+            }
             <>exit(1);
         }
     } except Exception as e {
         print(f"Error loading {filename}: {e}", file=sys.stderr);
-        if mach { mach.close(); }
+        if mach {
+            mach.close();
+        }
         <>exit(1);
     }
     # Parse mode parameter
@@ -214,11 +214,15 @@ impl serve(
     if faux {
         try {
             server.print_endpoint_docs();
-            if mach { mach.close(); }
+            if mach {
+                mach.close();
+            }
             return;
         } except Exception as e {
             print(f"Error generating endpoint documentation: {e}", file=sys.stderr);
-            if mach { mach.close(); }
+            if mach {
+                mach.close();
+            }
             <>exit(1);
         }
     }
@@ -226,10 +230,14 @@ impl serve(
         server.start();
     } except KeyboardInterrupt {
         print('\nServer stopped.');
-        if mach { mach.close(); }
+        if mach {
+            mach.close();
+        }
     } except Exception as e {
         print(f"Server error: {e}", file=sys.stderr);
-        if mach { mach.close(); }
+        if mach {
+            mach.close();
+        }
         <>exit(1);
     }
 }
@@ -263,14 +271,11 @@ impl dev(
     import signal;
     import from watchfiles { watch }
     import from jaclang.pycore.runtime { JacRuntime as Jac }
-    
     base_path = os.path.dirname(os.path.abspath(filename)) or '.';
-
     ports = {'frontend': port, 'backend': port + 1};
     servers = {'frontend': None, 'backend': None};
     stop_watching = False;
     shutdown_requested = False;
-
     def start(mode: str) -> subprocess.Popen {
         if mode == 'backend' {
             return Jac.start_backend_server(filename, ports[mode], session);
@@ -278,7 +283,6 @@ impl dev(
             return Jac.start_frontend_server(filename, ports[mode], session);
         }
     }
-
     def reload(mode: str) -> None {
         if shutdown_requested['value'] {
             return;
@@ -295,8 +299,7 @@ impl dev(
         }
         servers[mode] = start(mode);
     }
-
-    def cleanup_servers() -> None {
+    def cleanup_servers -> None {
         stop_watching = True;
         shutdown_requested = True;
 
@@ -313,7 +316,6 @@ impl dev(
             }
         }
     }
-
     servers['frontend'] = start('frontend');
     time.sleep(0.5);
     servers['backend'] = start('backend');
@@ -1006,7 +1008,12 @@ impl run(
 }
 
 """Create JacRuntime and return the base path, module name, and runtime state."""
-impl proc_file_sess(filename: str, session: str, <>root: (str | None) = None, ignore_context_creation: bool = False) -> tuple {
+impl proc_file_sess(
+    filename: str,
+    session: str,
+    <>root: (str | None) = None,
+    ignore_context_creation: bool = False
+) -> tuple {
     import from jaclang.pycore.runtime { JacRuntime as Jac }
     import from jaclang.pycore.runtime { JacUtils }
     if (session == '') {
@@ -1031,7 +1038,6 @@ impl proc_file_sess(filename: str, session: str, <>root: (str | None) = None, ig
     } else {
         mach = None;
     }
-    
     return (base, mod, mach);
 }
 

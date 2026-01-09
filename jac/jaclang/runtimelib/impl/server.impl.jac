@@ -1337,7 +1337,9 @@ impl JacAPIServer.start -> None {
         }
         # Show frontend endpoints
         if _is_frontend_enabled(self.mode) {
-            print(f'  GET /{cl_route_prefix}/<name> - Render HTML page for client function');
+            print(
+                f'  GET /{cl_route_prefix}/<name> - Render HTML page for client function'
+            );
         }
         print('\nPress Ctrl+C to stop the server');
         try {
