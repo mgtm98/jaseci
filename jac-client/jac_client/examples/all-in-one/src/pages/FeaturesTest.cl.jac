@@ -112,21 +112,21 @@ import from ..utils.formatters { formatCurrency }
         navigate = useNavigate();
 
         # State management
-        [testMessage, setTestMessage] = useState("");
-        [testData, setTestData] = useState([]);
-        [stringInput, setStringInput] = useState("Hello JAC World!");
-        [stringResult, setStringResult] = useState(None);
-        [numberList, setNumberList] = useState("1,2,3,4,5");
-        [listResult, setListResult] = useState(None);
-        [complexResult, setComplexResult] = useState(None);
-        [loading, setLoading] = useState(false);
+        has testMessage: str = "";
+        has testData: list = [];
+        has stringInput: str = "Hello JAC World!";
+        has stringResult: any = None;
+        has numberList: str = "1,2,3,4,5";
+        has listResult: any = None;
+        has complexResult: any = None;
+        has loading: bool = false;
 
         # Load test data on mount
         useEffect(lambda -> None {
             async def loadData() -> None {
                 try {
                     result = root spawn read_test_data();
-                    setTestData(result.reports if result.reports[0] else []);
+                    testData = result.reports if result.reports[0] else [];
                 } except Exception as e {
                     console.log("Error loading data:", e);
                 }
@@ -145,18 +145,18 @@ import from ..utils.formatters { formatCurrency }
                 return;
             }
 
-            setLoading(true);
+            loading = true;
             try {
                 response = root spawn create_test_data(message=testMessage.trim());
                 new_item = response.reports[0][0];
-                setTestData(testData.concat([new_item]));
-                setTestMessage("");
+                testData = testData.concat([new_item]);
+                testMessage = "";
                 alert("Data created successfully!");
             } except Exception as e {
                 console.error("Error creating data:", e);
                 alert("Error creating data: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # Update test data
@@ -166,18 +166,18 @@ import from ..utils.formatters { formatCurrency }
                 return;
             }
 
-            setLoading(true);
+            loading = true;
             try {
                 item_id spawn update_test_data(new_message=new_msg);
                 # Reload data
                 result = root spawn read_test_data();
-                setTestData(result.reports if result.reports[0] else []);
+                testData = result.reports if result.reports[0] else [];
                 alert("Data updated successfully!");
             } except Exception as e {
                 console.error("Error updating data:", e);
                 alert("Error updating data: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # Delete test data
@@ -186,38 +186,38 @@ import from ..utils.formatters { formatCurrency }
                 return;
             }
 
-            setLoading(true);
+            loading = true;
             try {
                 item_id spawn delete_test_data();
                 # Remove from local state
-                setTestData(testData.filter(lambda item: any -> bool {
+                testData = testData.filter(lambda item: any -> bool {
                     return item._jac_id != item_id;
-                }));
+                });
                 alert("Data deleted successfully!");
             } except Exception as e {
                 console.error("Error deleting data:", e);
                 alert("Error deleting data: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # Test string methods via walker
         async def handleStringTest() -> None {
-            setLoading(true);
+            loading = true;
             try {
                 response = root spawn test_string_methods(input_text=stringInput);
                 result = response.reports[0];
-                setStringResult(result);
+                stringResult = result;
             } except Exception as e {
                 console.error("Error testing strings:", e);
                 alert("Error testing strings: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # Test list operations via walker
         async def handleListTest() -> None {
-            setLoading(true);
+            loading = true;
             try {
                 # Parse number list
                 numbers = numberList.split(",").map(lambda x: str -> int {
@@ -228,17 +228,17 @@ import from ..utils.formatters { formatCurrency }
 
                 response = root spawn test_list_operations(numbers=numbers);
                 result = response.reports[0];
-                setListResult(result);
+                listResult = result;
             } except Exception as e {
                 console.error("Error testing lists:", e);
                 alert("Error testing lists: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # Test complex data processing
         async def handleComplexTest() -> None {
-            setLoading(true);
+            loading = true;
             try {
                 # Generate sample data using JS helper
                 sample_items = [
@@ -249,12 +249,12 @@ import from ..utils.formatters { formatCurrency }
 
                 response = root spawn process_complex_data(items=sample_items);
                 result = response.reports[0];
-                setComplexResult(result);
+                complexResult = result;
             } except Exception as e {
                 console.error("Error processing complex data:", e);
                 alert("Error processing complex data: " + e.toString());
             }
-            setLoading(false);
+            loading = false;
         }
 
         # ========================================================================
@@ -331,7 +331,7 @@ import from ..utils.formatters { formatCurrency }
                         <input
                             type="text"
                             value={testMessage}
-                            onChange={lambda e: any -> None { setTestMessage(e.target.value); }}
+                            onChange={lambda e: any -> None { testMessage = e.target.value; }}
                             placeholder="Enter test message..."
                             style={{
                                 "flex": "1",
@@ -423,7 +423,7 @@ import from ..utils.formatters { formatCurrency }
                             <input
                                 type="text"
                                 value={stringInput}
-                                onChange={lambda e: any -> None { setStringInput(e.target.value); }}
+                                onChange={lambda e: any -> None { stringInput = e.target.value; }}
                                 style={{
                                     "flex": "1",
                                     "padding": "10px",
@@ -454,7 +454,7 @@ import from ..utils.formatters { formatCurrency }
                         <input
                             type="text"
                             value={numberList}
-                            onChange={lambda e: any -> None { setNumberList(e.target.value); }}
+                            onChange={lambda e: any -> None { numberList = e.target.value; }}
                             placeholder="Enter numbers (comma-separated)"
                             style={{
                                 "flex": "1",
