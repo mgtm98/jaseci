@@ -161,7 +161,7 @@ walker process_complex_data {
 #
 # Combined example: auth + routing + CSS styling + asset serving + nested folder imports
 #
-cl import from react { useState, useEffect, useRef }
+cl import from react { useEffect, useRef }
 cl import from "@jac-client/utils" {
     Router,
     Routes,
@@ -213,10 +213,10 @@ cl {
     if not jacIsLoggedIn() {
         return <Navigate to="/login" />;
     }
-    [count, setCount] = useState(0);
-    [pingResult, setPingResult] = useState("");
-    [serverMessage, setServerMessage] = useState("");
-    [lastTodoMessage, setLastTodoMessage] = useState("");
+    has count: int = 0;
+    has pingResult: str = "";
+    has serverMessage: str = "";
+    has lastTodoMessage: str = "";
 
     useEffect(
         lambda   -> None{ console.log("Home count changed: ", count);} , [count]
@@ -226,14 +226,14 @@ cl {
     async def handlePing -> None {
         result = root spawn ping_server();
         if result.reports and result.reports.length > 0 {
-            setPingResult(result.reports[0][0]);
+            pingResult = result.reports[0][0];
         }
     }
 
     async def loadServerMessage -> None {
         result = root spawn get_server_message();
         if result.reports and result.reports.length > 0 {
-            setServerMessage(result.reports[0][0]);
+            serverMessage = result.reports[0][0];
         }
     }
 
@@ -242,7 +242,7 @@ cl {
         result = root spawn create_todo(text="Sample todo from all-in-one app");
         if result.reports and result.reports.length > 0 {
             todo = result.reports[0][0];
-            setLastTodoMessage("Created Todo: " + todo.text);
+            lastTodoMessage = "Created Todo: " + todo.text;
             console.log("Created Todo node:", todo);
         }
     }
@@ -251,13 +251,13 @@ cl {
 
     # Initialize a Web Worker and handle message-based communication
     workerRef = useRef(None);
-    [message, setMessage] = useState("");
+    has message: str = "";
 
     useEffect(lambda -> None {
         workerRef.current = Reflect.construct(Worker, ["/workers/worker.js"]);
         workerRef.current.onmessage = lambda event: any -> None {
             console.log("Message received from worker:", event.data);
-            setMessage(event.data);
+            message = event.data;
         };
         return (lambda -> None {
             workerRef.current.terminate();
@@ -376,7 +376,7 @@ cl {
                 times.
             </p>
             <button
-                onClick={lambda  e: any  -> None{ setCount(count + 1);} }
+                onClick={lambda  e: any  -> None{ count = count + 1;} }
                 style={{
                     "padding": "0.6rem 1.4rem",
                     "fontSize": "1rem",

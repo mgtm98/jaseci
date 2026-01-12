@@ -125,10 +125,10 @@ impl JacClientModuleIntrospector.render_page(
         dist_dir = base_path / '.jac' / 'client' / 'dist';
     }
     css_link = '';
-    css_file = dist_dir / 'main.css';
+    css_file = dist_dir / 'styles.css';
     if css_file.exists() {
         css_hash = hashlib.sha256(css_file.read_bytes()).hexdigest()[:8];
-        css_link = f'<link rel="stylesheet" href="/static/main.css?hash={css_hash}"/>';
+        css_link = f'<link rel="stylesheet" href="/static/styles.css?hash={css_hash}"/>';
     }
     # Get meta data from config
     client_cfg = config.get_plugin_config("client") if config else None;

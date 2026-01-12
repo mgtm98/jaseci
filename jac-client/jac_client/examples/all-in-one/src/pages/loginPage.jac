@@ -1,4 +1,3 @@
-cl import from react { useState }
 cl import from "@jac-client/utils" {
     Link,
     useNavigate,
@@ -6,32 +5,32 @@ cl import from "@jac-client/utils" {
 }
 cl {
     def:pub LoginPage -> any {
-    [username, setUsername] = useState("");
-    [password, setPassword] = useState("");
-    [error, setError] = useState("");
+    has username: str = "";
+    has password: str = "";
+    has error: str = "";
     navigate = useNavigate();
 
     async def handleLogin(e: any) -> None {
         e.preventDefault();
-        setError("");
+        error = "";
         if not username or not password {
-            setError("Please fill in all fields");
+            error = "Please fill in all fields";
             return;
         }
         success = await jacLogin(username, password);
         if success {
             navigate("/");
         } else {
-            setError("Invalid credentials");
+            error = "Invalid credentials";
         }
     }
 
     def handleUsernameChange(e: any) -> None {
-        setUsername(e.target.value);
+        username = e.target.value;
     }
 
     def handlePasswordChange(e: any) -> None {
-        setPassword(e.target.value);
+        password = e.target.value;
     }
 
     errorDisplay = None;
