@@ -20,8 +20,7 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
             );
         }
     }
-
-        # Backend endpoints (authentication and API)
+    # Backend endpoints (authentication and API)
     if self.mode in [EndpointMode.BACKEND, EndpointMode.ALL] {
         self.register_create_user_endpoint();
         self.register_login_endpoint();
@@ -41,7 +40,6 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
     if self.mode == EndpointMode.FRONTEND {
         self.register_proxy_endpoints();
     }
-
     self._configure_openapi_security();
     self.user_manager.create_user('__guest__', '__no_password__');
     self.server_impl.run_server(port=self.port);

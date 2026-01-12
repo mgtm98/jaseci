@@ -61,7 +61,6 @@ if TYPE_CHECKING:
     from jaclang.pycore.program import JacProgram
     from jaclang.runtimelib.client_bundle import ClientBundle, ClientBundleBuilder
     from jaclang.runtimelib.context import ExecutionContext
-    from jaclang.runtimelib.server import JacAPIServer as JacServer
     from jaclang.runtimelib.server import ModuleIntrospector
 
 plugin_manager = pluggy.PluginManager("jac")
@@ -1564,9 +1563,7 @@ class JacAPIServer:
         if len(session) > 0:
             cmd.extend(["--session", session])
         return subprocess.Popen(
-            cmd, cwd=os.getcwd(), 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL
+            cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
     @staticmethod

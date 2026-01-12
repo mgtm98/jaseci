@@ -190,9 +190,9 @@ impl start(
     # Get server class from plugin hook (allows jac-scale to provide enhanced server)
     ServerClass = Jac.get_api_server_class();
     server = ServerClass(
-        module_name=mod, 
-        session_path=session_path, 
-        port=port, 
+        module_name=mod,
+        session_path=session_path,
+        port=port,
         base_path=base,
         mode=mode
     );
