@@ -1527,26 +1527,6 @@ class JacAPIServer:
         return ModuleIntrospector(module_name, base_path)
 
     @staticmethod
-    def create_server(
-        module_name: str,
-        session_path: str,
-        port: int,
-        base_path: str,
-        mode: str,
-        backend_url: str | None = None,
-    ) -> JacServer:
-        from jaclang.runtimelib.server import JacAPIServer
-
-        return JacAPIServer(
-            module_name=module_name,
-            session_path=session_path,
-            port=port,
-            base_path=base_path,
-            mode=mode,
-            backend_url=backend_url,
-        )
-
-    @staticmethod
     def start_frontend_server(
         filename: str, port: int, session: str = ""
     ) -> subprocess.Popen:
@@ -1554,7 +1534,7 @@ class JacAPIServer:
             sys.executable,
             "-m",
             "jaclang",
-            "serve",
+            "start",
             filename,
             "--port",
             str(port),
@@ -1574,7 +1554,7 @@ class JacAPIServer:
             sys.executable,
             "-m",
             "jaclang",
-            "serve",
+            "start",
             filename,
             "--port",
             str(port),
