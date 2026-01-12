@@ -1538,7 +1538,7 @@ class JacAPIServer:
             filename,
             "--port",
             str(port),
-            "--mode",
+            "-e",
             "frontend",
         ]
         if len(session) > 0:
@@ -1558,12 +1558,16 @@ class JacAPIServer:
             filename,
             "--port",
             str(port),
-            "--mode",
+            "-e",
             "backend",
         ]
         if len(session) > 0:
             cmd.extend(["--session", session])
-        return subprocess.Popen(cmd, cwd=os.getcwd())
+        return subprocess.Popen(
+            cmd, cwd=os.getcwd(), 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
 
     @staticmethod
     def restart_backend_server(

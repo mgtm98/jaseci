@@ -42,7 +42,7 @@ class Operations(StrEnum) {
 }
 
 class JacAPIServer(JServer) {
-    has endpoint_mode: EndpointMode = EndpointMode.ALL;
+    has mode: EndpointMode = EndpointMode.ALL;
 
     static def create_jwt_token(username: str) -> str;
     static def validate_jwt_token(token: str) -> (str | None);
@@ -53,7 +53,7 @@ class JacAPIServer(JServer) {
         session_path: str,
         port: int = 8000,
         base_path: (str | None) = None,
-        endpoint_mode: EndpointMode = EndpointMode.ALL
+        mode: EndpointMode = EndpointMode.ALL
     ) -> None;
 
     def login(self: JacAPIServer, username: str, password: str) -> JSONResponse;

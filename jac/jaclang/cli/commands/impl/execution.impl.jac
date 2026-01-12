@@ -137,10 +137,12 @@ impl start(
     session: str = '',
     port: int = 8000,
     main: bool = True,
-    faux: bool = False
+    faux: bool = False,
+    endpoint_mode: str = 'all'
 ) -> int {
     _ensure_jac_runtime();
     import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.runtimelib.server { EndpointMode }
     # Compute session_path BEFORE proc_file_sess so context has proper persistence
     (base, mod) = os.path.split(filename);
     base = base or os.getcwd();
@@ -152,7 +154,7 @@ impl start(
     # Use .jac/data/ directory for session files (runtime artifacts)
     data_dir = os.path.join(base, ".jac", "data");
     os.makedirs(data_dir, exist_ok=True);
-    session_path = session or os.path.join(data_dir, f"{mod}.session");
+    session_path = session or os.path.join(data_dir, f"{mod}_{endpoint_mode}.session");
     # Now call proc_file_sess with the computed session_path
     (base, mod, mach) = _proc_file_sess(filename, session_path);
     lng = filename.split('.')[-1];
@@ -178,10 +180,21 @@ impl start(
         mach.close();
         return 1;
     }
+    # Parse mode parameter
+    mode = EndpointMode.ALL;
+    if endpoint_mode.lower() == 'frontend' {
+        mode = EndpointMode.FRONTEND;
+    } elif endpoint_mode.lower() == 'backend' {
+        mode = EndpointMode.BACKEND;
+    }
     # Get server class from plugin hook (allows jac-scale to provide enhanced server)
     ServerClass = Jac.get_api_server_class();
     server = ServerClass(
-        module_name=mod, session_path=session_path, port=port, base_path=base
+        module_name=mod, 
+        session_path=session_path, 
+        port=port, 
+        base_path=base,
+        mode=mode
     );
     if faux {
         try {
@@ -205,6 +218,140 @@ impl start(
         print(f"Server error: {e}", file=sys.stderr);
         mach.close();
         return 1;
+    }
+}
+
+"""Start REST API server for the specified .jac file in dev mode."""
+impl dev(
+    filename: str,
+    session: str = '',
+    port: int = 8000,
+    main: bool = True,
+    faux: bool = False
+) -> None {
+    import threading;
+    import time;
+    import signal;
+    import from watchfiles { watch }
+    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    base_path = os.path.dirname(os.path.abspath(filename)) or '.';
+    ports = {'frontend': port, 'backend': port + 1};
+    servers = {'frontend': None, 'backend': None};
+    stop_watching = False;
+    shutdown_requested = False;
+    def start(mode: str) -> subprocess.Popen {
+        if mode == 'backend' {
+            return Jac.start_backend_server(filename, ports[mode], session);
+        } else {
+            return Jac.start_frontend_server(filename, ports[mode], session);
+        }
+    }
+    def reload(mode: str, reload_reason: list[str]) -> None {
+        if shutdown_requested {
+            return;
+        }
+        if mode == 'backend' {
+            return Jac.restart_backend_server(
+                server_process=servers[mode],
+                filename=filename,
+                port=ports[mode],
+                session=session,
+                reload_reason=reload_reason
+            );
+        } else {
+            return Jac.restart_frontend_server(
+                server_process=servers[mode],
+                filename=filename,
+                port=ports[mode],
+                session=session,
+                reload_reason=reload_reason
+            );
+        }
+    }
+    def cleanup_servers -> None {
+        stop_watching = True;
+        shutdown_requested = True;
+
+        for mode in ['frontend', 'backend'] {
+            if servers[mode] {
+                servers[mode].terminate();
+                try {
+                    servers[mode].wait(timeout=2);
+                } except subprocess.TimeoutExpired {
+                    servers[mode].kill();
+                    servers[mode].wait();
+                }
+                servers[mode] = None;
+            }
+        }
+    }
+    servers['backend'] = start('backend');
+    time.sleep(0.5);
+    servers['frontend'] = start('frontend');
+    # File extension sets
+    frontend_exts = {'.html','.htm','.css','.js','.jsx','.ts','.tsx','.png','.jpg','.jpeg','.gif','.svg','.ico','.webp','.woff','.woff2','.ttf','.otf','.eot'};
+    backend_exts = {'.jac','.py'};
+    try {
+        # Use watchfiles in the main loop instead of separate thread
+        for changes in watch(base_path, recursive=True, debounce=1000, stop_event=None) {
+            if shutdown_requested {
+                break;
+            }
+
+            # Check if processes are alive
+            if servers['frontend'] and servers['frontend'].poll() is not None {
+                print("[Frontend] Process stopped unexpectedly, restarting...");
+                servers['frontend'] = start('frontend');
+            }
+            if servers['backend'] and servers['backend'].poll() is not None {
+                print("[Backend] Process stopped unexpectedly, restarting...");
+                servers['backend'] = start('backend');
+            }
+
+            frontend_changed = False;
+            backend_changed = False;
+            changed_frontend_files = [];
+            changed_backend_files = [];
+
+            for (change_type, changed_path) in changes {
+                ext = os.path.splitext(changed_path)[1].lower();
+                basename = os.path.basename(changed_path);
+
+                # Check if it's a .cl.jac file (frontend)
+                if changed_path.endswith('.cl.jac') {
+                    changed_frontend_files.append(changed_path);
+                    if not frontend_changed {
+                        print(f"\n[Frontend] Change detected: {basename}");
+                        frontend_changed = True;
+                    }
+                } elif ext in frontend_exts {
+                    changed_frontend_files.append(changed_path);
+                    if not frontend_changed {
+                        print(f"\n[Frontend] Change detected: {basename}");
+                        frontend_changed = True;
+                    }
+                } elif ext in backend_exts {
+                    changed_backend_files.append(changed_path);
+                    if not backend_changed {
+                        print(f"\n[Backend] Change detected: {basename}");
+                        backend_changed = True;
+                    }
+                }
+            }
+
+            if frontend_changed {
+                reload('frontend', changed_frontend_files);
+            }
+            if backend_changed {
+                reload('backend', changed_backend_files);
+            }
+        }
+    } except (KeyboardInterrupt, SystemExit) { } except Exception as e {
+        if not shutdown_requested {
+            print(f"\nError: {e}", file=sys.stderr);
+        }
+    } finally {
+        cleanup_servers();
     }
 }
 

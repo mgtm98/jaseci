@@ -125,7 +125,7 @@ glob func = JacScalePlugin.create_j_context,
              for p in sig.parameters.values()
          ]
      ),
-     func2 = JacScalePlugin.create_server,
+     func2 = JacScalePlugin.get_api_server_class,
      sig2 = inspect.signature(func2),
      sig_nodef2 = sig2.replace(
          parameters=[

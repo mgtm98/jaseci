@@ -10,7 +10,6 @@ import from importlib.metadata { version as pkg_version }
 import from pathlib { Path }
 
 import subprocess;
-import from jaclang.cli.cmdreg { cmd_registry }
 
 impl start_cli -> None {
     import from jaclang.pycore.runtime { JacRuntime as Jac }

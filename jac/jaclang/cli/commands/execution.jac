@@ -81,14 +81,14 @@ def enter(
         Arg.create("session", default="", help="Session identifier", short="s"),
         Arg.create("port", typ=int, default=8000, help="Server port", short="p"),
         Arg.create("main", typ=bool, default=True, help="Treat as __main__", short="m"),
+        Arg.create("endpoint_mode", default="all", help="Endpoint mode"),
         Arg.create(
             "faux",
             typ=bool,
             default=False,
             help="Print docs only (no server)",
             short="f"
-        ),
-
+        )
     ],
     examples=[
         ("jac start app.jac", "Start server on default port"),
@@ -99,6 +99,41 @@ def enter(
     group="execution"
 )
 def start(
+    filename: str,
+    session: str = "",
+    port: int = 8000,
+    main: bool = True,
+    faux: bool = False,
+    endpoint_mode: str = "all"
+) -> int;
+
+"""Start REST API server in dev mode."""
+@registry.command(
+    name="dev",
+    help="Start REST API server for a Jac program and enable hot reloading",
+    args=[
+        Arg.create("filename", kind=ArgKind.POSITIONAL, help="Path to .jac file"),
+        Arg.create("session", default="", help="Session identifier", short="s"),
+        Arg.create("port", typ=int, default=8000, help="Server port", short="p"),
+        Arg.create("main", typ=bool, default=True, help="Treat as __main__", short="m"),
+        Arg.create(
+            "faux",
+            typ=bool,
+            default=False,
+            help="Print docs only (no server)",
+            short="f"
+        ),
+
+    ],
+    examples=[
+        ("jac dev app.jac", "Start server on default port"),
+        ("jac dev app.jac --port 3000", "Start server on port 3000"),
+        ("jac dev app.jac --faux", "Generate API docs without starting"),
+
+    ],
+    group="execution"
+)
+def dev(
     filename: str,
     session: str = "",
     port: int = 8000,

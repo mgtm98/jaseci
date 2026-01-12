@@ -22,7 +22,7 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
     }
 
         # Backend endpoints (authentication and API)
-    if self.endpoint_mode in [EndpointMode.BACKEND, EndpointMode.ALL] {
+    if self.mode in [EndpointMode.BACKEND, EndpointMode.ALL] {
         self.register_create_user_endpoint();
         self.register_login_endpoint();
         self.register_refresh_token_endpoint();
@@ -31,14 +31,14 @@ impl JacAPIServer.start(self: JacAPIServer) -> None {
         self.register_functions_endpoints();
     }
     # Frontend endpoints (pages, static files, assets)
-    if self.endpoint_mode in [EndpointMode.FRONTEND, EndpointMode.ALL] {
+    if self.mode in [EndpointMode.FRONTEND, EndpointMode.ALL] {
         self.register_page_endpoint();
         self.register_client_js_endpoint();
         self.register_static_file_endpoint();
         self.register_root_asset_endpoint();
     }
     # Frontend proxy endpoints - forward backend requests to backend server
-    if self.endpoint_mode == EndpointMode.FRONTEND {
+    if self.mode == EndpointMode.FRONTEND {
         self.register_proxy_endpoints();
     }
 
@@ -754,10 +754,10 @@ impl JacAPIServer.init(
     session_path: str,
     port: int = 8000,
     base_path: (str | None) = None,
-    endpoint_mode: EndpointMode = EndpointMode.ALL
+    mode: EndpointMode = EndpointMode.ALL
 ) -> None {
     super.init(module_name, session_path, port, base_path);
-    self.endpoint_mode = endpoint_mode;
+    self.mode = mode;
     self.server_impl = JFastApiServer([]);
     self.server_impl.app.add_middleware(
         CORSMiddleware,
