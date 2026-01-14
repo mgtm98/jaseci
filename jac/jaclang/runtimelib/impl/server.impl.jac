@@ -191,17 +191,12 @@ impl ExecutionManager.execute_function_stream(
     
     try {
         result = func(**args);
-        
-        # Check if result is a generator - stream values as they're produced
         if inspect.isgenerator(result) {
-            # Yield each value from the generator as soon as it's produced
             for value in result {
                 yield JacSerializer.serialize(value);
             }
-            # Commit after generator is exhausted
             Jac.commit();
         } else {
-            # Non-generator function - return result and reports
             yield JacSerializer.serialize(result);
             if ctx.reports {
                 for report in ctx.reports {
