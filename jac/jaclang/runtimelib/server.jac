@@ -75,6 +75,14 @@ obj ExecutionManager {
     def spawn_walker(
         walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
     ) -> dict[str, JsonValue];
+
+    def execute_function_stream(
+        func: Callable[(..., Any)], args: dict[(str, Any)], username: str
+    ) -> Any;
+
+    def spawn_walker_stream(
+        walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
+    ) -> Any;
 }
 
 """Introspects and caches module metadata."""

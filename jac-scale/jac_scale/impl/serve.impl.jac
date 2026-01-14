@@ -439,6 +439,16 @@ impl JacAPIServer.create_function_parameters(
             )
         );
     }
+    parameters.append(
+        APIParameter(
+            name='stream',
+            data_type='bool',
+            required=False,
+            default=False,
+            description='Enable streaming responses for generator functions',
+            type=ParameterType.QUERY
+        )
+    );
     func_fields = self.introspector.introspect_callable(
         self.get_functions()[func_name]
     )['parameters'];
@@ -461,8 +471,9 @@ impl JacAPIServer.create_function_callback(
     self: JacAPIServer, func_name: str
 ) -> Callable[..., dict[(str, JsonValue)]] {
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
-    def callback( **kwargs: JsonValue)  -> dict[str, JsonValue] {
+    def callback( **kwargs: JsonValue)  -> (dict[str, JsonValue] | StreamingResponse) {
         username: (str | None) = None;
+        stream_mode = kwargs.pop('stream', False);
         if requires_auth {
             authorization = kwargs.pop('Authorization', None);
             token: (str | None) = None;
@@ -478,7 +489,25 @@ impl JacAPIServer.create_function_callback(
                 return {'error': 'Unauthorized', 'status': 401};
             }
         }
-        print(f"Executing function '{func_name}' with params: {kwargs}");
+        if stream_mode {
+            def generate() -> Any {
+                for chunk in self.execution_manager.execute_function_stream(
+                    self.get_functions()[func_name], kwargs, (username or '__guest__')
+                ) {
+                    yield f"{chunk}\n";
+                }
+            }
+            return StreamingResponse(
+                generate(),
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            );
+        }
+        
         return self.execution_manager.execute_function(
             self.get_functions()[func_name], kwargs, (username or '__guest__')
         );
@@ -535,6 +564,16 @@ impl JacAPIServer.create_walker_parameters(
             )
         );
     }
+    parameters.append(
+        APIParameter(
+            name='stream',
+            data_type='bool',
+            required=False,
+            default=False,
+            description='Enable streaming responses for progressive walker reports',
+            type=ParameterType.QUERY
+        )
+    );
     walker_fields = self.introspector.introspect_walker(
         self.get_walkers()[walker_name]
     )['fields'];
@@ -564,8 +603,9 @@ impl JacAPIServer.create_walker_callback(
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
     def callback(
         node: (str | None) = None, **kwargs: JsonValue
-    ) -> dict[str, JsonValue] {
+    ) -> (dict[str, JsonValue] | StreamingResponse) {
         username: (str | None) = None;
+        stream_mode = kwargs.pop('stream', False);
         if requires_auth {
             authorization = kwargs.pop('Authorization', None);
             token: (str | None) = None;
@@ -583,6 +623,24 @@ impl JacAPIServer.create_walker_callback(
         }
         if node {
             kwargs['_jac_spawn_node'] = node;
+        }
+        if stream_mode {
+            def generate() -> Any {
+                for chunk in self.execution_manager.spawn_walker_stream(
+                    self.get_walkers()[walker_name], kwargs, (username or '__guest__')
+                ) {
+                    yield f"{chunk}\n";
+                }
+            }
+            return StreamingResponse(
+                generate(),
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            );
         }
         return self.execution_manager.spawn_walker(
             self.get_walkers()[walker_name], kwargs, (username or '__guest__')

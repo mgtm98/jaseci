@@ -159,6 +159,12 @@ impl ExecutionManager.execute_function(
     ctx.reports = [];  # Clear reports for this request
     try {
         result = func(**args);
+        
+        # If result is a generator, consume it fully and return the list
+        if inspect.isgenerator(result) {
+            result = <>list(result);
+        }
+        
         Jac.commit();
         return {
             'result': JacSerializer.serialize(result),
@@ -166,6 +172,51 @@ impl ExecutionManager.execute_function(
         };
     } except Exception as e {
         return {'error': str(e)};
+    }
+}
+
+"""Execute a function with streaming support for generators."""
+impl ExecutionManager.execute_function_stream(
+    func: Callable[(..., Any)], args: dict[(str, Any)], username: str
+) -> Any {
+    root_id = self.user_manager.get_root_id(username);
+    if not root_id {
+        yield {'type': 'error', 'data': 'User not found'};
+        return;
+    }
+    
+    ctx = Jac.get_context();
+    ctx.set_entry_node(root_id);
+    ctx.reports = [];
+    
+    try {
+        result = func(**args);
+        
+        # Check if result is a generator - stream values as they're produced
+        if inspect.isgenerator(result) {
+            # Yield each value from the generator as soon as it's produced
+            for value in result {
+                yield JacSerializer.serialize(value);
+            }
+            # Commit after generator is exhausted
+            Jac.commit();
+        } else {
+            # Non-generator function - return result and reports
+            yield JacSerializer.serialize(result);
+            if ctx.reports {
+                for report in ctx.reports {
+                    yield JacSerializer.serialize(report);
+                }
+            }
+            Jac.commit();
+        }
+    } except Exception as e {
+        import traceback;
+        yield {
+            'type': 'error',
+            'data': str(e),
+            'traceback': traceback.format_exc()
+        };
     }
 }
 
@@ -202,6 +253,72 @@ impl ExecutionManager.spawn_walker(
         import traceback;
         return {'error': str(e), 'traceback': traceback.format_exc()};
     }
+}
+
+"""Spawn a walker with streaming support for progressive reports."""
+impl ExecutionManager.spawn_walker_stream(
+    walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
+) -> Any {
+    # import from jaclang.pycore.constructs { NodeArchetype }
+    
+    # root_id = self.user_manager.get_root_id(username);
+    # if not root_id {
+    #     yield {'type': 'error', 'data': 'User not found'};
+    #     return;
+    # }
+    
+    # target_node_id = fields.pop('_jac_spawn_node', None);
+    # ctx = Jac.get_context();
+    # ctx.set_entry_node(root_id);
+    
+    # # Create custom list to intercept report statements
+    # class StreamingReportList(list) {
+    #     has streamed_reports: list[Any] = [];
+        
+    #     def append(self: StreamingReportList, item: Any) -> None {
+    #         super().append(item);
+    #         self.streamed_reports.append(item);
+    #     }
+    # }
+    
+    # original_reports = ctx.reports;
+    # streaming_list = StreamingReportList();
+    # ctx.reports = streaming_list;
+    # last_report_count = 0;
+    
+    # try {
+    #     walker = walker_cls(**fields);
+        
+    #     if target_node_id {
+    #         target_node = Jac.get_object(target_node_id);
+    #         if not isinstance(target_node, NodeArchetype) {
+    #             yield {'type': 'error', 'data': f"Invalid target node: {target_node_id}"};
+    #             return;
+    #         }
+    #     } else {
+    #         target_node = ctx.get_root();
+    #     }
+        
+    #     # Spawn walker and stream reports as they're generated
+    #     Jac.spawn(walker, target_node);
+        
+    #     # Stream any reports that were generated
+    #     for i in range(last_report_count, len(streaming_list.streamed_reports)) {
+    #         yield JacSerializer.serialize(streaming_list.streamed_reports[i]);
+    #     }
+        
+    #     Jac.commit();
+    # } except Exception as e {
+    #     import traceback;
+    #     yield {
+    #         'type': 'error',
+    #         'data': str(e),
+    #         'traceback': traceback.format_exc()
+    #     };
+    # } finally {
+    #     # Restore original reports list
+    #     ctx.reports = original_reports;
+    # }
 }
 
 impl ModuleIntrospector.postinit -> None {

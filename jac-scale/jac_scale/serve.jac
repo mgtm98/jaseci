@@ -6,7 +6,13 @@ import from typing { Any }
 import jwt;
 import from os { getenv }
 import from fastapi.middleware.cors { CORSMiddleware }
-import from fastapi.responses { HTMLResponse, JSONResponse, Response, RedirectResponse }
+import from fastapi.responses {
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    RedirectResponse,
+    StreamingResponse
+}
 import from jac_scale.jserver.jfast_api { JFastApiServer }
 import from jac_scale.jserver.jserver {
     APIParameter,
