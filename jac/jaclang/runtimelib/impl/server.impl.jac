@@ -145,6 +145,12 @@ impl UserManager.close -> None {
     self._persist();
 }
 
+"""Append item to list and immediately put in queue for streaming."""
+impl StreamingReportList.append(item: Any) -> None {
+    list.append(self, item);
+    self.report_queue.put(('report', item));
+}
+
 """Execute a function in user's context."""
 impl ExecutionManager.execute_function(
     func: Callable[(..., Any)], args: dict[(str, Any)], username: str
@@ -249,66 +255,93 @@ impl ExecutionManager.spawn_walker(
 impl ExecutionManager.spawn_walker_stream(
     walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
 ) -> Any {
-# import from jaclang.pycore.constructs { NodeArchetype }
+    import from jaclang.pycore.constructs { NodeArchetype }
+    import queue;
+    import threading;
 
-# root_id = self.user_manager.get_root_id(username);
-# if not root_id {
-#     yield {'type': 'error', 'data': 'User not found'};
-#     return;
-# }
+    report_queue = queue.Queue();
+    walker_done = threading.Event();
+    walker_error: (Exception | None) = None;
+    streaming_list = StreamingReportList(report_queue);
 
-# target_node_id = fields.pop('_jac_spawn_node', None);
-# ctx = Jac.get_context();
-# ctx.set_entry_node(root_id);
+    root_id = self.user_manager.get_root_id(username);
+    if not root_id {
+        yield {'type': 'error', 'data': 'User not found'};
+        return;
+    }
 
-# # Create custom list to intercept report statements
-# class StreamingReportList(list) {
-#     has streamed_reports: list[Any] = [];
+    target_node_id = fields.pop('_jac_spawn_node', None);
+    ctx = Jac.get_context();
+    ctx.set_entry_node(root_id);
+    original_reports = ctx.reports;
+    ctx.reports = streaming_list;
 
-#     def append(self: StreamingReportList, item: Any) -> None {
-#         super().append(item);
-#         self.streamed_reports.append(item);
-#     }
-# }
+    def run_walker() -> None {
+        nonlocal walker_error;
+        try {
+            <>walker = walker_cls(**fields);
+            if target_node_id {
+                target_node = Jac.get_object(target_node_id);
+                if not isinstance(target_node, NodeArchetype) {
+                    report_queue.put(('error', f"Invalid target node: {target_node_id}"));
+                    return;
+                }
+            } else {
+                target_node = ctx.get_root();
+            }
+            Jac.spawn(<>walker, target_node);
+            Jac.commit();
+        } except Exception as e {
+            walker_error = e;
+        } finally {
+            walker_done.set();
+            report_queue.put(('done', None));
+        }
+    }
 
-# original_reports = ctx.reports;
-# streaming_list = StreamingReportList();
-# ctx.reports = streaming_list;
-# last_report_count = 0;
+    walker_thread = threading.Thread(target=run_walker);
+    walker_thread.start();
 
-# try {
-#     walker = walker_cls(**fields);
-
-#     if target_node_id {
-#         target_node = Jac.get_object(target_node_id);
-#         if not isinstance(target_node, NodeArchetype) {
-#             yield {'type': 'error', 'data': f"Invalid target node: {target_node_id}"};
-#             return;
-#         }
-#     } else {
-#         target_node = ctx.get_root();
-#     }
-
-#     # Spawn walker and stream reports as they're generated
-#     Jac.spawn(walker, target_node);
-
-#     # Stream any reports that were generated
-#     for i in range(last_report_count, len(streaming_list.streamed_reports)) {
-#         yield JacSerializer.serialize(streaming_list.streamed_reports[i]);
-#     }
-
-#     Jac.commit();
-# } except Exception as e {
-#     import traceback;
-#     yield {
-#         'type': 'error',
-#         'data': str(e),
-#         'traceback': traceback.format_exc()
-#     };
-# } finally {
-#     # Restore original reports list
-#     ctx.reports = original_reports;
-# }
+    try {
+        while True {
+            try {
+                (msg_type, data) = report_queue.get(timeout=0.1);                
+                if msg_type == 'report' {
+                    yield JacSerializer.serialize(data);
+                } elif msg_type == 'error' {
+                    yield {'type': 'error', 'data': data};
+                    break;
+                } elif msg_type == 'done' {
+                    break;
+                }
+            } except queue.Empty {
+                if walker_done.is_set() {
+                    while not report_queue.empty() {
+                        try {
+                            (msg_type, data) = report_queue.get_nowait();
+                            if msg_type == 'report' {
+                                yield JacSerializer.serialize(data);
+                            }
+                        } except queue.Empty {
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if walker_error {
+            import traceback;
+            yield {
+                'type': 'error',
+                'data': str(walker_error),
+                'traceback': ''.join(traceback.format_exception(type(walker_error), walker_error, walker_error.__traceback__))
+            };
+        }
+    } finally {
+        ctx.reports = original_reports;
+        walker_thread.join(timeout=1.0);
+    }
 }
 
 impl ModuleIntrospector.postinit -> None {

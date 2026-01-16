@@ -71,6 +71,13 @@ obj UserManager {
     def close -> None;
 }
 
+"""Custom list that streams reports to a queue immediately."""
+obj StreamingReportList(list) {
+    has report_queue: Any;
+
+    def append(item: Any) -> None;
+}
+
 """Manages execution contexts for user operations."""
 obj ExecutionManager {
     has base_path: str,
