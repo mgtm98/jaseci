@@ -1207,3 +1207,58 @@ class TestJacScaleServe:
         assert response.headers["cross-origin-opener-policy"] == "same-origin"
         assert "cross-origin-embedder-policy" in response.headers
         assert response.headers["cross-origin-embedder-policy"] == "require-corp"
+
+    def test_function_streaming(self) -> None:
+        """Test streaming function with SSE format."""
+        response = requests.post(
+            f"{self.base_url}/function/stream_numbers?stream=true",
+            json={"count": 3},
+            timeout=30,
+            stream=True,
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("connection") == "close"
+
+        # Parse SSE stream
+        chunks = []
+        for line in response.iter_lines(decode_unicode=True):
+            if line and line.startswith("data: "):
+                data_str = line[6:]  # Remove "data: " prefix
+                import json
+                chunks.append(json.loads(data_str))
+
+        # Should have 3 numbers + 1 completion event
+        assert len(chunks) >= 3
+        
+    def test_walker_streaming(self) -> None:
+        """Test streaming walker with SSE format."""
+        response = requests.post(
+            f"{self.base_url}/walker/StreamReporter?stream=true",
+            json={"count": 3},
+            timeout=30,
+            stream=True,
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.headers.get("connection") == "close"
+
+        # Parse SSE stream
+        chunks = []
+        for line in response.iter_lines(decode_unicode=True):
+            if line and line.startswith("data: "):
+                data_str = line[6:]
+                import json
+                chunks.append(json.loads(data_str))
+
+        # Should have 3 reports + 1 completion event
+        assert len(chunks) >= 3
+        
+        # Check for reports
+        report_items = [c for c in chunks if isinstance(c, str) and "Report" in c]
+        assert len(report_items) == 3
+

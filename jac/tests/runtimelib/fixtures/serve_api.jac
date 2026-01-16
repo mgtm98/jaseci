@@ -64,6 +64,19 @@ walker CompleteTask {
     }
 }
 
+# Define a walker for streaming reports
+walker StreamReporter {
+    has count: int = 3;
+
+    can report_items with `root entry {
+        import time;
+        for i in range(self.count) {
+            time.sleep(0.5);
+            report f"Report {i}";
+        }
+    }
+}
+
 """Function to add two numbers together."""
 def add_numbers(a: int, b: int) -> int {
     return a + b;
@@ -72,6 +85,15 @@ def add_numbers(a: int, b: int) -> int {
 """Function to generate a greeting message."""
 def greet(name: str = "World") -> str {
     return "Hello, " + name + "!";
+}
+
+"""Function to stream numbers for testing."""
+def stream_numbers(count: int) -> Generator {
+    import time;
+    for i in range(count) {
+        time.sleep(0.5);
+        yield i;
+    }
 }
 
 cl glob WELCOME_TITLE: str = "Runtime Test";

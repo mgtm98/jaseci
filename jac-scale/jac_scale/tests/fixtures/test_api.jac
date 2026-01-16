@@ -17,6 +17,14 @@ def multiply(x: int, y: int) -> int {
     return x * y;
 }
 
+def stream_numbers(count: int) -> Generator {
+    import time;
+    for i in range(count) {
+        time.sleep(0.5);
+        yield i;
+    }
+}
+
 # ============================================================================
 # Test Data Models
 # ============================================================================
@@ -86,5 +94,17 @@ walker : priv PrivateCreateTask {
 walker : pub PublicInfo {
     can get_info with `root entry {
         report {"message": "This is a public endpoint", "auth_required": False} ;
+    }
+}
+
+walker StreamReporter {
+    has count: int = 3;
+    
+    can report_items with `root entry {
+        import time;
+        for i in range(self.count) {
+            time.sleep(0.5);
+            report f"Report {i}";
+        }
     }
 }

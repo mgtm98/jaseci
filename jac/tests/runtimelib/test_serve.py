@@ -1920,3 +1920,73 @@ def test_start_with_nonexistent_file_error(tmp_path: Path) -> None:
         assert "Please specify a file" not in output
     finally:
         os.chdir(original_cwd)
+
+
+def test_function_streaming(server_fixture: ServerFixture) -> None:
+    """Test streaming response for a generator function."""
+    server_fixture.start_server()
+
+    # Create user and get token
+    create_result = server_fixture.request(
+        "POST", "/user/register", {"username": "streamuser", "password": "pass"}
+    )
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
+
+    # Call stream_numbers with streaming enabled
+    status, body, headers = server_fixture.request_raw(
+        "POST",
+        "/function/stream_numbers?stream=true",
+        {"args": {"count": 3}},
+        token=token,
+        timeout=10,
+    )
+
+    assert status == 200
+    assert "text/event-stream" in headers.get("Content-Type", "")
+    assert headers.get("Connection") == "close"
+
+    # Parse SSE events
+    events = [line for line in body.split("\n") if line.startswith("data: ")]
+    assert len(events) >= 3 
+
+    # Verify SSE format
+    for event in events[:-1]:  # All except completion event
+        assert event.startswith("data: ")
+        data = json.loads(event[6:])  # Strip "data: " prefix
+        assert isinstance(data, int)
+
+def test_walker_streaming(server_fixture: ServerFixture) -> None:
+    """Test streaming response for a walker."""
+    server_fixture.start_server()
+
+    # Create user and get token
+    create_result = server_fixture.request(
+        "POST", "/user/register", {"username": "walkstream", "password": "pass"}
+    )
+    create_data = create_result.get("data", create_result)
+    token = create_data["token"]
+
+    # Spawn StreamReporter walker with streaming enabled
+    status, body, headers = server_fixture.request_raw(
+        "POST",
+        "/walker/StreamReporter?stream=true",
+        {"count": 3},
+        token=token,
+        timeout=10,
+    )
+
+    assert status == 200
+    assert "text/event-stream" in headers.get("Content-Type", "")
+    assert headers.get("Connection") == "close"
+
+    # Parse SSE events
+    events = [line for line in body.split("\n") if line.startswith("data: ")]
+    assert len(events) >= 3 
+
+    # Verify SSE format
+    for event in events[:-1]:  # All except completion event
+        assert event.startswith("data: ")
+        data = json.loads(event[6:])  # Strip "data: " prefix
+        assert "Report" in data
+
