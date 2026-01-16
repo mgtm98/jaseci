@@ -99,7 +99,7 @@ walker : pub PublicInfo {
 
 walker StreamReporter {
     has count: int = 3;
-    
+
     can report_items with `root entry {
         import time;
         for i in range(self.count) {

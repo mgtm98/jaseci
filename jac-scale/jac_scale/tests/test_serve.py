@@ -1228,11 +1228,12 @@ class TestJacScaleServe:
             if line and line.startswith("data: "):
                 data_str = line[6:]  # Remove "data: " prefix
                 import json
+
                 chunks.append(json.loads(data_str))
 
         # Should have 3 numbers + 1 completion event
         assert len(chunks) >= 3
-        
+
     def test_walker_streaming(self) -> None:
         """Test streaming walker with SSE format."""
         response = requests.post(
@@ -1253,12 +1254,12 @@ class TestJacScaleServe:
             if line and line.startswith("data: "):
                 data_str = line[6:]
                 import json
+
                 chunks.append(json.loads(data_str))
 
         # Should have 3 reports + 1 completion event
         assert len(chunks) >= 3
-        
+
         # Check for reports
         report_items = [c for c in chunks if isinstance(c, str) and "Report" in c]
         assert len(report_items) == 3
-

@@ -1948,13 +1948,14 @@ def test_function_streaming(server_fixture: ServerFixture) -> None:
 
     # Parse SSE events
     events = [line for line in body.split("\n") if line.startswith("data: ")]
-    assert len(events) >= 3 
+    assert len(events) >= 3
 
     # Verify SSE format
     for event in events[:-1]:  # All except completion event
         assert event.startswith("data: ")
         data = json.loads(event[6:])  # Strip "data: " prefix
         assert isinstance(data, int)
+
 
 def test_walker_streaming(server_fixture: ServerFixture) -> None:
     """Test streaming response for a walker."""
@@ -1982,11 +1983,10 @@ def test_walker_streaming(server_fixture: ServerFixture) -> None:
 
     # Parse SSE events
     events = [line for line in body.split("\n") if line.startswith("data: ")]
-    assert len(events) >= 3 
+    assert len(events) >= 3
 
     # Verify SSE format
     for event in events[:-1]:  # All except completion event
         assert event.startswith("data: ")
         data = json.loads(event[6:])  # Strip "data: " prefix
         assert "Report" in data
-
