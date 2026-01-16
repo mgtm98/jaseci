@@ -1,7 +1,7 @@
 """Command line interface tool for the Jac Client.
 
 This module extends the core `create` command to add client-side (frontend)
-project setup via the --cl flag.
+project setup via the --cl flag using the extend_command API.
 """
 
 import os;
@@ -10,146 +10,82 @@ import sys;
 import pathlib;
 import subprocess;
 import shutil;
-import from jaclang.cli.cmdreg { cmd_registry, CommandPriority }
+import from jaclang.cli.registry { get_registry }
+import from jaclang.cli.command { Arg, ArgKind, HookContext }
 import from jaclang.pycore.runtime { hookimpl }
-import from jaclang.project.config { JacConfig, find_project_root }
+import from jaclang.project.config { find_project_root }
 
 """Jac CLI extensions for client-side development."""
 class JacCmd {
     """Create Jac CLI cmds."""
     @hookimpl
     static def create_cmd -> None {
-        """Override core create command to add --cl flag for client-side setup.""";
+        """Extend core create command to add --cl flag for client-side setup.""";
+        registry = get_registry();
 
-        def create(
-            name: str = 'main',
-            force: bool = False,
-            cl: bool = False,
-            skip: bool = False,
-            verbose: bool = False
-        ) -> None {
-            """Initialize a new Jac project.
+        # Extend the core 'create' command with client-specific arguments
+        registry.extend_command(
+            command_name="create",
+            args=[
+                Arg.create(
+                    "cl",
+                    typ=bool,
+                    default=False,
+                    help="Include client-side (frontend) setup",
+                    short="c"
+                ),
+                Arg.create(
+                    "skip",
+                    typ=bool,
+                    default=False,
+                    help="Skip installing default packages (only for --cl)",
+                    short="s"
+                ),
+                Arg.create(
+                    "verbose",
+                    typ=bool,
+                    default=False,
+                    help="Show detailed output during installation",
+                    short="v"
+                ),
 
-            Creates a jac.toml configuration file and basic project structure.
-            Use --cl to include client-side (frontend) setup with Vite bundling.
-
-            Args:
-                name: Project name (default: 'main')
-                force: Overwrite existing jac.toml if present
-                cl: Include client-side (frontend) setup
-                skip: Skip installing default packages (only for --cl projects)
-                verbose: Show detailed output during package installation
-
-            Examples:
-                jac create
-                jac create myapp
-                jac create --cl myapp
-                jac create --cl --skip myapp
-                jac create --cl --verbose myapp
-                jac create --force
-            """;
-            cwd = pathlib.Path(os.getcwd());
-
-            if cl {
-                _create_client_project(cwd, name, force, skip, verbose);
-            } else {
-                _create_core_project(cwd, name, force);
-            }
-        }
-
-        # Register with PLUGIN priority to override core's create command
-        cmd_registry.register(
-            create, priority=CommandPriority.PLUGIN, source="jac-client"
+            ],
+            pre_hook=_handle_client_create,
+            source="jac-client"
         );
     }
 }
 
-"""Create a standard Jac project (core behavior)."""
-def _create_core_project(cwd: pathlib.Path, name: str, force: bool) -> None {
-    project_name = name or cwd.name;
-
-    # Create project directory if name is provided
-    if name {
-        project_path = cwd / name;
-        if project_path.exists() and not force {
-            print(
-                f"Directory '{name}' already exists. Use --force to overwrite.",
-                file=sys.stderr
-            );
-            <>exit(1);
-        }
-        project_path.mkdir(parents=True, exist_ok=True);
-    } else {
-        project_path = cwd;
-        # Check if already in a project (only when not creating a new folder)
-        existing = find_project_root(cwd);
-        if existing and not force {
-            (project_root, toml_path) = existing;
-            print(f"Already in a Jac project: {toml_path}", file=sys.stderr);
-            print("Use --force to reinitialize.", file=sys.stderr);
-            <>exit(1);
-        }
+"""Pre-hook to handle --cl flag for client-side project creation."""
+def _handle_client_create(ctx: HookContext) -> None {
+    # Check if --cl flag is set
+    cl_flag = ctx.get_arg("cl", False);
+    if not cl_flag {
+        # Let core create command run normally
+        return;
     }
 
-    toml_path = project_path / "jac.toml";
-    if toml_path.exists() and not force {
-        print("jac.toml already exists. Use --force to overwrite.", file=sys.stderr);
-        <>exit(1);
-    }
+    # Handle client-side project creation
+    cwd = pathlib.Path(os.getcwd());
+    name = ctx.get_arg("name", "main");
+    force = ctx.get_arg("force", False);
+    skip_install = ctx.get_arg("skip", False);
+    verbose = ctx.get_arg("verbose", False);
 
-    toml_content = JacConfig.create_default_toml(project_name);
-    with open(toml_path, "w") as f {
-        f.write(toml_content);
-    }
-    print(f"Created {toml_path}");
-
-    main_jac = project_path / "main.jac";
-    if not main_jac.exists() {
-        with open(main_jac, "w") as f {
-            f.write(
-                f'''"""Main entry point for {project_name}."""
-
-with entry {{
-    print("Hello from {project_name}!");
-}}
-'''
-            );
-        }
-        print(f"Created {main_jac}");
-    }
-
-    packages_dir = project_path / "packages";
-    if not packages_dir.exists() {
-        packages_dir.mkdir(parents=True, exist_ok=True);
-        print(f"Created {packages_dir}/");
-    }
-
-    _create_gitignore(project_path, client=False);
-
-    # Pre-generate cache for the jac compiler
-    main_jac_path = project_path / "main.jac";
     try {
-        result = subprocess.run(
-            [sys.executable, "-m", "jaclang.cli.cli", "check", str(main_jac_path)],
-            capture_output=True,
-            text=True,
-            cwd=str(project_path)
-        );
-        if result.returncode == 0 {
-            print("Pre-generated compiler cache");
-        }
-    } except Exception {
-    # Silently ignore cache generation failures
+        _create_client_project(cwd, name, force, skip_install, verbose);
+        # Cancel core handler with success code
+        ctx.set_data("cancel_execution", True);
+        ctx.set_data("cancel_return_code", 0);
+    } except SystemExit as e {
+        # Preserve exit code from sys.exit() calls
+        ctx.set_data("cancel_execution", True);
+        ctx.set_data("cancel_return_code", e.code if e.code is not None else 1);
+    } except Exception as e {
+        print(f"Error creating client project: {e}", file=sys.stderr);
+        ctx.set_data("cancel_execution", True);
+        ctx.set_data("cancel_return_code", 1);
     }
-
-    print(f"\nProject '{project_name}' initialized successfully!");
-    print("\nNext steps:");
-    if name {
-        print(f"  cd {name}");
-    }
-    print("  jac run main.jac    # Run the main entry point");
-    print("  jac add <package>   # Add dependencies");
-    print("  jac install         # Install all dependencies");
 }
 
 """Create a client-side Jac project with organized folder structure."""
@@ -333,7 +269,7 @@ A Jac client-side application with React support.
 Start the development server:
 
 ```bash
-jac serve main.jac
+jac start main.jac
 ```
 
 ## Components
@@ -357,7 +293,7 @@ jac add --cl react-router-dom
     }
     print("Created README.md");
 
-    _create_gitignore(project_path, client=True);
+    _create_gitignore(project_path);
 
     # Install default packages unless --skip is specified
     if not skip {
@@ -369,15 +305,15 @@ jac add --cl react-router-dom
     if name and name != cwd.name {
         print("\nNext steps:");
         print(f"  cd {name}");
-        print("  jac serve main.jac");
+        print("  jac start main.jac");
     } else {
         print("\nNext steps:");
-        print("  jac serve main.jac");
+        print("  jac start main.jac");
     }
 }
 
-"""Create .gitignore file with appropriate entries."""
-def _create_gitignore(project_path: pathlib.Path, client: bool = False) -> None {
+"""Create .gitignore file with client-specific entries."""
+def _create_gitignore(project_path: pathlib.Path) -> None {
     gitignore_entries = [
         "# Jac project",
         "packages/",
@@ -395,23 +331,16 @@ def _create_gitignore(project_path: pathlib.Path, client: bool = False) -> None 
         "# IDE",
         ".idea/",
         ".vscode/",
-        "*.swp"
+        "*.swp",
+        "",
+        "# Node.js",
+        "node_modules/",
+        "",
+        "# Jac build artifacts",
+        ".jac/",
+        "*.session",
+        "*.session.*"
     ];
-
-    if client {
-        gitignore_entries.extend(
-            [
-                "",
-                "# Node.js",
-                "node_modules/",
-                "",
-                "# Jac build artifacts",
-                ".jac/",
-                "*.session",
-                "*.session.*"
-            ]
-        );
-    }
 
     gitignore_path = project_path / ".gitignore";
     if gitignore_path.exists() {

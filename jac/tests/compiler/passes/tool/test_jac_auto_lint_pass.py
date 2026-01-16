@@ -383,7 +383,7 @@ class TestFormatCommandIntegration:
         self, auto_lint_fixture_path: Callable[[str], str]
     ) -> None:
         """Test that CLI format command writes both main and impl files."""
-        from jaclang.cli import cli
+        from jaclang.cli.commands import analysis  # type: ignore[attr-defined]
 
         # Copy fixture files to temp directory
         fixture_dir = os.path.dirname(auto_lint_fixture_path("sig_mismatch.jac"))
@@ -408,7 +408,7 @@ class TestFormatCommandIntegration:
             # Run CLI format command with --fix
             # format exits 1 when files change (for pre-commit usage)
             with contextlib.suppress(SystemExit):
-                cli.format([main_dst], fix=True)
+                analysis.format([main_dst], fix=True)
 
             # Read the updated impl file
             with open(impl_dst) as f:

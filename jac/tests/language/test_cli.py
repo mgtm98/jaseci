@@ -4,7 +4,6 @@ import contextlib
 import inspect
 import io
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -14,8 +13,12 @@ from contextlib import AbstractContextManager
 
 import pytest
 
-from jaclang.cli import cli
-from jaclang.cli.cmdreg import cmd_registry, extract_param_descriptions
+from jaclang.cli.commands import (  # type: ignore[attr-defined]
+    analysis,  # type: ignore[attr-defined]
+    execution,  # type: ignore[attr-defined]
+    tools,  # type: ignore[attr-defined]
+    transform,  # type: ignore[attr-defined]
+)
 from jaclang.runtimelib.builtin import printgraph
 
 
@@ -25,7 +28,7 @@ def test_jac_cli_run(
 ) -> None:
     """Basic test for pass."""
     with capture_stdout() as output:
-        cli.run(fixture_path("hello.jac"))
+        execution.run(fixture_path("hello.jac"))
 
     stdout_value = output.getvalue()
     assert "Hello World!" in stdout_value
@@ -37,7 +40,7 @@ def test_jac_cli_run_python_file(
 ) -> None:
     """Test running Python files with jac run command."""
     with capture_stdout() as output:
-        cli.run(fixture_path("python_run_test.py"))
+        execution.run(fixture_path("python_run_test.py"))
 
     stdout_value = output.getvalue()
     assert "Hello from Python!" in stdout_value
@@ -53,7 +56,7 @@ def test_jac_run_py_fstr(
 ) -> None:
     """Test running Python files with jac run command."""
     with capture_stdout() as output:
-        cli.run(fixture_path("pyfunc_fstr.py"))
+        execution.run(fixture_path("pyfunc_fstr.py"))
 
     stdout_value = output.getvalue()
     assert "Hello Peter" in stdout_value
@@ -71,7 +74,7 @@ def test_jac_run_py_fmt(
 ) -> None:
     """Test running Python files with jac run command."""
     with capture_stdout() as output:
-        cli.run(fixture_path("pyfunc_fmt.py"))
+        execution.run(fixture_path("pyfunc_fmt.py"))
 
     stdout_value = output.getvalue()
     assert "One" in stdout_value
@@ -89,7 +92,7 @@ def test_jac_run_pyfunc_kwesc(
 ) -> None:
     """Test running Python files with jac run command."""
     with capture_stdout() as output:
-        cli.run(fixture_path("pyfunc_kwesc.py"))
+        execution.run(fixture_path("pyfunc_kwesc.py"))
 
     stdout_value = output.getvalue()
     out = stdout_value.split("\n")
@@ -106,7 +109,7 @@ def test_jac_cli_alert_based_err(fixture_path: Callable[[str], str]) -> None:
     sys.stderr = captured_output
 
     try:
-        cli.enter(fixture_path("err2.jac"), entrypoint="speak", args=[])
+        execution.enter(fixture_path("err2.jac"), entrypoint="speak", args=[])
     except Exception as e:
         print(f"Error: {e}")
 
@@ -122,13 +125,13 @@ def test_jac_cli_alert_based_runtime_err(fixture_path: Callable[[str], str]) -> 
     sys.stdout = captured_output
     sys.stderr = captured_output
 
-    with pytest.raises(SystemExit) as excinfo:
-        cli.run(fixture_path("err_runtime.jac"))
+    try:
+        result = execution.run(fixture_path("err_runtime.jac"))
+    finally:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
 
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
-
-    assert excinfo.value.code == 1
+    assert result == 1
 
     output = captured_output.getvalue()
 
@@ -165,7 +168,7 @@ def test_jac_impl_err(fixture_path: Callable[[str], str]) -> None:
     sys.stderr = captured_output
 
     try:
-        cli.enter(fixture_path("err.jac"), entrypoint="speak", args=[])
+        execution.enter(fixture_path("err.jac"), entrypoint="speak", args=[])
     except Exception:
         traceback.print_exc()
 
@@ -182,7 +185,7 @@ def test_param_name_diff(fixture_path: Callable[[str], str]) -> None:
     sys.stdout = captured_output
     sys.stderr = captured_output
     with contextlib.suppress(Exception):
-        cli.run(fixture_path("decl_defn_param_name.jac"))
+        execution.run(fixture_path("decl_defn_param_name.jac"))
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
 
@@ -200,7 +203,7 @@ def test_jac_test_err(fixture_path: Callable[[str], str]) -> None:
     captured_output = io.StringIO()
     sys.stdout = captured_output
     sys.stderr = captured_output
-    cli.test(fixture_path("baddy.jac"))
+    analysis.test(fixture_path("baddy.jac"))
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
     stdout_value = captured_output.getvalue()
@@ -213,7 +216,7 @@ def test_jac_ast_tool_pass_template(
 ) -> None:
     """Basic test for pass."""
     with capture_stdout() as output:
-        cli.tool("pass_template")
+        tools.tool("pass_template")
 
     stdout_value = output.getvalue()
     assert "Sub objects." in stdout_value
@@ -226,7 +229,7 @@ def test_ast_print(
 ) -> None:
     """Testing for print AstTool."""
     with capture_stdout() as output:
-        cli.tool("ir", ["ast", f"{fixture_path('hello.jac')}"])
+        tools.tool("ir", ["ast", f"{fixture_path('hello.jac')}"])
 
     stdout_value = output.getvalue()
     assert "+-- Token" in stdout_value
@@ -238,7 +241,7 @@ def test_ast_printgraph(
 ) -> None:
     """Testing for print AstTool."""
     with capture_stdout() as output:
-        cli.tool("ir", ["ast.", f"{fixture_path('hello.jac')}"])
+        tools.tool("ir", ["ast.", f"{fixture_path('hello.jac')}"])
 
     stdout_value = output.getvalue()
     assert '[label="MultiString"]' in stdout_value
@@ -250,7 +253,7 @@ def test_cfg_printgraph(
 ) -> None:
     """Testing for print CFG."""
     with capture_stdout() as output:
-        cli.tool("ir", ["cfg.", f"{fixture_path('hello.jac')}"])
+        tools.tool("ir", ["cfg.", f"{fixture_path('hello.jac')}"])
 
     stdout_value = output.getvalue()
     correct_graph = (
@@ -268,7 +271,7 @@ def test_del_clean(
 ) -> None:
     """Testing for print AstTool."""
     with capture_stdout() as output:
-        cli.check(f"{fixture_path('del_clean.jac')}")
+        analysis.check(f"{fixture_path('del_clean.jac')}")
 
     stdout_value = output.getvalue()
     assert "0 errors, 0 warnings" in stdout_value
@@ -282,8 +285,8 @@ def test_build_and_run(
     if os.path.exists(f"{fixture_path('needs_import.jir')}"):
         os.remove(f"{fixture_path('needs_import.jir')}")
     with capture_stdout() as output:
-        cli.build(f"{fixture_path('needs_import.jac')}")
-        cli.run(f"{fixture_path('needs_import.jir')}")
+        analysis.build(f"{fixture_path('needs_import.jac')}")
+        execution.run(f"{fixture_path('needs_import.jir')}")
 
     stdout_value = output.getvalue()
     assert "Errors: 0, Warnings: 0" in stdout_value
@@ -358,7 +361,7 @@ def test_run_specific_test_only(fixture_path: Callable[[str], str]) -> None:
 
 def test_graph_coverage() -> None:
     """Test for coverage of graph cmd."""
-    graph_params = set(inspect.signature(cli.dot).parameters.keys())
+    graph_params = set(inspect.signature(tools.dot).parameters.keys())
     printgraph_params = set(inspect.signature(printgraph).parameters.keys())
     printgraph_params = printgraph_params - {
         "node",
@@ -376,7 +379,7 @@ def test_graph(
 ) -> None:
     """Test for graph CLI cmd."""
     with capture_stdout() as output:
-        cli.dot(f"{examples_path('reference/connect_expressions_(osp).jac')}")
+        tools.dot(f"{examples_path('reference/connect_expressions_(osp).jac')}")
 
     stdout_value = output.getvalue()
     if os.path.exists("connect_expressions_(osp).dot"):
@@ -391,7 +394,7 @@ def test_py_to_jac(
 ) -> None:
     """Test for graph CLI cmd."""
     with capture_stdout() as output:
-        cli.py2jac(f"{fixture_path('pyfunc.py')}")
+        transform.py2jac(f"{fixture_path('pyfunc.py')}")
 
     stdout_value = output.getvalue()
     assert "def my_print(x: object) -> None" in stdout_value
@@ -405,7 +408,7 @@ def test_lambda_arg_annotation(
 ) -> None:
     """Test for lambda argument annotation."""
     with capture_stdout() as output:
-        cli.jac2py(f"{fixture_path('lambda_arg_annotation.jac')}")
+        transform.jac2py(f"{fixture_path('lambda_arg_annotation.jac')}")
 
     stdout_value = output.getvalue()
     assert "x = lambda a, b: b + a" in stdout_value
@@ -419,7 +422,7 @@ def test_lambda_self(
 ) -> None:
     """Test for lambda argument annotation."""
     with capture_stdout() as output:
-        cli.jac2py(f"{fixture_path('lambda_self.jac')}")
+        transform.jac2py(f"{fixture_path('lambda_self.jac')}")
 
     stdout_value = output.getvalue()
     assert "def travel(self, here: City) -> None:" in stdout_value
@@ -438,7 +441,7 @@ def test_param_arg(
 
     filename = fixture_path("params/test_complex_params.jac")
     with capture_stdout() as output:
-        cli.jac2py(f"{fixture_path('params/test_complex_params.jac')}")
+        transform.jac2py(f"{fixture_path('params/test_complex_params.jac')}")
         py_code = JacProgram().compile(file_path=filename).gen.py
 
         with tempfile.NamedTemporaryFile(
@@ -456,7 +459,7 @@ def test_param_arg(
             ) as temp_file:
                 temp_file.write(jac_code)
                 jac_file_path = temp_file.name
-            cli.run(jac_file_path)
+            execution.run(jac_file_path)
         finally:
             os.remove(py_file_path)
             os.remove(jac_file_path)
@@ -497,76 +500,6 @@ def test_caching_issue(fixture_path: Callable[[str], str]) -> None:
             assert "Passed successfully." not in stdout
             assert "F" in stderr
     os.remove(test_file)
-
-
-def test_cli_docstring_parameters() -> None:
-    """Test that all CLI command parameters are documented in their docstrings."""
-    commands = {}
-    for name, _ in cmd_registry.registry.items():
-        if hasattr(cli, name):
-            commands[name] = getattr(cli, name)
-
-    missing_params = {}
-
-    for cmd_name, cmd_func in commands.items():
-        signature_params = set(inspect.signature(cmd_func).parameters.keys())
-        docstring = cmd_func.__doc__ or ""
-
-        args_match = re.search(r"Args:(.*?)(?:\n\n|\Z)", docstring, re.DOTALL)
-        if not args_match:
-            missing_params[cmd_name] = list(signature_params)
-            continue
-
-        args_section = args_match.group(1)
-        doc_params = set()
-        for line in args_section.strip().split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            param_match = re.match(r"\s*([a-zA-Z0-9_]+)(?:\s*\([^)]*\))?:\s*", line)
-            if param_match:
-                doc_params.add(param_match.group(1))
-
-        undocumented_params = signature_params - doc_params
-        if undocumented_params:
-            missing_params[cmd_name] = list(undocumented_params)
-
-    assert missing_params == {}, (
-        f"The following CLI commands have undocumented parameters: {missing_params}"
-    )
-
-
-def test_cli_help_uses_docstring_descriptions() -> None:
-    """Test that CLI help text uses parameter descriptions from docstrings."""
-    test_commands = ["run", "dot", "test"]
-
-    for cmd_name in test_commands:
-        if not hasattr(cli, cmd_name):
-            continue
-
-        cmd_func = getattr(cli, cmd_name)
-        docstring = cmd_func.__doc__ or ""
-        docstring_param_descriptions = extract_param_descriptions(docstring)
-
-        if not docstring_param_descriptions:
-            continue
-
-        process = subprocess.Popen(
-            ["jac", cmd_name, "--help"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        help_text, _ = process.communicate()
-
-        for param_name, description in docstring_param_descriptions.items():
-            description_start = description.split()[:3]
-            description_pattern = r"\s+".join(
-                re.escape(word) for word in description_start
-            )
-            assert re.search(description_pattern, help_text), (
-                f"Parameter description for '{param_name}' not found in help text for '{cmd_name}'"
-            )
 
 
 def test_run_jac_name_py(fixture_path: Callable[[str], str]) -> None:
@@ -932,7 +865,7 @@ verbose = true
     def test_config_get(self, project_dir: str) -> None:
         """Test jac config get retrieves a specific setting."""
         process = subprocess.Popen(
-            ["jac", "config", "get", "-k", "project.name"],
+            ["jac", "config", "get", "project.name"],
             cwd=project_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -946,7 +879,7 @@ verbose = true
         """Test jac config set and unset modify settings."""
         # Set a new value
         process = subprocess.Popen(
-            ["jac", "config", "set", "-k", "project.description", "-v", "Updated desc"],
+            ["jac", "config", "set", "project.description", "Updated desc"],
             cwd=project_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -957,7 +890,7 @@ verbose = true
 
         # Verify the value was set
         process = subprocess.Popen(
-            ["jac", "config", "get", "-k", "project.description"],
+            ["jac", "config", "get", "project.description"],
             cwd=project_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -968,7 +901,7 @@ verbose = true
 
         # Unset the value
         process = subprocess.Popen(
-            ["jac", "config", "unset", "-k", "project.description"],
+            ["jac", "config", "unset", "project.description"],
             cwd=project_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

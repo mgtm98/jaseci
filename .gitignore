@@ -11,6 +11,7 @@ __jac_gen__/
 .jac/
 *.jir
 *.jbc
+_planning/
 
 # Distribution / packaging
 .Python
