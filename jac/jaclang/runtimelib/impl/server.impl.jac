@@ -258,32 +258,30 @@ impl ExecutionManager.spawn_walker_stream(
     import from jaclang.pycore.constructs { NodeArchetype }
     import queue;
     import threading;
-
     report_queue = queue.Queue();
     walker_done = threading.Event();
     walker_error: (Exception | None) = None;
     streaming_list = StreamingReportList(report_queue);
-
     root_id = self.user_manager.get_root_id(username);
     if not root_id {
         yield {'type': 'error', 'data': 'User not found'};
         return;
     }
-
     target_node_id = fields.pop('_jac_spawn_node', None);
     ctx = Jac.get_context();
     ctx.set_entry_node(root_id);
     original_reports = ctx.reports;
     ctx.reports = streaming_list;
-
-    def run_walker() -> None {
-        nonlocal walker_error;
+    def run_walker -> None {
+        nonlocal walker_error ;
         try {
             <>walker = walker_cls(**fields);
             if target_node_id {
                 target_node = Jac.get_object(target_node_id);
                 if not isinstance(target_node, NodeArchetype) {
-                    report_queue.put(('error', f"Invalid target node: {target_node_id}"));
+                    report_queue.put(
+                        ('error', f"Invalid target node: {target_node_id}")
+                    );
                     return;
                 }
             } else {
@@ -298,14 +296,12 @@ impl ExecutionManager.spawn_walker_stream(
             report_queue.put(('done', None));
         }
     }
-
     walker_thread = threading.Thread(target=run_walker);
     walker_thread.start();
-
     try {
         while True {
             try {
-                (msg_type, data) = report_queue.get(timeout=0.1);                
+                (msg_type, data) = report_queue.get(timeout=0.1);
                 if msg_type == 'report' {
                     yield JacSerializer.serialize(data);
                 } elif msg_type == 'error' {
@@ -335,7 +331,11 @@ impl ExecutionManager.spawn_walker_stream(
             yield {
                 'type': 'error',
                 'data': str(walker_error),
-                'traceback': ''.join(traceback.format_exception(type(walker_error), walker_error, walker_error.__traceback__))
+                'traceback': ''.join(
+                    traceback.format_exception(
+                        type(walker_error), walker_error, walker_error.__traceback__
+                    )
+                )
             };
         }
     } finally {
@@ -544,7 +544,6 @@ impl ModuleIntrospector.introspect_callable(
     } except Exception {
         return {'parameters': {}, 'return_type': 'Any'};
     }
-    
     # Try to get type hints, but fallback to annotations if it fails
     type_hints = {};
     try {
@@ -552,7 +551,6 @@ impl ModuleIntrospector.introspect_callable(
     } except (NameError, AttributeError) {
         type_hints = getattr(func, '__annotations__', {});
     }
-    
     params = {
         name: {
             'type': getattr(
