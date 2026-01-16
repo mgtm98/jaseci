@@ -88,9 +88,11 @@ def _load_project_config -> None {
 
         # Initialize plugin-registered dependency types
         _initialize_dependency_registry();
+
+        # Initialize plugin-registered project templates
+        _initialize_template_registry();
     } except Exception {
-        # Silently ignore if project module not available or config discovery fails
-        pass;
+    # Silently ignore if project module not available or config discovery fails
     }
 }
 
@@ -100,8 +102,17 @@ def _initialize_dependency_registry -> None {
         import from jaclang.project.dep_registry { initialize_dependency_registry }
         initialize_dependency_registry();
     } except Exception {
-        # Silently ignore if registry initialization fails
-        pass;
+    # Silently ignore if registry initialization fails
+    }
+}
+
+"""Initialize the template registry from plugin hooks."""
+def _initialize_template_registry -> None {
+    try {
+        import from jaclang.project.template_registry { initialize_template_registry }
+        initialize_template_registry();
+    } except Exception {
+    # Silently ignore if registry initialization fails
     }
 }
 
@@ -128,7 +139,6 @@ def _apply_env_profile(args_dict: dict) -> None {
             config.apply_profile(profile);
         }
     } except Exception {
-        # Silently ignore profile loading errors
-        pass;
+    # Silently ignore profile loading errors
     }
 }

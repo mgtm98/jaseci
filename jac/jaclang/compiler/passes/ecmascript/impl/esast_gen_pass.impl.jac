@@ -723,7 +723,7 @@ impl EsastGenPass.exit_func_call(<>node: uni.FuncCall) -> None {
         <>node.gen.es_ast = typeof_expr;
         return;
     }
-    if (self._is_in_client_scope() and isinstance(<>node.target, uni.Name)) {
+    if (<>node.in_client_context() and isinstance(<>node.target, uni.Name)) {
         target_sym = getattr(<>node.target, 'sym', None);
         if (target_sym and target_sym.defn) {
             defn_node = target_sym.defn[0];
@@ -912,7 +912,7 @@ impl EsastGenPass.exit_assignment(<>node: uni.Assignment) -> None {
                 value_expr
                 or self._get_ast_or_default(
                     <>node.value,
-                    default_factory=lambda  _src: Any: es.Identifier(name='undefined')
+                    default_factory=lambda _src: Any : es.Identifier(name='undefined')
                 )
             )
         );
@@ -957,7 +957,7 @@ impl EsastGenPass.exit_assignment(<>node: uni.Assignment) -> None {
             value_expr
             or self._get_ast_or_default(
                 <>node.value,
-                default_factory=lambda  _src: Any: es.Identifier(name='undefined')
+                default_factory=lambda _src: Any : es.Identifier(name='undefined')
             )
         )
     );
@@ -1128,7 +1128,7 @@ impl EsastGenPass.exit_unary_expr(<>node: uni.UnaryExpr) -> None {
     operand = cast(
         es.Expression,
         self._get_ast_or_default(
-            <>node.operand, default_factory=lambda  _src: Any: es.Literal(value=0)
+            <>node.operand, default_factory=lambda _src: Any : es.Literal(value=0)
         )
     );
     op_tok = Tok(<>node.op.name) if (<>node.op.name in Tok.__members__) else None;
@@ -1152,7 +1152,7 @@ impl EsastGenPass.exit_compare_expr(<>node: uni.CompareExpr) -> None {
         es.Expression,
         self._get_ast_or_default(
             <>node.left,
-            default_factory=lambda  src: Any:
+            default_factory=lambda src: Any :
                 es.Identifier(name=src.sym_name)
                 if isinstance(src, uni.Name)
                 else es.Identifier(name='left')
@@ -1163,7 +1163,7 @@ impl EsastGenPass.exit_compare_expr(<>node: uni.CompareExpr) -> None {
             es.Expression,
             self._get_ast_or_default(
                 right_node,
-                default_factory=lambda  src: Any:
+                default_factory=lambda src: Any :
                     es.Identifier(name=src.sym_name)
                     if isinstance(src, uni.Name)
                     else es.Identifier(name='right')
@@ -1217,14 +1217,14 @@ impl EsastGenPass.exit_bool_expr(<>node: uni.BoolExpr) -> None {
     result: es.Expression = cast(
         es.Expression,
         self._get_ast_or_default(
-            <>node.values[0], default_factory=lambda  _src: Any: es.Literal(value=None)
+            <>node.values[0], default_factory=lambda _src: Any : es.Literal(value=None)
         )
     );
     for val in <>node.values[1:] {
         right = cast(
             es.Expression,
             self._get_ast_or_default(
-                val, default_factory=lambda  _src: Any: es.Literal(value=None)
+                val, default_factory=lambda _src: Any : es.Literal(value=None)
             )
         );
         result = self.sync_loc(
@@ -1241,7 +1241,7 @@ impl EsastGenPass.exit_binary_expr(<>node: uni.BinaryExpr) -> None {
         es.Expression,
         self._get_ast_or_default(
             <>node.left,
-            default_factory=lambda  src: Any:
+            default_factory=lambda src: Any :
                 es.Identifier(name=src.sym_name)
                 if isinstance(src, uni.Name)
                 else es.Literal(value=0)
@@ -1251,7 +1251,7 @@ impl EsastGenPass.exit_binary_expr(<>node: uni.BinaryExpr) -> None {
         es.Expression,
         self._get_ast_or_default(
             <>node.right,
-            default_factory=lambda  src: Any:
+            default_factory=lambda src: Any :
                 es.Identifier(name=src.sym_name)
                 if isinstance(src, uni.Name)
                 else es.Literal(value=0)
@@ -1299,7 +1299,7 @@ impl EsastGenPass.exit_switch_case(<>node: uni.SwitchCase) -> None {
     if (<>node.pattern and isinstance(<>node.pattern, uni.MatchValue)) {
         case_test = self._get_ast_or_default(
             <>node.pattern.value,
-            default_factory=lambda  _src: Any: es.Literal(value=None)
+            default_factory=lambda _src: Any : es.Literal(value=None)
         );
     }
     body_stmts = self._collect_stmt_body(<>node.body);
@@ -1311,7 +1311,7 @@ impl EsastGenPass.exit_switch_case(<>node: uni.SwitchCase) -> None {
 """Process switch statement."""
 impl EsastGenPass.exit_switch_stmt(<>node: uni.SwitchStmt) -> None {
     <>test = self._get_ast_or_default(
-        <>node.target, default_factory=lambda  _src: Any: es.Literal(value=None)
+        <>node.target, default_factory=lambda _src: Any : es.Literal(value=None)
     );
     cases: list[es.SwitchCase] = [];
     for stmt in <>node.cases {
@@ -1330,7 +1330,7 @@ impl EsastGenPass.exit_expr_stmt(<>node: uni.ExprStmt) -> None {
     expr = cast(
         es.Expression,
         self._get_ast_or_default(
-            <>node.expr, default_factory=lambda  _src: Any: es.Literal(value=None)
+            <>node.expr, default_factory=lambda _src: Any : es.Literal(value=None)
         )
     );
     expr_stmt = self.sync_loc(es.ExpressionStatement(expression=expr), jac_node=<>node);
@@ -1540,7 +1540,7 @@ impl EsastGenPass.exit_iter_for_stmt(<>node: uni.IterForStmt) -> None {
 """Process while statement."""
 impl EsastGenPass.exit_while_stmt(<>node: uni.WhileStmt) -> None {
     <>test = self._get_ast_or_default(
-        <>node.condition, default_factory=lambda  _src: Any: es.Literal(value=True)
+        <>node.condition, default_factory=lambda _src: Any : es.Literal(value=True)
     );
     body = self._build_block_statement(<>node, <>node.body);
     while_stmt = self.sync_loc(
@@ -1560,7 +1560,7 @@ impl EsastGenPass.exit_else_stmt(<>node: uni.ElseStmt) -> None {
 """Process else-if clause."""
 impl EsastGenPass.exit_else_if(<>node: uni.ElseIf) -> None {
     <>test = self._get_ast_or_default(
-        <>node.condition, default_factory=lambda  _src: Any: es.Literal(value=True)
+        <>node.condition, default_factory=lambda _src: Any : es.Literal(value=True)
     );
     consequent = self._build_block_statement(<>node, <>node.body);
     alternate: (es.Statement | None) = None;
@@ -1577,7 +1577,7 @@ impl EsastGenPass.exit_else_if(<>node: uni.ElseIf) -> None {
 """Process if statement."""
 impl EsastGenPass.exit_if_stmt(<>node: uni.IfStmt) -> None {
     <>test = self._get_ast_or_default(
-        <>node.condition, default_factory=lambda  _src: Any: es.Literal(value=True)
+        <>node.condition, default_factory=lambda _src: Any : es.Literal(value=True)
     );
     consequent = self._build_block_statement(<>node, <>node.body);
     alternate: (es.Statement | None) = None;
@@ -1634,6 +1634,20 @@ impl EsastGenPass._get_setter_name(var_name: str) -> str {
     return f"set{var_name[0].upper()}{var_name[1:]}";
 }
 
+"""Check if useState is already imported (either by user or auto-injection)."""
+impl EsastGenPass._has_usestate_import -> bool {
+    for import_decl in self.imports {
+        for spec in import_decl.specifiers {
+            if isinstance(spec, es.ImportSpecifier) {
+                if spec.local and spec.local.name == 'useState' {
+                    return True;
+                }
+            }
+        }
+    }
+    return False;
+}
+
 """Auto-inject useState import from @jac-client/utils when reactive has variables are used."""
 impl EsastGenPass._inject_usestate_import(<>node: uni.UniNode) -> None {
     # Create: import { useState } from "@jac-client/utils";
@@ -1657,14 +1671,13 @@ impl EsastGenPass._inject_usestate_import(<>node: uni.UniNode) -> None {
 
 """Process class field declarations - generates useState for client-side reactive state."""
 impl EsastGenPass.exit_arch_has(<>node: uni.ArchHas) -> None {
-    # Check if this is client-side reactive state (inside a cl {} block)
-    is_client = <>node.find_parent_of_type(uni.ClientBlock) is not None;
-    if not is_client {
+    # Check if this is client-side reactive state (works for both cl {} and .cl.jac)
+    if not <>node.in_client_context() {
         <>node.gen.es_ast = None;
         return;
     }
-    # Auto-inject useState import if not already done
-    if not self.has_injected_usestate {
+    # Auto-inject useState import if not already done and user hasn't imported it
+    if not self.has_injected_usestate and not self._has_usestate_import() {
         self._inject_usestate_import(<>node);
         self.has_injected_usestate = True;
     }
@@ -1864,15 +1877,10 @@ impl EsastGenPass.exit_ability(<>node: uni.Ability) -> None {
             <>node.gen.es_ast = func_decl;
         }
     }
-    if self.client_scope_stack {
-        self.client_scope_stack.pop();
-    }
 }
 
-"""Track entry into ability to manage client scope."""
+"""Ensure ImplDef body is properly parented for traversal."""
 impl EsastGenPass.enter_ability(<>node: uni.Ability) -> None {
-    is_client = getattr(<>node, 'is_client_decl', False);
-    self.client_scope_stack.append(is_client);
     if isinstance(<>node.body, uni.ImplDef) and (<>node.body not in <>node.kid) {
         <>node.body.parent = <>node;
         <>node.kid.append(<>node.body);
@@ -2497,7 +2505,7 @@ impl EsastGenPass._expr_from_node(
     <>node: (uni.UniNode | None), <>default: LiteralValue = None
 ) -> es.Expression {
     generated = self._get_ast_or_default(
-        <>node, default_factory=lambda  src: Any: es.Literal(value=<>default)
+        <>node, default_factory=lambda src: Any : es.Literal(value=<>default)
     );
     if isinstance(generated, es.Expression) {
         return generated;
@@ -2576,11 +2584,6 @@ impl EsastGenPass._strip_spawn_await(
         }
     }
     return (cur_node, cur_es);
-}
-
-"""Check if we're currently in a client-side function."""
-impl EsastGenPass._is_in_client_scope -> bool {
-    return <>any(self.client_scope_stack);
 }
 
 """Insert hoisted declarations, if any, ahead of the given statements."""
@@ -2716,7 +2719,6 @@ impl EsastGenPass.before_pass -> None {
     self.scope_stack: list[ScopeInfo] = [];
     self.scope_map: dict[(uni.UniScopeNode, ScopeInfo)] = {};
     self.client_manifest = ClientManifest();
-    self.client_scope_stack: list[bool] = [];
     self.jsx_processor = EsJsxProcessor(self);
     # Track reactive state variables: maps var_name -> setter_name (e.g., "count" -> "setCount")
     self.reactive_vars: dict[str, str] = {};

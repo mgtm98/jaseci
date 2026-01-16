@@ -28,6 +28,7 @@ jobs:
         pip install -e jac
         pip install pytest
         pip install pytest-xdist
+        pip install watchdog
 
     - name: Run Jac core tests
       run: pytest -x jac -n auto
@@ -58,7 +59,7 @@ jobs:
         echo "TEST_ENV=true" >> $GITHUB_ENV
 
     - name: Run package tests
-      run: pytest -x jac-client
+      run: pytest -x jac-client -n auto
 
   test-packages-and-docs:
     runs-on: ubuntu-latest

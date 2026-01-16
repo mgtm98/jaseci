@@ -23,7 +23,7 @@ import from jac_scale.jserver.jserver {
 import from jaclang.pycore.runtime { JacRuntime as Jac }
 import from jaclang.runtimelib.server { JacAPIServer as JServer }
 import from jaclang.runtimelib.server { JsonValue }
-import from jaclang.runtimelib.server { JsonValue }
+import from jaclang.runtimelib.transport { TransportResponse, Meta, MessageType }
 import from enum { StrEnum }
 import from fastapi_sso.sso.google { GoogleSSO }
 import from jac_scale.utils { generate_random_password }
@@ -47,21 +47,27 @@ class Operations(StrEnum) {
 }
 
 class JacAPIServer(JServer) {
+    # HMR (Hot Module Replacement) support fields
+    has _hmr_pending: bool = False,
+        _hot_reloader: Any | None = None;
+
     static def create_jwt_token(username: str) -> str;
     static def validate_jwt_token(token: str) -> (str | None);
     static def refresh_jwt_token(token: str) -> (str | None);
     def init(
-        self: JacAPIServer,
-        module_name: str,
-        session_path: str,
-        port: int = 8000,
-        base_path: (str | None) = None
+        self: JacAPIServer, module_name: str, port: int = 8000, base_path: str = ""
     ) -> None;
 
-    def login(self: JacAPIServer, username: str, password: str) -> JSONResponse;
+    def login(self: JacAPIServer, username: str, password: str) -> TransportResponse;
     def register_login_endpoint(self: JacAPIServer) -> None;
-    def create_user(self: JacAPIServer, username: str, password: str) -> JSONResponse;
-    def refresh_token(self: JacAPIServer, token: (str | None) = None) -> JSONResponse;
+    def create_user(
+        self: JacAPIServer, username: str, password: str
+    ) -> TransportResponse;
+
+    def refresh_token(
+        self: JacAPIServer, token: (str | None) = None
+    ) -> TransportResponse;
+
     def register_create_user_endpoint(self: JacAPIServer) -> None;
     def register_refresh_token_endpoint(self: JacAPIServer) -> None;
     def get_sso(
@@ -70,16 +76,16 @@ class JacAPIServer(JServer) {
 
     async def sso_initiate(
         self: JacAPIServer, platform: str, operation: str
-    ) -> Response;
+    ) -> (Response | TransportResponse);
 
     async def sso_callback(
         self: JacAPIServer, request: Request, platform: str, operation: str
-    ) -> JSONResponse;
+    ) -> TransportResponse;
 
     def register_sso_endpoints(self: JacAPIServer) -> None;
     def create_walker_callback(
         self: JacAPIServer, walker_name: str, has_node_param: bool = False
-    ) -> Callable[..., dict[(str, JsonValue)]];
+    ) -> Callable[..., TransportResponse];
 
     def create_walker_parameters(
         self: JacAPIServer, walker_name: str, invoke_on_root: bool
@@ -88,7 +94,7 @@ class JacAPIServer(JServer) {
     def register_walkers_endpoints(self: JacAPIServer) -> None;
     def create_function_callback(
         self: JacAPIServer, func_name: str
-    ) -> Callable[..., dict[(str, JsonValue)]];
+    ) -> Callable[..., TransportResponse];
 
     def create_function_parameters(
         self: JacAPIServer, func_name: str
@@ -108,5 +114,10 @@ class JacAPIServer(JServer) {
     def register_root_asset_endpoint(self: JacAPIServer) -> None;
     def serve_root_asset(self: JacAPIServer, file_path: str) -> Response;
     def _configure_openapi_security(self: JacAPIServer) -> None;
-    def start(self: JacAPIServer) -> None;
+    def start(self: JacAPIServer, watch: bool = False) -> None;
+    # HMR (Hot Module Replacement) dynamic routing methods
+    def enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None;
+    def register_dynamic_walker_endpoint(self: JacAPIServer) -> None;
+    def register_dynamic_function_endpoint(self: JacAPIServer) -> None;
+    def register_dynamic_introspection_endpoints(self: JacAPIServer) -> None;
 }

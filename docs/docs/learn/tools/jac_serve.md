@@ -17,18 +17,34 @@ When you run `jac start`, it:
 ## Usage
 
 ```bash
-# Basic usage
+# Basic usage (uses main.jac by default)
+# If main.jac doesn't exist, you'll get an error suggesting to specify a filename
+jac start
+
+# Start with specific file (if your entry point is not main.jac)
 jac start myprogram.jac
 
 # Specify a custom port
-jac start myprogram.jac --port 8080
+jac start --port 8080
 
 # Use a specific session file for persistence
-jac start myprogram.jac --session myapp.session
+jac start --session myapp.session
+
+# Start with Hot Module Replacement (development)
+jac start --watch
+
+# HMR mode without client bundling (API only)
+jac start --watch --no-client
 
 # Deploy to Kubernetes (requires jac-scale plugin)
-jac start myprogram.jac --scale
+jac start --scale
 ```
+
+> **Note**:
+>
+> - If your project uses a different entry file (e.g., `app.jac`, `server.jac`), you can specify it explicitly: `jac start app.jac`
+>
+ ```
 
 ## API Endpoints
 
@@ -428,6 +444,79 @@ base_route_app = "app"
 ```
 
 With this config, visiting `/` renders the `app` client function directly, making it the default landing page for your application.
+
+## Hot Module Replacement (HMR)
+
+For faster development, use `--watch` mode to enable Hot Module Replacement. Changes to `.jac` files are automatically detected and reloaded without restarting the server.
+
+### Setup
+
+HMR requires the `watchdog` package. New projects created with `jac create` include it in `[dev-dependencies]` by default:
+
+```toml
+[dev-dependencies]
+watchdog = ">=3.0.0"
+```
+
+Install dev dependencies:
+
+```bash
+jac install --dev
+```
+
+### Development Workflow
+
+```bash
+# Start with HMR enabled (uses main.jac by default)
+jac start --watch
+```
+
+This starts:
+
+- **Vite dev server** on port 8000 (open this in browser)
+- **API server** on port 8001 (proxied via Vite)
+- **File watcher** monitoring `*.jac` files for changes
+
+When you edit a `.jac` file:
+
+1. File watcher detects the change
+2. Backend code is recompiled automatically
+3. Frontend hot-reloads via Vite
+4. Browser updates without full page refresh
+
+### HMR Options
+
+| Option | Description |
+|--------|-------------|
+| `--watch, -w` | Enable HMR mode |
+| `--api-port PORT` | Custom API port (default: main port + 1) |
+| `--no-client` | API-only mode (skip Vite/frontend) |
+
+**Examples:**
+
+```bash
+# Full-stack HMR (frontend + backend, uses main.jac by default)
+jac start --watch
+
+# API-only HMR (no frontend bundling)
+jac start --watch --no-client
+
+# Custom ports
+jac start --watch -p 3000 --api-port 3001
+```
+
+### Troubleshooting
+
+If you see an error about watchdog not being installed:
+
+```
+Error: --watch requires 'watchdog' package to be installed.
+
+Install it by running:
+    jac install --dev
+```
+
+Make sure you have `watchdog` in your `[dev-dependencies]` section of `jac.toml` and run `jac install --dev`.
 
 ## Notes
 
