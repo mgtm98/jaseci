@@ -564,10 +564,11 @@ impl JacAPIServer.create_function_callback(
         }
         if stream_mode {
             def generate -> Any {
+                import json;
                 for chunk in self.execution_manager.execute_function_stream(
                     self.get_functions()[func_name], kwargs, (username or '__guest__')
                 ) {
-                    yield f"data: {chunk}\n\n";
+                    yield f"data: {json.dumps(chunk)}\n\n";
                 }
             }
             return StreamingResponse(
@@ -714,10 +715,11 @@ impl JacAPIServer.create_walker_callback(
         }
         if stream_mode {
             def generate -> Any {
+                import json;
                 for chunk in self.execution_manager.spawn_walker_stream(
                     self.get_walkers()[walker_name], kwargs, (username or '__guest__')
                 ) {
-                    yield f"data: {chunk}\n\n";
+                    yield f"data: {json.dumps(chunk)}\n\n";
                 }
             }
             return StreamingResponse(
