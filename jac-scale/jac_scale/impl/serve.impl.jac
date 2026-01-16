@@ -537,10 +537,10 @@ impl JacAPIServer.create_function_parameters(
 
 impl JacAPIServer.create_function_callback(
     self: JacAPIServer, func_name: str
-) -> Callable[..., TransportResponse] {
+) -> Callable[..., TransportResponse | StreamingResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
-    def callback(**kwargs: JsonValue) -> dict[str, JsonValue] {
+    def callback( **kwargs: JsonValue)  -> (TransportResponse | StreamingResponse) {
         username: (str | None) = None;
         stream_mode = kwargs.pop('stream', False);
         if requires_auth {
@@ -562,8 +562,25 @@ impl JacAPIServer.create_function_callback(
                 );
             }
         }
-        print(f"Executing function '{func_name}' with params: {kwargs}");
-        return self.execution_manager.execute_function(
+        if stream_mode {
+            def generate() -> Any {
+                for chunk in self.execution_manager.execute_function_stream(
+                    self.get_functions()[func_name], kwargs, (username or '__guest__')
+                ) {
+                    yield f"{chunk}\n";
+                }
+            }
+            return StreamingResponse(
+                generate(),
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            );
+        }
+        result = self.execution_manager.execute_function(
             self.get_functions()[func_name], kwargs, (username or '__guest__')
         );
         if 'error' in result {
@@ -665,12 +682,12 @@ impl JacAPIServer.create_walker_parameters(
 
 impl JacAPIServer.create_walker_callback(
     self: JacAPIServer, walker_name: str, has_node_param: bool = False
-) -> Callable[..., TransportResponse] {
+) -> Callable[..., TransportResponse | StreamingResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
     def callback(
         node: (str | None) = None, **kwargs: JsonValue
-    ) -> dict[str, JsonValue] {
+    ) -> TransportResponse | StreamingResponse {
         username: (str | None) = None;
         stream_mode = kwargs.pop('stream', False);
         if requires_auth {
@@ -695,7 +712,25 @@ impl JacAPIServer.create_walker_callback(
         if node {
             kwargs['_jac_spawn_node'] = node;
         }
-        return self.execution_manager.spawn_walker(
+        if stream_mode {
+            def generate() -> Any {
+                for chunk in self.execution_manager.spawn_walker_stream(
+                    self.get_walkers()[walker_name], kwargs, (username or '__guest__')
+                ) {
+                    yield f"{chunk}\n";
+                }
+            }
+            return StreamingResponse(
+                generate(),
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no'
+                }
+            );
+        }
+        result = self.execution_manager.spawn_walker( 
             self.get_walkers()[walker_name], kwargs, (username or '__guest__')
         );
         if 'error' in result {
