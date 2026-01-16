@@ -540,7 +540,7 @@ impl JacAPIServer.create_function_callback(
 ) -> Callable[..., TransportResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
-    def callback( **kwargs: JsonValue)  -> dict[str, JsonValue] {
+    def callback(**kwargs: JsonValue) -> dict[str, JsonValue] {
         username: (str | None) = None;
         stream_mode = kwargs.pop('stream', False);
         if requires_auth {
