@@ -508,10 +508,18 @@ impl ModuleIntrospector.introspect_callable(
 ) -> dict[str, Any] {
     try {
         sig = inspect.signature(func);
-        type_hints = get_type_hints(func);
     } except Exception {
         return {'parameters': {}, 'return_type': 'Any'};
     }
+    
+    # Try to get type hints, but fallback to annotations if it fails
+    type_hints = {};
+    try {
+        type_hints = get_type_hints(func);
+    } except (NameError, AttributeError) {
+        type_hints = getattr(func, '__annotations__', {});
+    }
+    
     params = {
         name: {
             'type': getattr(
