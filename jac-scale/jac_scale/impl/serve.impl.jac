@@ -567,7 +567,7 @@ impl JacAPIServer.create_function_callback(
                 for chunk in self.execution_manager.execute_function_stream(
                     self.get_functions()[func_name], kwargs, (username or '__guest__')
                 ) {
-                    yield f"{chunk}\n";
+                    yield f"data: {chunk}\n\n";
                 }
             }
             return StreamingResponse(
@@ -575,7 +575,7 @@ impl JacAPIServer.create_function_callback(
                 media_type='text/event-stream',
                 headers={
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
+                    'Connection': 'close',
                     'X-Accel-Buffering': 'no'
                 }
             );
@@ -717,7 +717,7 @@ impl JacAPIServer.create_walker_callback(
                 for chunk in self.execution_manager.spawn_walker_stream(
                     self.get_walkers()[walker_name], kwargs, (username or '__guest__')
                 ) {
-                    yield f"{chunk}\n";
+                    yield f"data: {chunk}\n\n";
                 }
             }
             return StreamingResponse(
@@ -725,7 +725,7 @@ impl JacAPIServer.create_walker_callback(
                 media_type='text/event-stream',
                 headers={
                     'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
+                    'Connection': 'close',
                     'X-Accel-Buffering': 'no'
                 }
             );

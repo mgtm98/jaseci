@@ -1214,6 +1214,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
         def do_POST(self: JacRequestHandler) -> None {
             parsed_path = urlparse(self.path);
             path = parsed_path.path;
+            query_params = parse_qs(parsed_path.query);
+            stream_mode = query_params.get('stream', ['false'])[0].lower() == 'true';
+            
             try {
                 data = self._read_json();
             } except json.JSONDecodeError {
@@ -1254,10 +1257,16 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                         }
                     }
                 }
-                response = server.execution_handler.call_function(
-                    name, data.get('args', {}), username
-                );
-                self._send_response(response);
+                
+                # Handle streaming vs non-streaming
+                if stream_mode {
+                    self._stream_response('function', name, data.get('args', {}), username);
+                } else {
+                    response = server.execution_handler.call_function(
+                        name, data.get('args', {}), username
+                    );
+                    self._send_response(response);
+                }
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
@@ -1281,12 +1290,89 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                     }
                 }
                 fields = data | {'_jac_spawn_node': node_id};
-                response = server.execution_handler.spawn_walker(
-                    name, fields, username
-                );
-                self._send_response(response);
+                
+                # Handle streaming vs non-streaming
+                if stream_mode {
+                    self._stream_response('walker', name, fields, username);
+                } else {
+                    response = server.execution_handler.spawn_walker(
+                        name, fields, username
+                    );
+                    self._send_response(response);
+                }
             } else {
                 Jac.send_json(self, 404, {'error': 'Not found'});
+            }
+        }
+        
+        """Send a chunk as Server-Sent Event."""
+        def _send_sse_chunk(self: JacRequestHandler, chunk: Any) -> None {
+            event_data = f"data: {json.dumps(chunk)}\n\n";
+            self.wfile.write(event_data.encode('utf-8'));
+            self.wfile.flush();
+        }
+        
+        """Stream execution (function or walker) with SSE."""
+        def _stream_response(
+            self: JacRequestHandler, 
+            resource_type: str,
+            name: str, 
+            params: dict[(str, Any)], 
+            username: str
+        ) -> None {
+            # Send SSE headers
+            self.send_response(200);
+            self.send_header('Content-Type', 'text/event-stream');
+            self.send_header('Cache-Control', 'no-cache');
+            self.send_header('Connection', 'close');
+            self.send_header('X-Accel-Buffering', 'no');
+            ResponseBuilder._add_cors_headers(self);
+            ResponseBuilder._add_custom_headers(self);
+            self.end_headers();
+            
+            # Route to appropriate streaming method
+            try {
+                if resource_type == 'function' {
+                    functions = server.introspector.get_functions();
+                    if (name not in functions) {
+                        self._send_sse_chunk({'type': 'error', 'data': f"Function '{name}' not found"});
+                        return;
+                    }
+                    stream_generator = server.execution_manager.execute_function_stream(
+                        functions[name], params, username
+                    );
+                } elif resource_type == 'walker' {
+                    walkers = server.introspector.get_walkers();
+                    if (name not in walkers) {
+                        self._send_sse_chunk({'type': 'error', 'data': f"Walker '{name}' not found"});
+                        return;
+                    }
+                    stream_generator = server.execution_manager.spawn_walker_stream(
+                        walkers[name], params, username
+                    );
+                } else {
+                    self._send_sse_chunk({'type': 'error', 'data': f"Invalid resource type: {resource_type}"});
+                    return;
+                }
+                
+                # Stream chunks
+                for chunk in stream_generator {
+                    self._send_sse_chunk(chunk);
+                }
+            } except Exception as e {
+                import traceback;
+                self._send_sse_chunk({
+                    'type': 'error',
+                    'data': str(e),
+                    'traceback': traceback.format_exc()
+                });
+            } finally {
+                # Ensure connection is closed
+                try {
+                    self.wfile.flush();
+                } except Exception {
+                    pass;
+                }
             }
         }
 
