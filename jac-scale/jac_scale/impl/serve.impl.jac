@@ -507,16 +507,6 @@ impl JacAPIServer.create_function_parameters(
             )
         );
     }
-    parameters.append(
-        APIParameter(
-            name='stream',
-            data_type='bool',
-            required=False,
-            default=False,
-            description='Enable streaming responses for generator functions',
-            type=ParameterType.QUERY
-        )
-    );
     func_fields = self.introspector.introspect_callable(
         self.get_functions()[func_name]
     )['parameters'];
@@ -540,9 +530,9 @@ impl JacAPIServer.create_function_callback(
 ) -> Callable[..., TransportResponse | StreamingResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_function(func_name);
+    is_streaming = self.introspector.is_streaming_function(func_name);
     def callback(**kwargs: JsonValue) -> (TransportResponse | StreamingResponse) {
         username: (str | None) = None;
-        stream_mode = kwargs.pop('stream', False);
         if requires_auth {
             authorization = kwargs.pop('Authorization', None);
             token: (str | None) = None;
@@ -562,7 +552,7 @@ impl JacAPIServer.create_function_callback(
                 );
             }
         }
-        if stream_mode {
+        if is_streaming {
             def generate -> Any {
                 import json;
                 for chunk in self.execution_manager.execute_function_stream(
@@ -648,16 +638,6 @@ impl JacAPIServer.create_walker_parameters(
             )
         );
     }
-    parameters.append(
-        APIParameter(
-            name='stream',
-            data_type='bool',
-            required=False,
-            default=False,
-            description='Enable streaming responses for progressive walker reports',
-            type=ParameterType.QUERY
-        )
-    );
     walker_fields = self.introspector.introspect_walker(
         self.get_walkers()[walker_name]
     )['fields'];
@@ -686,11 +666,11 @@ impl JacAPIServer.create_walker_callback(
 ) -> Callable[..., TransportResponse | StreamingResponse] {
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
+    is_streaming = self.introspector.is_streaming_walker(walker_name);
     def callback(
         node: (str | None) = None, **kwargs: JsonValue
     ) -> TransportResponse | StreamingResponse {
         username: (str | None) = None;
-        stream_mode = kwargs.pop('stream', False);
         if requires_auth {
             authorization = kwargs.pop('Authorization', None);
             token: (str | None) = None;
@@ -713,7 +693,7 @@ impl JacAPIServer.create_walker_callback(
         if node {
             kwargs['_jac_spawn_node'] = node;
         }
-        if stream_mode {
+        if is_streaming {
             def generate -> Any {
                 import json;
                 for chunk in self.execution_manager.spawn_walker_stream(

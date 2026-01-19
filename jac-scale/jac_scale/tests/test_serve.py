@@ -1210,11 +1210,24 @@ class TestJacScaleServe:
 
     def test_function_streaming(self) -> None:
         """Test streaming function with SSE format."""
+         # Create user
+        create_response = requests.post(
+            f"{self.base_url}/user/register",
+            json={"username": "functionStreaming", "password": "password123"},
+            timeout=5,
+        )
+        create_data = cast(
+            dict[str, Any],
+            self._extract_transport_response_data(create_response.json()),
+        )
+        token = create_data["token"]
+        
         response = requests.post(
-            f"{self.base_url}/function/stream_numbers?stream=true",
+            f"{self.base_url}/function/stream_numbers",
             json={"count": 3},
             timeout=30,
             stream=True,
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         assert response.status_code == 200
@@ -1237,7 +1250,7 @@ class TestJacScaleServe:
     def test_walker_streaming(self) -> None:
         """Test streaming walker with SSE format."""
         response = requests.post(
-            f"{self.base_url}/walker/StreamReporter?stream=true",
+            f"{self.base_url}/walker/StreamReporter",
             json={"count": 3},
             timeout=30,
             stream=True,

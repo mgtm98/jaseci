@@ -757,6 +757,26 @@ impl ModuleIntrospector.is_auth_required_for_walker(walker_name: str) -> bool {
     return self._walker_access.get(walker_name, True);
 }
 
+"""Check if a walker is marked as streaming (uses report yield)."""
+impl ModuleIntrospector.is_streaming_walker(walker_name: str) -> bool {
+    walkers = self.get_walkers();
+    if walker_name in walkers {
+        walker_cls = walkers[walker_name];
+        return getattr(walker_cls, '__jac_streaming__', False);
+    }
+    return False;
+}
+
+"""Check if a function is a generator (streaming function)."""
+impl ModuleIntrospector.is_streaming_function(func_name: str) -> bool {
+    functions = self.get_functions();
+    if func_name in functions {
+        func = functions[func_name];
+        return inspect.isgeneratorfunction(func);
+    }
+    return False;
+}
+
 """Collect client-exposed global values."""
 impl ModuleIntrospector._collect_client_globals -> dict[str, Any] {
     if not self._module {
@@ -1462,7 +1482,6 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             parsed_path = urlparse(self.path);
             path = parsed_path.path;
             query_params = parse_qs(parsed_path.query);
-            stream_mode = query_params.get('stream', ['false'])[0].lower() == 'true';
 
             try {
                 data = self._read_json();
@@ -1486,12 +1505,13 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             }
             if path.startswith('/function/') {
                 name = path.split('/')[-1];
+                stream_mode = server.introspector.is_streaming_function(name); 
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
                     username = self._authenticate();
                     if not username {
                         Jac.send_json(self, 401, {'error': 'Unauthorized'});
-                        return;
+                        return;server.introspector.
                     }
                 } else {
                     username = self._authenticate();
@@ -1518,6 +1538,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
+                stream_mode = server.introspector.is_streaming_function(name); 
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {

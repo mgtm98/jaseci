@@ -99,3 +99,4 @@ on_entry = JacRuntimeInterface.on_entry
 on_exit = JacRuntimeInterface.on_exit
 thread_run = JacRuntimeInterface.thread_run
 thread_wait = JacRuntimeInterface.thread_wait
+streaming = JacRuntimeInterface.streaming

@@ -1657,6 +1657,12 @@ class JacBasics:
         setattr(func, "__jac_exit", None)  # noqa:B010
         return func
 
+    @staticmethod
+    def streaming(cls: type[WalkerArchetype]) -> type[WalkerArchetype]:
+        """Mark a walker class as streaming (uses report yield)."""
+        setattr(cls, "__jac_streaming__", True)  # noqa:B010
+        return cls
+
 
 class JacClientBundle:
     """Jac Client Bundle Operations - Generic interface for client bundling."""

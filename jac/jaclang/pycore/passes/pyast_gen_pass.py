@@ -243,6 +243,35 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
             jac_node=jac_node,
         )
 
+    def _has_report_yield(self, node: uni.Archetype) -> bool:
+        """Check if an archetype (walker) contains report yield statements."""
+
+        def _check_node(n: uni.UniNode) -> bool:
+            """Recursively check a node for report yield."""
+            # Check if this is a report statement with yield
+            if isinstance(n, uni.ReportStmt) and isinstance(n.expr, uni.YieldExpr):
+                return True
+
+            # Recursively check children
+            for kid in n.kid:
+                if kid and _check_node(kid):
+                    return True
+            return False
+
+        # Get the body of the walker
+        body_nodes: list[uni.UniNode] = []
+        if isinstance(node.body, uni.ImplDef) and isinstance(node.body.body, list):
+            body_nodes = node.body.body  # type: ignore
+        elif isinstance(node.body, list):
+            body_nodes = node.body
+
+        # Check all statements in the body
+        for stmt in body_nodes:
+            if _check_node(stmt):
+                return True
+
+        return False
+
     def _get_sem_decorator(self, node: uni.UniNode) -> ast3.Call | None:
         """Create a semstring decorator for the given semantic strings.
 
@@ -886,6 +915,12 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
             if node.decorators
             else []
         )
+
+        # Auto-add @streaming decorator for walkers that use 'report yield'
+        if node.arch_type.name == Tok.KW_WALKER and self._has_report_yield(node):
+            decorators.append(
+                self.jaclib_obj("streaming")
+            )
 
         if sem_decorator := self._get_sem_decorator(node):
             decorators.append(sem_decorator)
