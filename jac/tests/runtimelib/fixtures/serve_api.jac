@@ -65,14 +65,14 @@ walker CompleteTask {
 }
 
 # Define a walker for streaming reports
-walker StreamReporter {
+walker : pub StreamReporter {
     has count: int = 3;
 
     can report_items with `root entry {
         import time;
         for i in range(self.count) {
             time.sleep(0.5);
-            report f"Report {i}";
+            report yield f"Report {i}";
         }
     }
 }
@@ -88,9 +88,9 @@ def greet(name: str = "World") -> str {
 }
 
 """Function to stream numbers for testing."""
-def stream_numbers(count: int) -> Generator {
+def stream_numbers() -> Generator {
     import time;
-    for i in range(count) {
+    for i in range(3) {
         time.sleep(0.5);
         yield i;
     }

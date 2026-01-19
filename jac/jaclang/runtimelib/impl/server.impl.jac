@@ -1505,13 +1505,13 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             }
             if path.startswith('/function/') {
                 name = path.split('/')[-1];
-                stream_mode = server.introspector.is_streaming_function(name); 
+                stream_mode = server.introspector.is_streaming_function(name);
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
                     username = self._authenticate();
                     if not username {
                         Jac.send_json(self, 401, {'error': 'Unauthorized'});
-                        return;server.introspector.
+                        return;
                     }
                 } else {
                     username = self._authenticate();
@@ -1538,7 +1538,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
-                stream_mode = server.introspector.is_streaming_function(name); 
+                stream_mode = server.introspector.is_streaming_walker(name);
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {
@@ -1692,9 +1692,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 # Ensure connection is closed
                 try {
                     self.wfile.flush();
-                } except Exception {
-                    pass;
-                }
+                } except Exception { }
             }
         }
 
