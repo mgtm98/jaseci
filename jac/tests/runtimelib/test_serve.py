@@ -385,5 +385,3 @@ def test_start_with_nonexistent_file_error(tmp_path: Path) -> None:
         assert "not found" in output.lower()
     finally:
         os.chdir(original_cwd)
-
-

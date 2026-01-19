@@ -918,9 +918,7 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
 
         # Auto-add @streaming decorator for walkers that use 'report yield'
         if node.arch_type.name == Tok.KW_WALKER and self._has_report_yield(node):
-            decorators.append(
-                self.jaclib_obj("streaming")
-            )
+            decorators.append(self.jaclib_obj("streaming"))
 
         if sem_decorator := self._get_sem_decorator(node):
             decorators.append(sem_decorator)
