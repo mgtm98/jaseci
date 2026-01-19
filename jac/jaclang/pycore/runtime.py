@@ -1410,7 +1410,12 @@ class JacBasics:
     @staticmethod
     def log_report_yield(expr: Any, custom: bool = False) -> None:  # noqa: ANN401
         """Jac's async report stmt feature."""
-        pass
+        ctx = JacRuntimeInterface.get_context()
+        if custom:
+            ctx.custom = expr
+        else:
+            print(expr)
+            ctx.stream_reports.append(expr)
 
     @staticmethod
     def refs(

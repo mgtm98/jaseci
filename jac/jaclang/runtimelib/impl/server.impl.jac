@@ -352,8 +352,7 @@ impl ExecutionManager.spawn_walker_stream(
     target_node_id = fields.pop('_jac_spawn_node', None);
     ctx = Jac.get_context();
     ctx.set_entry_node(root_id);
-    original_reports = ctx.reports;
-    ctx.reports = streaming_list;
+    ctx.stream_reports = streaming_list;
     def run_walker -> None {
         nonlocal walker_error ;
         try {
@@ -421,7 +420,7 @@ impl ExecutionManager.spawn_walker_stream(
             };
         }
     } finally {
-        ctx.reports = original_reports;
+        ctx.stream_reports = [];
         walker_thread.join(timeout=1.0);
     }
 }

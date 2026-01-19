@@ -24,6 +24,7 @@ Fields:
 obj ExecutionContext {
     has mem: Memory | None = None,
         reports: list[Any] = [],
+        stream_reports: list[Any] = [],
         custom: Any = MISSING,
         system_root: NodeAnchor | None = None,
         user_root: NodeAnchor | None = None,
