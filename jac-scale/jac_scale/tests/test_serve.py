@@ -1264,6 +1264,7 @@ class TestJacScaleServe:
         report_items = [c for c in chunks if isinstance(c, str) and "Report" in c]
         assert len(report_items) == 3
 
+
 class TestJacScaleServeWatchMode:
     """Test jac-scale serve with --watch mode (dynamic routing).
 
