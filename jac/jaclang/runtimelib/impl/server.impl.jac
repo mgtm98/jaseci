@@ -1573,10 +1573,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
                     username = self._authenticate();
-                    if not username {
-                        Jac.send_json(self, 401, {'error': 'Unauthorized'});
-                        return;server.introspector.
-                    }
+                    if not username { Jac.send_json(
+                        self, 401, {'error': 'Unauthorized'}
+                    ); return;  }
                 } else {
                     username = self._authenticate();
                     if not username {
@@ -1602,7 +1601,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
-                stream_mode = server.introspector.is_streaming_function(name); 
+                stream_mode = server.introspector.is_streaming_function(name);
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {
