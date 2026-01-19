@@ -1210,7 +1210,7 @@ class TestJacScaleServe:
 
     def test_function_streaming(self) -> None:
         """Test streaming function with SSE format."""
-         # Create user
+        # Create user
         create_response = requests.post(
             f"{self.base_url}/user/register",
             json={"username": "functionStreaming", "password": "password123"},
@@ -1221,7 +1221,7 @@ class TestJacScaleServe:
             self._extract_transport_response_data(create_response.json()),
         )
         token = create_data["token"]
-        
+
         response = requests.post(
             f"{self.base_url}/function/stream_numbers",
             json={"count": 3},
