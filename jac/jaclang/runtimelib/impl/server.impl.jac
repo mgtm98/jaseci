@@ -1589,10 +1589,9 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
                     username = self._authenticate();
-                    if not username {
-                        Jac.send_json(self, 401, {'error': 'Unauthorized'});
-                        return;server.introspector.
-                    }
+                    if not username { Jac.send_json(
+                        self, 401, {'error': 'Unauthorized'}
+                    ); return;  }
                 } else {
                     username = self._authenticate();
                     if not username {
