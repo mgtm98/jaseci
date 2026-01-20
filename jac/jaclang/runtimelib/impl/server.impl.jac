@@ -384,6 +384,7 @@ impl ExecutionManager.spawn_walker_stream(
                     loop.run_until_complete(spawn_result);
                 } finally {
                     loop.close();
+                }
             }
             Jac.commit();
         } except Exception as e {
