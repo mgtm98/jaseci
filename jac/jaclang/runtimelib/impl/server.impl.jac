@@ -347,7 +347,7 @@ impl ExecutionManager.spawn_walker_stream(
     import queue;
     import threading;
     import asyncio;
-    
+
     report_queue = queue.Queue();
     walker_done = threading.Event();
     walker_error: (Exception | None) = None;
@@ -1618,7 +1618,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
-                stream_mode = server.introspector.is_streaming_walker(name); 
+                stream_mode = server.introspector.is_streaming_walker(name);
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {
