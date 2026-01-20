@@ -111,8 +111,7 @@ class TestJacScaleServe:
                 # Process has terminated, get output
                 stdout, _ = cls.server_process.communicate()
                 raise RuntimeError(
-                    f"Server process terminated unexpectedly.\n"
-                    f"OUTPUT: {stdout}"
+                    f"Server process terminated unexpectedly.\nOUTPUT: {stdout}"
                 )
 
             try:
@@ -120,24 +119,28 @@ class TestJacScaleServe:
                 req = urllib.request.Request(f"{cls.base_url}/")
                 with urllib.request.urlopen(req, timeout=1) as response:
                     if response.status in (200, 404):  # Server is responding
-                        print(f"\n[SUCCESS] Server started successfully on port {cls.port}")
+                        print(
+                            f"\n[SUCCESS] Server started successfully on port {cls.port}"
+                        )
                         server_ready = True
                         break
             except (urllib.error.URLError, OSError, urllib.error.HTTPError) as e:
                 if attempt % 10 == 0:  # Print progress every 10 attempts
-                    print(f"[WAIT] Attempt {attempt + 1}/{max_attempts} - {type(e).__name__}: {e}")
+                    print(
+                        f"[WAIT] Attempt {attempt + 1}/{max_attempts} - {type(e).__name__}: {e}"
+                    )
                 time.sleep(0.3)  # Check more frequently
 
         # If we get here and server is not ready, it failed to start
         if not server_ready:
             # Check if process is still running
             is_running = cls.server_process.poll() is None
-            
+
             # Try to get any output that might be buffered
             output = ""
             if is_running:
                 cls.server_process.terminate()
-            
+
             try:
                 stdout, _ = cls.server_process.communicate(timeout=2)
                 output = stdout if stdout else "(no output captured)"
