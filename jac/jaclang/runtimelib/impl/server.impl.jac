@@ -347,7 +347,6 @@ impl ExecutionManager.spawn_walker_stream(
     import queue;
     import threading;
     import asyncio;
-
     report_queue = queue.Queue();
     walker_done = threading.Event();
     walker_error: (Exception | None) = None;
@@ -1590,9 +1589,10 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_function(name) {
                     username = self._authenticate();
-                    if not username { Jac.send_json(
-                        self, 401, {'error': 'Unauthorized'}
-                    ); return;  }
+                    if not username {
+                        Jac.send_json(self, 401, {'error': 'Unauthorized'});
+                        return;
+                    }
                 } else {
                     username = self._authenticate();
                     if not username {
