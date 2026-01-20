@@ -36,7 +36,7 @@ class TestJacScaleServe:
     def setup_class(cls) -> None:
         """Set up test class - runs once for all tests."""
         cls.fixtures_dir = Path(__file__).parent / "fixtures"
-        cls.test_file = cls.fixtures_dir / "serve_api.jac"
+        cls.test_file = cls.fixtures_dir / "test_streaming.jac"
 
         # Ensure fixture file exists
         if not cls.test_file.exists():
@@ -88,54 +88,72 @@ class TestJacScaleServe:
             str(cls.test_file),
             "--port",
             str(cls.port),
+            "--no_client",  # Skip client bundling (we don't need it for API-only tests)
         ]
 
-        # Start the server process
+        # Start the server process (don't capture output initially so we can debug)
+        print(f"\n[DEBUG] Starting server with command: {' '.join(cmd)}")
         cls.server_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
+            bufsize=1,  # Line buffered
         )
 
         # Wait for server to be ready
-        max_attempts = 50
+        max_attempts = 100  # Increase attempts
         server_ready = False
 
-        for _ in range(max_attempts):
+        for attempt in range(max_attempts):
             # Check if process has died
             if cls.server_process.poll() is not None:
                 # Process has terminated, get output
-                stdout, stderr = cls.server_process.communicate()
+                stdout, _ = cls.server_process.communicate()
                 raise RuntimeError(
                     f"Server process terminated unexpectedly.\n"
-                    f"STDOUT: {stdout}\nSTDERR: {stderr}"
+                    f"OUTPUT: {stdout}"
                 )
 
             try:
-                # Try to connect to any endpoint to verify server is up
-                req = urllib.request.Request(f"{cls.base_url}/docs")
-                with urllib.request.urlopen(req, timeout=2) as response:
+                # Try to connect to root endpoint to verify server is up
+                req = urllib.request.Request(f"{cls.base_url}/")
+                with urllib.request.urlopen(req, timeout=1) as response:
                     if response.status in (200, 404):  # Server is responding
-                        print(f"Server started successfully on port {cls.port}")
+                        print(f"\n[SUCCESS] Server started successfully on port {cls.port}")
                         server_ready = True
                         break
-            except (urllib.error.URLError, OSError):
-                time.sleep(2)
+            except (urllib.error.URLError, OSError, urllib.error.HTTPError) as e:
+                if attempt % 10 == 0:  # Print progress every 10 attempts
+                    print(f"[WAIT] Attempt {attempt + 1}/{max_attempts} - {type(e).__name__}: {e}")
+                time.sleep(0.3)  # Check more frequently
 
         # If we get here and server is not ready, it failed to start
         if not server_ready:
-            # Try to terminate the process
-            cls.server_process.terminate()
+            # Check if process is still running
+            is_running = cls.server_process.poll() is None
+            
+            # Try to get any output that might be buffered
+            output = ""
+            if is_running:
+                cls.server_process.terminate()
+            
             try:
-                stdout, stderr = cls.server_process.communicate(timeout=2)
+                stdout, _ = cls.server_process.communicate(timeout=2)
+                output = stdout if stdout else "(no output captured)"
             except subprocess.TimeoutExpired:
                 cls.server_process.kill()
-                stdout, stderr = cls.server_process.communicate()
+                stdout, _ = cls.server_process.communicate()
+                output = stdout if stdout else "(no output captured)"
 
             raise RuntimeError(
                 f"Server failed to start after {max_attempts} attempts.\n"
-                f"STDOUT: {stdout}\nSTDERR: {stderr}"
+                f"Process was {'still running' if is_running else 'terminated'}.\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Port: {cls.port}\n"
+                f"OUTPUT: {output}\n"
+                f"\nTry running the command manually to see full output:\n"
+                f"  {' '.join(cmd)}"
             )
 
     @classmethod
