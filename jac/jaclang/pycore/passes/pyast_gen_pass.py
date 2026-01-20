@@ -253,10 +253,7 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                 return True
 
             # Recursively check children
-            for kid in n.kid:
-                if kid and _check_node(kid):
-                    return True
-            return False
+            return any(kid and _check_node(kid) for kid in n.kid)
 
         # Get the body of the walker
         body_nodes: list[uni.UniNode] = []
@@ -266,11 +263,7 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
             body_nodes = node.body
 
         # Check all statements in the body
-        for stmt in body_nodes:
-            if _check_node(stmt):
-                return True
-
-        return False
+        return any(_check_node(stmt) for stmt in body_nodes)
 
     def _get_sem_decorator(self, node: uni.UniNode) -> ast3.Call | None:
         """Create a semstring decorator for the given semantic strings.
@@ -2007,7 +2000,11 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
 
     def exit_report_stmt(self, node: uni.ReportStmt) -> None:
         if isinstance(node.expr, uni.YieldExpr):
-            actual_expr = node.expr.expr.gen.py_ast[0] if node.expr.expr else None
+            actual_expr = (
+                cast(ast3.expr, node.expr.expr.gen.py_ast[0])
+                if node.expr.expr
+                else None
+            )
             node.gen.py_ast = [
                 self.sync(
                     ast3.Expr(
@@ -2027,12 +2024,10 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                 self.sync(
                     ast3.Expr(
                         value=self.sync(
-                            self.sync(
-                                ast3.Call(
-                                    func=self.jaclib_obj("log_report"),
-                                    args=cast(list[ast3.expr], node.expr.gen.py_ast),
-                                    keywords=[],
-                                )
+                            ast3.Call(
+                                func=self.jaclib_obj("log_report"),
+                                args=cast(list[ast3.expr], node.expr.gen.py_ast),
+                                keywords=[],
                             )
                         )
                     )
