@@ -65,17 +65,23 @@ impl JacAPIServer.start(self: JacAPIServer, watch: bool = False) -> None {
         if client_exports {
             import time;
             import sys;
-            print("Building client bundle...", flush=True);
+            import from jaclang.cli.console { console }
             start_time = time.time();
             try {
-                self.introspector.ensure_bundle();
+                with console.status(
+                    "[cyan]Building client bundle...[/cyan]", spinner="dots"
+                ) as status {
+                    self.introspector.ensure_bundle();
+                }
                 elapsed = time.time() - start_time;
-                print(f"Client bundle ready ({elapsed:.1f}s).");
+                console.print(
+                    f"  ✔ Client bundle ready ({elapsed:.1f}s)", style="success"
+                );
             } except Exception as e {
-                print(f"\n[ERROR] Failed to build client bundle:", file=sys.stderr);
-                print(f"{e}", file=sys.stderr);
-                print(
-                    f"\nClient pages will not be available until this is fixed.\n",
+                console.warning(f"Failed to build client bundle: {e}");
+                console.print(
+                    "\n  Client pages will not be available until this is fixed.\n",
+                    style="muted",
                     file=sys.stderr
                 );
             }
@@ -667,7 +673,7 @@ impl JacAPIServer.create_walker_callback(
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
     requires_auth = self.introspector.is_auth_required_for_walker(walker_name);
     is_streaming = self.introspector.is_streaming_walker(walker_name);
-    def callback(
+    async def callback(
         node: (str | None) = None, **kwargs: JsonValue
     ) -> TransportResponse | StreamingResponse {
         username: (str | None) = None;
@@ -712,7 +718,7 @@ impl JacAPIServer.create_walker_callback(
                 }
             );
         }
-        result = self.execution_manager.spawn_walker(
+        result = await self.execution_manager.spawn_walker(
             self.get_walkers()[walker_name], kwargs, (username or '__guest__')
         );
         if 'error' in result {
@@ -1226,11 +1232,11 @@ impl JacAPIServer.enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None {
     # Callback when file changes - sets pending flag
     def on_change(event: Any) -> None {
         self._hmr_pending = True;
-        print(f"[HMR] Change detected: {event.path}", flush=True);
+        logger.debug(f"Change detected: {event.path}");
     }
     # Register callback with the watcher
     hot_reloader.watcher.add_callback(on_change);
-    print("[HMR] Dynamic routing enabled for jac-scale", flush=True);
+    logger.debug("Dynamic routing enabled for jac-scale");
 }
 
 """Register a single dynamic endpoint for all walkers.
@@ -1302,7 +1308,7 @@ impl JacAPIServer.register_dynamic_walker_endpoint(self: JacAPIServer) -> None {
             kwargs['_jac_spawn_node'] = node;
         }
 
-        result = self.execution_manager.spawn_walker(
+        result = await self.execution_manager.spawn_walker(
             walkers[walker_name], kwargs, (username or '__guest__')
         );
         if 'error' in result {

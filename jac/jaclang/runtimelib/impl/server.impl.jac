@@ -302,6 +302,7 @@ impl ExecutionManager.spawn_walker(
     walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
 ) -> dict[str, JsonValue] {
     import from jaclang.pycore.constructs { NodeArchetype }
+    import from inspect { iscoroutine }
     root_id = self.user_manager.get_root_id(username);
     if not root_id {
         return {'error': 'User not found'};
@@ -321,7 +322,11 @@ impl ExecutionManager.spawn_walker(
         } else {
             target_node = ctx.get_root();
         }
-        Jac.spawn(<>walker, target_node);
+        spawn_result = Jac.spawn(<>walker, target_node);
+        # Handle async walkers - await the coroutine if spawn returns one
+        if iscoroutine(spawn_result) {
+            await spawn_result;
+        }
         Jac.commit();  # Persist changes
         return {
             'result': JacSerializer.serialize(<>walker),
@@ -338,8 +343,11 @@ impl ExecutionManager.spawn_walker_stream(
     walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
 ) -> Any {
     import from jaclang.pycore.constructs { NodeArchetype }
+    import from inspect { iscoroutine }
     import queue;
     import threading;
+    import asyncio;
+    
     report_queue = queue.Queue();
     walker_done = threading.Event();
     walker_error: (Exception | None) = None;
@@ -368,7 +376,15 @@ impl ExecutionManager.spawn_walker_stream(
             } else {
                 target_node = ctx.get_root();
             }
-            Jac.spawn(<>walker, target_node);
+            spawn_result = Jac.spawn(<>walker, target_node);
+            if iscoroutine(spawn_result) {
+                loop = asyncio.new_event_loop();
+                asyncio.set_event_loop(loop);
+                try {
+                    loop.run_until_complete(spawn_result);
+                } finally {
+                    loop.close();
+            }
             Jac.commit();
         } except Exception as e {
             walker_error = e;
@@ -1182,7 +1198,7 @@ impl ExecutionHandler.spawn_walker(
             meta=Meta(extra={'http_status': 404})
         );
     }
-    result = self.execution_manager.spawn_walker(walkers[name], fields, username);
+    result = await self.execution_manager.spawn_walker(walkers[name], fields, username);
     return TransportResponse.success(
         data=result, meta=Meta(extra={'http_status': 200})
     );
@@ -1602,7 +1618,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
             } elif path.startswith('/walker/') {
                 name_parts = path.split('/');
                 name = name_parts[-2] if (len(name_parts) > 3) else name_parts[-1];
-                stream_mode = server.introspector.is_streaming_function(name); 
+                stream_mode = server.introspector.is_streaming_walker(name); 
                 node_id = name_parts[-1] if (len(name_parts) > 3) else '';
                 server.introspector.load();
                 if server.introspector.is_auth_required_for_walker(name) {
@@ -1624,11 +1640,12 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 }
                 fields = data | {'_jac_spawn_node': node_id};
                 # Handle streaming vs non-streaming
+                import asyncio;
                 if stream_mode {
                     self._stream_response('walker', name, fields, username);
                 } else {
-                    response = server.execution_handler.spawn_walker(
-                        name, fields, username
+                    response = asyncio.run(
+                        server.execution_handler.spawn_walker(name, fields, username)
                     );
                     self._send_response(response);
                 }
@@ -1827,18 +1844,23 @@ impl JacAPIServer.start(watch: bool = False) -> None {
         client_exports = self.introspector._client_manifest.get('exports', []);
         if client_exports {
             import time;
-            print("Building client bundle...", flush=True);
+            import from jaclang.cli.console { console }
             start_time = time.time();
             try {
-                self.introspector.ensure_bundle();
+                with console.status(
+                    "[cyan]Building client bundle...[/cyan]", spinner="dots"
+                ) as status {
+                    self.introspector.ensure_bundle();
+                }
                 elapsed = time.time() - start_time;
-                print(f"Client bundle ready ({elapsed:.1f}s).");
+                console.print(
+                    f"  ✔ Client bundle ready ({elapsed:.1f}s)", style="success"
+                );
             } except Exception as e {
                 import sys;
                 import traceback;
-                print(f"\n[ERROR] Failed to build client bundle:", file=sys.stderr);
-                print(f"{e}", file=sys.stderr);
-                print("\nFull traceback:", file=sys.stderr);
+                console.warning(f"Failed to build client bundle: {e}");
+                console.print("\n  Full traceback:", style="muted", file=sys.stderr);
                 traceback.print_exc(file=sys.stderr);
                 print(
                     f"\nClient pages will not be available until this is fixed.\n",

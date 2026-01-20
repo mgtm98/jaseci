@@ -91,7 +91,7 @@ obj ExecutionManager {
         func: Callable[(..., Any)], args: dict[(str, Any)], username: str
     ) -> dict[str, JsonValue];
 
-    def spawn_walker(
+    async def spawn_walker(
         walker_cls: type[WalkerArchetype], fields: dict[(str, Any)], username: str
     ) -> dict[str, JsonValue];
 
@@ -209,7 +209,7 @@ obj ExecutionHandler {
         name: str, args: dict[(str, Any)], username: str
     ) -> TransportResponse;
 
-    def spawn_walker(
+    async def spawn_walker(
         name: str, fields: dict[(str, Any)], username: str
     ) -> TransportResponse;
 }
