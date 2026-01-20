@@ -3,13 +3,14 @@
 import contextlib
 import gc
 import glob
+import json
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, cast
-
-import requests
 
 
 def get_free_port() -> int:
@@ -113,13 +114,13 @@ class TestJacScaleServe:
 
             try:
                 # Try to connect to any endpoint to verify server is up
-                # Use /docs which should exist in FastAPI
-                response = requests.get(f"{cls.base_url}/docs", timeout=2)
-                if response.status_code in (200, 404):  # Server is responding
-                    print(f"Server started successfully on port {cls.port}")
-                    server_ready = True
-                    break
-            except (requests.ConnectionError, requests.Timeout):
+                req = urllib.request.Request(f"{cls.base_url}/docs")
+                with urllib.request.urlopen(req, timeout=2) as response:
+                    if response.status in (200, 404):  # Server is responding
+                        print(f"Server started successfully on port {cls.port}")
+                        server_ready = True
+                        break
+            except (urllib.error.URLError, OSError):
                 time.sleep(2)
 
         # If we get here and server is not ready, it failed to start
@@ -227,94 +228,115 @@ class TestJacScaleServe:
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        response = None
+        json_data = json.dumps(data).encode("utf-8") if data else None
+
+        response_data = None
         for attempt in range(max_retries):
-            response = requests.request(
-                method=method,
-                url=url,
-                json=data,
-                headers=headers,
-                timeout=timeout,
-            )
-
-            if response.status_code == 503:
-                print(
-                    f"[DEBUG] {path} returned 503, retrying ({attempt + 1}/{max_retries})..."
+            try:
+                req = urllib.request.Request(
+                    url, data=json_data, headers=headers, method=method
                 )
-                time.sleep(retry_interval)
-                continue
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    response_body = response.read().decode("utf-8")
+                    response_data = json.loads(response_body)
+                    break
+            except urllib.error.HTTPError as e:
+                if e.code == 503:
+                    print(
+                        f"[DEBUG] {path} returned 503, retrying ({attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(retry_interval)
+                    continue
+                # For other HTTP errors, read the response body
+                response_body = e.read().decode("utf-8")
+                response_data = json.loads(response_body)
+                break
+            except urllib.error.URLError:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_interval)
+                    continue
+                raise
 
-            break
-
-        assert response is not None, "No response received"
-        json_response: Any = response.json()
-        return self._extract_transport_response_data(json_response)  # type: ignore[return-value]
+        assert response_data is not None, "No response received"
+        return self._extract_transport_response_data(response_data)  # type: ignore[return-value]
 
     def test_function_streaming(self) -> None:
         """Test streaming function with SSE format."""
         # Create user
-        create_response = requests.post(
+        user_data = json.dumps(
+            {"username": "functionStreaming", "password": "password123"}
+        ).encode("utf-8")
+        req = urllib.request.Request(
             f"{self.base_url}/user/register",
-            json={"username": "functionStreaming", "password": "password123"},
-            timeout=5,
+            data=user_data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        create_data = cast(
-            dict[str, Any],
-            self._extract_transport_response_data(create_response.json()),
-        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            create_data = cast(
+                dict[str, Any],
+                self._extract_transport_response_data(
+                    json.loads(response.read().decode("utf-8"))
+                ),
+            )
         token = create_data["token"]
 
-        response = requests.post(
+        # Test streaming function
+        func_data = json.dumps({"count": 3}).encode("utf-8")
+        req = urllib.request.Request(
             f"{self.base_url}/function/stream_numbers",
-            json={"count": 3},
-            timeout=30,
-            stream=True,
-            headers={"Authorization": f"Bearer {token}"},
+            data=func_data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+            method="POST",
         )
 
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "text/event-stream"
-        assert response.headers.get("cache-control") == "no-cache"
-        assert response.headers.get("connection") == "close"
+        with urllib.request.urlopen(req, timeout=30) as response:
+            assert response.status == 200
+            assert response.headers.get("content-type") == "text/event-stream"
+            assert response.headers.get("cache-control") == "no-cache"
+            assert response.headers.get("connection") == "close"
 
-        # Parse SSE stream
-        chunks = []
-        for line in response.iter_lines(decode_unicode=True):
-            if line and line.startswith("data: "):
-                data_str = line[6:]  # Remove "data: " prefix
-                import json
+            # Parse SSE stream
+            chunks: list[Any] = []
+            for line in response:
+                line_str = line.decode("utf-8").strip()
+                if line_str and line_str.startswith("data: "):
+                    data_str = line_str[6:]  # Remove "data: " prefix
+                    chunks.append(json.loads(data_str))
 
-                chunks.append(json.loads(data_str))
-
-        # Should have 3 numbers + 1 completion event
-        assert len(chunks) >= 3
+            # Should have 3 numbers
+            assert len(chunks) >= 3
 
     def test_walker_streaming(self) -> None:
         """Test streaming walker with SSE format."""
-        response = requests.post(
+        walker_data = json.dumps({"count": 3}).encode("utf-8")
+        req = urllib.request.Request(
             f"{self.base_url}/walker/StreamReporter",
-            json={"count": 3},
-            timeout=30,
-            stream=True,
+            data=walker_data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
 
-        assert response.status_code == 200
-        assert response.headers["content-type"] == "text/event-stream"
-        assert response.headers.get("cache-control") == "no-cache"
-        assert response.headers.get("connection") == "close"
+        with urllib.request.urlopen(req, timeout=30) as response:
+            assert response.status == 200
+            assert response.headers.get("content-type") == "text/event-stream"
+            assert response.headers.get("cache-control") == "no-cache"
+            assert response.headers.get("connection") == "close"
 
-        # Parse SSE stream
-        chunks = []
-        for line in response.iter_lines(decode_unicode=True):
-            if line and line.startswith("data: "):
-                data_str = line[6:]
-                import json
+            # Parse SSE stream
+            chunks: list[Any] = []
+            for line in response:
+                line_str = line.decode("utf-8").strip()
+                if line_str and line_str.startswith("data: "):
+                    data_str = line_str[6:]
+                    chunks.append(json.loads(data_str))
 
-                chunks.append(json.loads(data_str))
+            # Should have 3 reports
+            assert len(chunks) >= 3
 
-        # Should have 3 reports + 1 completion event
-        assert len(chunks) >= 3
-
-        # Check for reports
-        report_items = [c for c in chunks if isinstance(c, str) and "Report" in c]
-        assert len(report_items) == 3
+            # Check for reports
+            report_items = [c for c in chunks if isinstance(c, str) and "Report" in c]
+            assert len(report_items) == 3
