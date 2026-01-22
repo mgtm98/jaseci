@@ -3,6 +3,7 @@ import mimetypes;
 import from collections.abc { Callable }
 import from datetime { UTC, datetime, timedelta }
 import from pathlib { Path }
+import from pydantic { BaseModel, Field }
 import from typing { Any }
 import jwt;
 import from os { getenv }
@@ -62,6 +63,23 @@ class JacAPIServer(JServer) {
 
     def login(self: JacAPIServer, username: str, password: str) -> TransportResponse;
     def register_login_endpoint(self: JacAPIServer) -> None;
+    def update_username(
+        self: JacAPIServer,
+        current_username: str,
+        new_username: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse;
+
+    def update_password(
+        self: JacAPIServer,
+        username: str,
+        current_password: str,
+        new_password: str,
+        Authorization: (str | None) = None
+    ) -> TransportResponse;
+
+    def register_update_username_endpoint(self: JacAPIServer) -> None;
+    def register_update_password_endpoint(self: JacAPIServer) -> None;
     def create_user(
         self: JacAPIServer, username: str, password: str
     ) -> TransportResponse;
@@ -116,10 +134,21 @@ class JacAPIServer(JServer) {
     def register_root_asset_endpoint(self: JacAPIServer) -> None;
     def serve_root_asset(self: JacAPIServer, file_path: str) -> Response;
     def _configure_openapi_security(self: JacAPIServer) -> None;
-    def start(self: JacAPIServer, watch: bool = False) -> None;
+    def start(self: JacAPIServer, dev: bool = False) -> None;
     # HMR (Hot Module Replacement) dynamic routing methods
     def enable_hmr(self: JacAPIServer, hot_reloader: Any) -> None;
     def register_dynamic_walker_endpoint(self: JacAPIServer) -> None;
     def register_dynamic_function_endpoint(self: JacAPIServer) -> None;
     def register_dynamic_introspection_endpoints(self: JacAPIServer) -> None;
+}
+
+class UpdateUsernameRequest(BaseModel) {
+    has current_username: str = Field(..., description='Current username'),
+        new_username: str = Field(..., description='New username');
+}
+
+class UpdatePasswordRequest(BaseModel) {
+    has username: str = Field(..., description='Username'),
+        current_password: str = Field(..., description='Current password'),
+        new_password: str = Field(..., description='New password');
 }

@@ -2,23 +2,25 @@
 
 This document provides a summary of new features, improvements, and bug fixes in each version of **Jac-Client**. For details on changes that might require updates to your existing code, please refer to the [Breaking Changes](../breaking_changes.md) page.
 
-## jac-client 0.2.9 (Unreleased)
+## jac-client 0.2.10 (Unreleased)
+
+## jac-client 0.2.9 (Latest Release)
 
 - **Generic Config File Generation from jac.toml**: Added support for generating JavaScript config files (e.g., `postcss.config.js`, `tailwind.config.js`) directly from `jac.toml` configuration. Define configs under `[plugins.client.configs.<name>]` and they are automatically converted to `<name>.config.js` files in `.jac/client/configs/`. This eliminates the need for standalone JavaScript config files in the project root for tools like PostCSS, Tailwind (v3), ESLint, and other npm packages that use the `*.config.js` convention.
 - **Error Handling with JacClientErrorBoundary**: Introduced  error boundary handling in Jac Client apps. The new `JacClientErrorBoundary` component allows you to wrap specific parts of your component tree to catch and display errors gracefully, without affecting the entire application.
 
-## jac-client 0.2.8 (Latest Release)
+## jac-client 0.2.8
 
-- **Vite Dev Server Integration for HMR**: Added support for Hot Module Replacement during development. When using `jac start --watch`, the Vite dev server runs alongside the Jac API server with automatic proxy configuration for `/walker`, `/function`, `/user`, and `/introspect` routes. This enables instant frontend updates without full page reloads while maintaining seamless backend communication.
+- **Vite Dev Server Integration for HMR**: Added support for Hot Module Replacement during development. When using `jac start --dev`, the Vite dev server runs alongside the Jac API server with automatic proxy configuration for `/walker`, `/function`, `/user`, and `/introspect` routes. This enables instant frontend updates without full page reloads while maintaining seamless backend communication.
 
 ## jac-client 0.2.7
 
-- **Reactive State Variables**: The `jac create --cl` template now uses the new `has` keyword for React state management. Instead of `[count, setCount] = useState(0);`, you can write `has count: int = 0;` and use direct assignment `count = count + 1;`. The compiler automatically generates the `useState` destructuring and transforms assignments to setter calls, providing cleaner and more intuitive state management syntax.
-- **Simplified Project Structure**: Reorganized the default project structure created by `jac create --cl`. The entry point is now `main.jac` at the project root instead of `src/app.jac`, and the `components/` directory is now at the project root instead of `src/components/`. This flatter structure reduces nesting and aligns with modern frontend project conventions. Existing projects using the `src/` structure continue to work but new projects use the simplified layout.
+- **Reactive State Variables**: The `jac create --use client` template now uses the new `has` keyword for React state management. Instead of `[count, setCount] = useState(0);`, you can write `has count: int = 0;` and use direct assignment `count = count + 1;`. The compiler automatically generates the `useState` destructuring and transforms assignments to setter calls, providing cleaner and more intuitive state management syntax.
+- **Simplified Project Structure**: Reorganized the default project structure created by `jac create --use client`. The entry point is now `main.jac` at the project root instead of `src/app.jac`, and the `components/` directory is now at the project root instead of `src/components/`. This flatter structure reduces nesting and aligns with modern frontend project conventions. Existing projects using the `src/` structure continue to work but new projects use the simplified layout.
 
 - **Configurable Client Route Prefix**: Changed the default URL path for client-side apps from `/page/<app>` to `/cl/<app>`. The route prefix is now configurable via `cl_route_prefix` in the `[serve]` section of `jac.toml`. This allows customizing the URL structure for client apps (e.g., `/pages/MyApp` instead of `/cl/MyApp`). [Documentation](https://docs.jaseci.org/learn/tools/jac_serve/#routing-configuration)
 
-- **Base Route App Configuration**: Added `base_route_app` option in `jac.toml` `[serve]` section to serve a client app directly at the root `/` path. When configured, visiting `/` renders the specified client app instead of the API info page, making it easy to create single-page applications with clean URLs. Projects created with `jac create --cl` now default to `base_route_app = "app"`, so the app is served at `/` out of the box. [Documentation](https://docs.jaseci.org/learn/tools/project_config/#serve-section)
+- **Base Route App Configuration**: Added `base_route_app` option in `jac.toml` `[serve]` section to serve a client app directly at the root `/` path. When configured, visiting `/` renders the specified client app instead of the API info page, making it easy to create single-page applications with clean URLs. Projects created with `jac create --use client` now default to `base_route_app = "app"`, so the app is served at `/` out of the box. [Documentation](https://docs.jaseci.org/learn/tools/project_config/#serve-section)
 
 ## jac-client 0.2.4
 
@@ -30,7 +32,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 - **Centralized Configuration Management**: Introduced a unified configuration system through `config.json` that serves as the single source of truth for all project settings. The system automatically creates `config.json` when you run `jac create_jac_app`, eliminating the need for manual setup. All build configurations (Vite plugins, build options, server settings) and package dependencies are managed through this centralized file. The system automatically generates `vite.config.js` and `package.json` in `.jac-client.configs/` directory, keeping the project root clean while preserving all essential defaults. [Documentation](https://docs.jaseci.org/jac-client/advance/configuration-overview/)
 
-- **Package Management Through config.json**: Implemented configuration-first package management where all npm dependencies are managed through `config.json` instead of `package.json`. Use `jac add --cl <package>` to add packages and `jac remove --cl <package>` to remove them. Running `jac add --cl` without a package name installs all packages listed in `config.json`. The system automatically regenerates `package.json` from `config.json` and runs npm install, ensuring consistency between configuration and installed packages. Supports both regular and scoped packages with version specification. [Documentation](https://docs.jaseci.org/jac-client/advance/package-management/)
+- **Package Management Through config.json**: Implemented configuration-first package management where all npm dependencies are managed through `config.json` instead of `package.json`. Use `jac add --npm <package>` to add packages and `jac remove --npm <package>` to remove them. Running `jac add --npm` without a package name installs all packages listed in `config.json`. The system automatically regenerates `package.json` from `config.json` and runs npm install, ensuring consistency between configuration and installed packages. Supports both regular and scoped packages with version specification. [Documentation](https://docs.jaseci.org/jac-client/advance/package-management/)
 
 - **CLI Command for Config Generation**: Added `jac generate_client_config` command for legacy projects (pre-0.2.4) to create a default `config.json` file with the proper structure. For new projects, `config.json` is automatically created with `jac create_jac_app`. The command prevents accidental overwrites of existing config files.
 

@@ -5,7 +5,6 @@ Direct implementations - no delegation to cli.jac.
 
 import marshal;
 import os;
-import pickle;
 import sys;
 import types;
 import from typing { Any }
@@ -31,15 +30,12 @@ def _proc_file(filename: str) -> tuple {
     import from jaclang.pycore.runtime { JacRuntime as Jac }
     (base, mod) = os.path.split(filename);
     base = base or './';
-    if (filename.endswith('.jac') or filename.endswith('.jir')) {
+    if filename.endswith('.jac') {
         mod = mod[:-4];
     } elif filename.endswith('.py') {
         mod = mod[:-3];
     } else {
-        print(
-            'Not a valid file!\nOnly supports `.jac`, `.jir`, and `.py`',
-            file=sys.stderr
-        );
+        print('Not a valid file!\nOnly supports `.jac` and `.py`', file=sys.stderr);
         <>exit(1);
     }
     # Only set base path if not already set (allows tests to override)
@@ -59,24 +55,12 @@ impl run(filename: str, main: bool = True, cache: bool = True) -> int {
     (base, mod, mach) = _proc_file(filename);
     lng = filename.split('.')[-1];
     try {
-        if filename.endswith(('.jac', '.py')) {
-            Jac.jac_import(
-                target=mod,
-                base_path=base,
-                override_name='__main__' if main else None,
-                lng=lng
-            );
-        } elif filename.endswith('.jir') {
-            with open(filename, 'rb') as f {
-                Jac.attach_program(pickle.load(f));
-                Jac.jac_import(
-                    target=mod,
-                    base_path=base,
-                    override_name='__main__' if main else None,
-                    lng=lng
-                );
-            }
-        }
+        Jac.jac_import(
+            target=mod,
+            base_path=base,
+            override_name='__main__' if main else None,
+            lng=lng
+        );
     } except Exception as e {
         import from jaclang.pycore.helpers { dump_traceback }
         print(dump_traceback(e), file=sys.stderr);
@@ -108,16 +92,9 @@ impl enter(
         ret_module = Jac.jac_import(
             target=mod, base_path=base, override_name='__main__' if main else None
         );
-    } elif filename.endswith('.jir') {
-        with open(filename, 'rb') as f {
-            Jac.attach_program(pickle.load(f));
-            ret_module = Jac.jac_import(
-                target=mod, base_path=base, override_name='__main__' if main else None
-            );
-        }
     } else {
         mach.close();
-        print('Not a valid file!\nOnly supports `.jac` and `.jir`', file=sys.stderr);
+        print('Not a valid file!\nOnly supports `.jac`', file=sys.stderr);
         return 1;
     }
     if ret_module {
@@ -147,7 +124,7 @@ impl start(
     port: int = 8000,
     main: bool = True,
     faux: bool = False,
-    watch: bool = False,
+    dev: bool = False,
     api_port: int = 0,
     no_client: bool = False
 ) -> int {
@@ -175,14 +152,7 @@ impl start(
     (base, mod, mach) = _proc_file(filename);
     lng = filename.split('.')[-1];
     try {
-        if filename.endswith(('.jac', '.py')) {
-            Jac.jac_import(target=mod, base_path=base, lng=lng);
-        } elif filename.endswith('.jir') {
-            with open(filename, 'rb') as f {
-                Jac.attach_program(pickle.load(f));
-                Jac.jac_import(target=mod, base_path=base, lng=lng);
-            }
-        }
+        Jac.jac_import(target=mod, base_path=base, lng=lng);
         if Jac.program.errors_had {
             for error in Jac.program.errors_had {
                 print(f"Error: {error}", file=sys.stderr);
@@ -197,8 +167,8 @@ impl start(
         mach.close();
         return 1;
     }
-    # Determine actual port (for watch mode with client, Vite takes --port, API takes --api-port)
-    if watch and not no_client {
+    # Determine actual port (for dev mode with client, Vite takes --port, API takes --api-port)
+    if dev and not no_client {
         # Vite dev server gets the main port, API server gets api_port or port+1
         vite_port = port;
         actual_api_port = api_port if api_port > 0 else port + 1;
@@ -227,14 +197,14 @@ impl start(
         mach.close();
         return 0;
     }
-    # Initialize HMR if watch mode enabled
+    # Initialize HMR if dev mode enabled
     hot_reloader = None;
     vite_process = None;
-    if watch {
+    if dev {
         # Check if watchdog is available in the project environment
         if not _check_watchdog_available() {
             print(
-                "\n  Error: --watch requires 'watchdog' package to be installed.\n",
+                "\n  Error: --dev requires 'watchdog' package to be installed.\n",
                 file=sys.stderr
             );
             print(
@@ -279,9 +249,9 @@ impl start(
         }
     }
     # Print startup message
-    _print_startup_message(watch, no_client, port, actual_api_port, base);
+    _print_startup_message(dev, no_client, port, actual_api_port, base);
     try {
-        server.start(watch=watch);
+        server.start(dev=dev);
         return 0;
     } except KeyboardInterrupt {
         print('\nShutting down...');
@@ -364,9 +334,7 @@ def _get_network_ips -> list[str] {
                 }
             }
         }
-    } except Exception {
-        pass;
-    }
+    } except Exception { }
     return ips;
 }
 
@@ -383,7 +351,7 @@ def _count_jac_files(directory: str) -> int {
 
 """Print startup message based on mode."""
 def _print_startup_message(
-    watch: bool, no_client: bool, port: int, api_port: int, base_path: str = '.'
+    dev: bool, no_client: bool, port: int, api_port: int, base_path: str = '.'
 ) -> None {
     import from jaclang.cli.console { console }
     import from importlib.metadata { version as pkg_version }
@@ -412,7 +380,7 @@ def _print_startup_message(
     console.print();
 
     # Print mode information
-    if watch and not no_client {
+    if dev and not no_client {
         console.print("  🚀 Server ready", style="bold green");
         console.print();
         console.print("  Mode: Development (with HMR)", style="muted");
@@ -426,7 +394,7 @@ def _print_startup_message(
         } else {
             console.print("  👀 Watching for changes...", style="info");
         }
-    } elif watch and no_client {
+    } elif dev and no_client {
         console.print("  🚀 Server ready (API only)", style="bold green");
         console.print();
         file_count = _count_jac_files(base_path);

@@ -46,9 +46,15 @@ with entry {
 glob VERSION: str = "1.0.0";
 glob MAX_ITEMS: int = 100;
 
+# Reading globals works directly
 def get_version() -> str {
-    :g: VERSION;  # Access global
     return VERSION;
+}
+
+# Modifying globals requires the 'global' keyword
+def increment_max_items() -> None {
+    global MAX_ITEMS;
+    MAX_ITEMS += 1;
 }
 ```
 
@@ -146,12 +152,12 @@ cl {
         has count: int = 0;
 
         return <div>
-            {# No parameters #}
+            # No parameters
             <button onClick={lambda -> None { count = count + 1; }}>
                 Increment
             </button>
 
-            {# With event parameter #}
+            # With event parameter
             <input onChange={lambda e: any -> None { console.log(e.target.value); }} />
         </div>;
     }
@@ -325,7 +331,7 @@ import requests;
 import numpy as np;
 
 # Import from Jac files (no extension needed)
-import from mymodule { MyClass, my_function };
+import from mymodule { MyClass, my_function }
 ```
 
 ---
@@ -512,4 +518,4 @@ with entry {
 | Functions & Control Flow | [Chapter 3: Functions & Control](../../jac_book/chapter_3.md) |
 | Import System | [Import Basics](../../learn/imports/basics.md) |
 | Complete Reference | [Syntax Quick Reference](../../learn/syntax_quick_reference.md) |
-| Full Specification | [Jac Language Reference](../../learn/jac_ref.md) |
+| Full Specification | [Jac Language Reference](../../learn/jac-ref/index.md) |
