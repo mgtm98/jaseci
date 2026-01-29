@@ -40,8 +40,8 @@ def _scale_pre_hook(context: HookContext) -> None {
         base_file_path = os.path.basename(filename);
         # Get configuration
         scale_config = get_scale_config();
-        # Create logger
-        logger = UtilityFactory.create_logger('standard');
+        # Create logger from configuration
+        logger = UtilityFactory.create_configured_logger();
         # Get target-specific config
         if target == 'kubernetes' {
             target_config = scale_config.get_kubernetes_config();
@@ -171,8 +171,8 @@ class JacCmd {
             # Get configuration
             scale_config = get_scale_config();
 
-            # Create logger
-            logger = UtilityFactory.create_logger('standard');
+            # Create logger from configuration
+            logger = UtilityFactory.create_configured_logger();
 
             # Get target-specific config
             if target == 'kubernetes' {

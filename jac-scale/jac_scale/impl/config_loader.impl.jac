@@ -50,7 +50,18 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
             'liveness_period': 20,
             'liveness_failure_threshold': 80
         },
-        'server': {'port': 8000, 'host': '0.0.0.0'}
+        'server': {'port': 8000, 'host': '0.0.0.0'},
+        'logging': {
+            'type': 'standard',
+            'elasticsearch': {
+                'enabled': False,
+                'hosts': 'localhost:9200',
+                'index_prefix': 'jac-scale',
+                'username': '',
+                'password': '',
+                'bulk_size': 100
+            }
+        }
     };
 }
 
@@ -112,6 +123,24 @@ impl JacScaleConfig.get_server_config(self: JacScaleConfig) -> dict[str, Any] {
     return {
         'port': int(server_config.get('port', 8000)),
         'host': server_config.get('host', '0.0.0.0')
+    };
+}
+
+"""Get logging configuration from jac.toml."""
+impl JacScaleConfig.get_logging_config(self: JacScaleConfig) -> dict[str, Any] {
+    config = self.load();
+    logging_config = config.get('logging', {});
+    elasticsearch_config = logging_config.get('elasticsearch', {});
+    return {
+        'type': logging_config.get('type', 'standard'),
+        'elasticsearch': {
+            'enabled': elasticsearch_config.get('enabled', False),
+            'hosts': elasticsearch_config.get('hosts', 'localhost:9200'),
+            'index_prefix': elasticsearch_config.get('index_prefix', 'jac-scale'),
+            'username': elasticsearch_config.get('username', ''),
+            'password': elasticsearch_config.get('password', ''),
+            'bulk_size': int(elasticsearch_config.get('bulk_size', 100))
+        }
     };
 }
 

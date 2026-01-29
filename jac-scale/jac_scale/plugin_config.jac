@@ -195,6 +195,55 @@ class JacScalePluginConfig {
                             "description": "Server host"
                         }
                     }
+                },
+                "logging": {
+                    "type": "dict",
+                    "default": {},
+                    "description": "Logging configuration",
+                    "nested": {
+                        "type": {
+                            "type": "string",
+                            "default": "standard",
+                            "description": "Logger type: 'standard' (console), 'elasticsearch', 'cloudwatch'"
+                        },
+                        "elasticsearch": {
+                            "type": "dict",
+                            "default": {},
+                            "description": "Elasticsearch logger configuration",
+                            "nested": {
+                                "enabled": {
+                                    "type": "bool",
+                                    "default": False,
+                                    "description": "Enable Elasticsearch logging"
+                                },
+                                "hosts": {
+                                    "type": "string",
+                                    "default": "localhost:9200",
+                                    "description": "Elasticsearch hosts (comma-separated)"
+                                },
+                                "index_prefix": {
+                                    "type": "string",
+                                    "default": "jac-scale",
+                                    "description": "Index prefix for log indices"
+                                },
+                                "username": {
+                                    "type": "string",
+                                    "default": "",
+                                    "description": "Elasticsearch username (optional)"
+                                },
+                                "password": {
+                                    "type": "string",
+                                    "default": "",
+                                    "description": "Elasticsearch password (optional)"
+                                },
+                                "bulk_size": {
+                                    "type": "int",
+                                    "default": 100,
+                                    "description": "Number of logs to buffer before bulk write"
+                                }
+                            }
+                        }
+                    }
                 }
             }
         };
