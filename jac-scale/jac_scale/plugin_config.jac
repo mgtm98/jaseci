@@ -229,12 +229,17 @@ class JacScalePluginConfig {
                                 "username": {
                                     "type": "string",
                                     "default": "",
-                                    "description": "Elasticsearch username (optional)"
+                                    "description": "Elasticsearch username (optional, for basic auth)"
                                 },
                                 "password": {
                                     "type": "string",
                                     "default": "",
-                                    "description": "Elasticsearch password (optional)"
+                                    "description": "Elasticsearch password (optional, for basic auth)"
+                                },
+                                "api_key": {
+                                    "type": "string",
+                                    "default": "",
+                                    "description": "Elasticsearch API key (optional, preferred over basic auth)"
                                 },
                                 "bulk_size": {
                                     "type": "int",

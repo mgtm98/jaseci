@@ -59,6 +59,7 @@ impl JacScaleConfig.get_default_config(self: JacScaleConfig) -> dict[str, Any] {
                 'index_prefix': 'jac-scale',
                 'username': '',
                 'password': '',
+                'api_key': '',
                 'bulk_size': 100
             }
         }
@@ -139,6 +140,7 @@ impl JacScaleConfig.get_logging_config(self: JacScaleConfig) -> dict[str, Any] {
             'index_prefix': elasticsearch_config.get('index_prefix', 'jac-scale'),
             'username': elasticsearch_config.get('username', ''),
             'password': elasticsearch_config.get('password', ''),
+            'api_key': elasticsearch_config.get('api_key', ''),
             'bulk_size': int(elasticsearch_config.get('bulk_size', 100))
         }
     };

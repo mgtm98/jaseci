@@ -37,14 +37,20 @@ class ElasticsearchLogger(Logger) {
                 hosts = config.get("hosts", "localhost:9200");
                 username = config.get("username", "");
                 password = config.get("password", "");
+                api_key = config.get("api_key", "");
 
                 # Parse hosts (can be comma-separated string or list)
                 if isinstance(hosts, str) {
                     hosts = [h.strip() for h in hosts.split(',')];
                 }
 
-                # Configure authentication
-                if username and password {
+                # Configure authentication (API key takes precedence)
+                if api_key {
+                    self.client = Elasticsearch(
+                        hosts=hosts,
+                        api_key=api_key
+                    );
+                } elif username and password {
                     self.client = Elasticsearch(
                         hosts=hosts,
                         basic_auth=(username, password)
@@ -55,7 +61,8 @@ class ElasticsearchLogger(Logger) {
 
                 # Test connection
                 if self.client.ping() {
-                    console.info(f"[ElasticsearchLogger] Connected to Elasticsearch at {hosts}");
+                    auth_method = "API key" if api_key else ("basic auth" if username else "no auth");
+                    console.info(f"[ElasticsearchLogger] Connected to Elasticsearch at {hosts} using {auth_method}");
                 } else {
                     console.warning("[ElasticsearchLogger] Failed to ping Elasticsearch, falling back to console");
                     self.fallback_mode = True;
