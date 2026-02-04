@@ -21,7 +21,7 @@ class UtilityFactory {
         scale_config = get_scale_config();
         logging_config = scale_config.get_logging_config();
         logger_type = logging_config.get('type', 'standard');
-        
+
         if logger_type == 'elasticsearch' {
             # Pass elasticsearch-specific config
             es_config = logging_config.get('elasticsearch', {});
@@ -61,7 +61,9 @@ class UtilityFactory {
         } elif logger_type == 'cloudwatch' {
             raise NotImplementedError("CloudWatch logger not yet implemented") ;
         } elif logger_type == 'elasticsearch' {
-            import from jac_scale.utilities.loggers.elasticsearch_logger { ElasticsearchLogger }
+            import from jac_scale.utilities.loggers.elasticsearch_logger {
+                ElasticsearchLogger
+            }
             return ElasticsearchLogger(config=config or {});
         } else {
             raise ValueError(f"Unsupported logger type: {logger_type}") ;

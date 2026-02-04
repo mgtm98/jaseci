@@ -33,7 +33,7 @@ class ElasticsearchLogger(Logger) {
         if config.get("enabled", False) {
             try {
                 import from elasticsearch { Elasticsearch }
-                
+
                 hosts = config.get("hosts", "localhost:9200");
                 username = config.get("username", "");
                 password = config.get("password", "");
@@ -46,14 +46,10 @@ class ElasticsearchLogger(Logger) {
 
                 # Configure authentication (API key takes precedence)
                 if api_key {
-                    self.client = Elasticsearch(
-                        hosts=hosts,
-                        api_key=api_key
-                    );
+                    self.client = Elasticsearch(hosts=hosts, api_key=api_key);
                 } elif username and password {
                     self.client = Elasticsearch(
-                        hosts=hosts,
-                        basic_auth=(username, password)
+                        hosts=hosts, basic_auth=(username, password)
                     );
                 } else {
                     self.client = Elasticsearch(hosts=hosts);
@@ -61,18 +57,28 @@ class ElasticsearchLogger(Logger) {
 
                 # Test connection
                 if self.client.ping() {
-                    auth_method = "API key" if api_key else ("basic auth" if username else "no auth");
-                    console.info(f"[ElasticsearchLogger] Connected to Elasticsearch at {hosts} using {auth_method}");
+                    auth_method = "API key"
+                    if api_key
+                    else ("basic auth" if username else "no auth");
+                    console.info(
+                        f"[ElasticsearchLogger] Connected to Elasticsearch at {hosts} using {auth_method}"
+                    );
                 } else {
-                    console.warning("[ElasticsearchLogger] Failed to ping Elasticsearch, falling back to console");
+                    console.warning(
+                        "[ElasticsearchLogger] Failed to ping Elasticsearch, falling back to console"
+                    );
                     self.fallback_mode = True;
                 }
             } except Exception as e {
-                console.warning(f"[ElasticsearchLogger] Failed to initialize: {e}. Falling back to console");
+                console.warning(
+                    f"[ElasticsearchLogger] Failed to initialize: {e}. Falling back to console"
+                );
                 self.fallback_mode = True;
             }
         } else {
-            console.info("[ElasticsearchLogger] Elasticsearch disabled in config, using console fallback");
+            console.info(
+                "[ElasticsearchLogger] Elasticsearch disabled in config, using console fallback"
+            );
             self.fallback_mode = True;
         }
     }
@@ -81,7 +87,6 @@ class ElasticsearchLogger(Logger) {
     def _enrich_context(self: ElasticsearchLogger, message: str, level: str, context: dict[str, Any]) -> dict[str, Any] {
         log_entry = {
             "@timestamp": datetime.utcnow().isoformat(),
-            "timestamp": datetime.utcnow().isoformat(),  # Keep both for compatibility
             "level": level,
             "message": message,
             "pod_name": self.pod_name,
@@ -99,7 +104,6 @@ class ElasticsearchLogger(Logger) {
             level = log_entry.get("level", "INFO");
             message = log_entry.get("message", "");
             context = log_entry.get("context", {});
-            
             if level == "ERROR" {
                 if context {
                     console.error(f"{message} | Context: {context}");
@@ -114,7 +118,9 @@ class ElasticsearchLogger(Logger) {
                 }
             } elif level == "DEBUG" {
                 if context {
-                    console.print(f"[DEBUG] {message} | Context: {context}", style="muted");
+                    console.print(
+                        f"[DEBUG] {message} | Context: {context}", style="muted"
+                    );
                 } else {
                     console.print(f"[DEBUG] {message}", style="muted");
                 }
@@ -145,14 +151,13 @@ class ElasticsearchLogger(Logger) {
 
         try {
             import from elasticsearch.helpers { bulk }
-            
+
             # Prepare actions for bulk insert
             actions = [
                 {
                     "_index": f"{self.index_prefix}-{datetime.utcnow():%Y.%m.%d}",
                     "_source": log
-                }
-                for log in self.bulk_buffer
+                } for log in self.bulk_buffer
             ];
 
             (success_count, failed_items) = bulk(self.client, actions, raise_on_error=False);
@@ -169,25 +174,33 @@ class ElasticsearchLogger(Logger) {
     }
 
     """Log an info message."""
-    def info(self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}) -> None {
+    def info(
+        self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}
+    ) -> None {
         log_entry = self._enrich_context(message, "INFO", context);
         self._send_log(log_entry);
     }
 
     """Log an error message."""
-    def error(self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}) -> None {
+    def error(
+        self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}
+    ) -> None {
         log_entry = self._enrich_context(message, "ERROR", context);
         self._send_log(log_entry);
     }
 
     """Log a warning message."""
-    def warn(self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}) -> None {
+    def warn(
+        self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}
+    ) -> None {
         log_entry = self._enrich_context(message, "WARN", context);
         self._send_log(log_entry);
     }
 
     """Log a debug message."""
-    def debug(self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}) -> None {
+    def debug(
+        self: ElasticsearchLogger, message: str, context: dict[str, Any] = {}
+    ) -> None {
         log_entry = self._enrich_context(message, "DEBUG", context);
         self._send_log(log_entry);
     }
