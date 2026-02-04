@@ -29,6 +29,7 @@ This document provides a summary of new features, improvements, and bug fixes in
   - Top-level context field flattening for easier querying
 
   Access the logger in Jac applications:
+
   ```jac
   import from jac_scale.factories.utility_factory { UtilityFactory }
 

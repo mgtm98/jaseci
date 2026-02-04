@@ -33,7 +33,7 @@ with entry {
         "level": "error",
         "test_id": "es_test_001"
     });
-    
+
     for i in range(5) {
         logger.info(f"Bulk test log {i}", {
             "event": "bulk_test",

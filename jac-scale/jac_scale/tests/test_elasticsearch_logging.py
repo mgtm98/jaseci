@@ -112,7 +112,7 @@ bulk_size = 10
 """
         print(f"📝 Creating jac.toml at: {cls.es_toml_file}")
         cls.es_toml_file.write_text(toml_content)
-        print(f"✅ jac.toml created successfully")
+        print("✅ jac.toml created successfully")
         print(f"📋 TOML content:\n{toml_content}")
 
         # Set environment variables (backup approach if TOML doesn't work)
