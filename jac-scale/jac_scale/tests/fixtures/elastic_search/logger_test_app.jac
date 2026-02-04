@@ -17,7 +17,6 @@ with entry {
         "test_id": "es_test_001"
     });
     
-    # Log multiple events with different levels
     logger.info("Test info log", {
         "event": "test_info",
         "level": "info",
@@ -36,7 +35,6 @@ with entry {
         "test_id": "es_test_001"
     });
     
-    # Bulk test - log multiple entries
     for i in range(5) {
         logger.info(f"Bulk test log {i}", {
             "event": "bulk_test",
@@ -44,8 +42,6 @@ with entry {
             "test_id": "es_test_001"
         });
     }
-    
-    # Explicitly flush logs to Elasticsearch
     logger.close();
     
     # Give Elasticsearch time to index the documents
