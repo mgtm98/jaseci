@@ -422,6 +422,35 @@ impl NaIRGenPass._codegen_instantiation(node: uni.FuncCall) -> (ir.Value | None)
             self.builder.store(zero_val, field_ptr);
         }
     }
+    # Call init if it exists and there are non-keyword parameters
+    init_name = f"{type_name}.__init__";
+    if init_name in self.method_funcs {
+        init_fn = self.method_funcs[init_name];
+        # Collect non-keyword (positional) arguments
+        init_args: list[ir.Value] = [obj_ptr];  # self pointer
+        for param in params {
+            if not isinstance(param, uni.KWPair) {
+                val = self._codegen_expr(param);
+                if val is not None {
+                    init_args.append(val);
+                }
+            }
+        }
+        # Call init if we have positional arguments
+        if len(init_args) > 1 {
+            # Coerce arguments to match function signature
+            coerced_args: list[ir.Value] = [];
+            for (i, arg) in enumerate(init_args) {
+                if i < len(init_fn.args) {
+                    coerced_args.append(self._coerce_type(arg, init_fn.args[i].type));
+                } else {
+                    coerced_args.append(arg);
+                }
+            }
+            self.builder.call(init_fn, coerced_args, name="call.__init__");
+        }
+    }
+    
     # Call postinit if it exists (Jac renames postinit → __post_init__)
     for pname in [f"{type_name}.__post_init__", f"{type_name}.postinit"] {
         if pname in self.method_funcs {

@@ -50,3 +50,24 @@ def test_none() -> int {
     }
     return 0;
 }
+
+obj SimpleObj {
+    has value: int;
+    has name: str;
+    
+    def init(v: int, n: str) {
+        self.value = v;
+        self.name = n;
+        print("init called with value:", v, "name:", n);
+    }
+    
+    def display() -> None {
+        print("SimpleObj - value:", self.value, "name:", self.name);
+    }
+}
+
+with entry {
+    print("Creating object with constructor parameters");
+    obj1 = SimpleObj(42, "test");
+    obj1.display();
+}
