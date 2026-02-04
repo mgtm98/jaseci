@@ -16,19 +16,18 @@ with entry {
         "version": "test-1.0",
         "test_id": "es_test_001"
     });
-    
     logger.info("Test info log", {
         "event": "test_info",
         "level": "info",
         "test_id": "es_test_001"
     });
-    
+
     logger.warn("Test warning log", {
         "event": "test_warning",
         "level": "warning",
         "test_id": "es_test_001"
     });
-    
+
     logger.error("Test error log", {
         "event": "test_error",
         "level": "error",
@@ -43,9 +42,7 @@ with entry {
         });
     }
     logger.close();
-    
-    # Give Elasticsearch time to index the documents
     sleep(1);
-    
+
     print("✅ Logger test application completed - logged 9 events");
 }
