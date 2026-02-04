@@ -4,6 +4,42 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jac-scale 0.1.6 (Unreleased)
 
+- **Elasticsearch Logging Support**: Added centralized logging infrastructure with Elasticsearch integration. Applications can now configure Elasticsearch as a logging backend via `jac.toml`:
+
+  ```toml
+  [plugins.scale.logging]
+  type = "elasticsearch"
+
+  [plugins.scale.logging.elasticsearch]
+  enabled = true
+  hosts = "localhost:9200"
+  index_prefix = "jac-scale"
+  bulk_size = 100
+  username = ""       # optional
+  password = ""       # optional
+  api_key = ""        # optional (takes precedence over username/password)
+  ```
+
+  The `ElasticsearchLogger` provides:
+  - Bulk write operations for efficiency (configurable batch size)
+  - Automatic context enrichment (pod name, namespace, service name, timestamps)
+  - Graceful fallback to console logging on connection failures
+  - Support for multiple authentication methods (API key, basic auth, or no auth)
+  - Structured logging with `@timestamp` field for time-series indexing
+  - Top-level context field flattening for easier querying
+
+  Access the logger in Jac applications:
+  ```jac
+  import from jac_scale.factories.utility_factory { UtilityFactory }
+
+  glob logger = UtilityFactory.create_configured_logger();
+
+  with entry {
+      logger.info("Application started", {"event": "app_start", "version": "1.0"});
+      logger.error("Something failed", {"error_code": 500});
+  }
+  ```
+
 - **fix: Exclude `jac.local.toml` during K8s code sync**: The local dev override file (`jac.local.toml`) is now excluded when syncing application code to the Kubernetes PVC. Previously, this file could override deployment settings such as the serve port, causing health check failures.
 
 ## jac-scale 0.1.5 (Latest Release)
