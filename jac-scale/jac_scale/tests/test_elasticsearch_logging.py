@@ -107,7 +107,10 @@ enabled = true
 hosts = "{es_url}"
 bulk_size = 10
 """
+        print(f"📝 Creating jac.toml at: {cls.es_toml_file}")
         cls.es_toml_file.write_text(toml_content)
+        print(f"✅ jac.toml created successfully")
+        print(f"📋 TOML content:\n{toml_content}")
 
         # Set environment variables (backup approach if TOML doesn't work)
         os.environ["JAC_SCALE_LOGGING_TYPE"] = "elasticsearch"
@@ -140,6 +143,11 @@ bulk_size = 10
         time.sleep(0.5)
         gc.collect()
 
+        # Clean up TOML configuration file
+        if cls.es_toml_file and cls.es_toml_file.exists():
+            os.remove(cls.es_toml_file)
+            print(f"🧹 Cleaned up jac.toml: {cls.es_toml_file}")
+
         # Clean up session file (if any was created)
         session_file = (
             cls.fixtures_dir / ".jac" / "data" / "logger_test_app.session.users.json"
@@ -170,11 +178,9 @@ bulk_size = 10
     def _wait_for_es_indexing(self, seconds: float = 2.0) -> None:
         """Wait for Elasticsearch to index documents and refresh indices."""
         time.sleep(seconds)
-        try:
-            self.es_client.indices.refresh(index="jac-*")
-        except Exception:
+        with contextlib.suppress(Exception):
             # If index doesn't exist yet, that's ok
-            pass
+            self.es_client.indices.refresh(index="jac-*")
 
     def _search_es_logs(
         self, query: dict[str, Any], size: int = 100
