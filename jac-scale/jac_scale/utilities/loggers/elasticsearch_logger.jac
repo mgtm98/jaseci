@@ -84,7 +84,9 @@ class ElasticsearchLogger(Logger) {
     }
 
     """Enrich log entry with metadata."""
-    def _enrich_context(self: ElasticsearchLogger, message: str, level: str, context: dict[str, Any]) -> dict[str, Any] {
+    def _enrich_context(
+        self: ElasticsearchLogger, message: str, level: str, context: dict[str, Any]
+    ) -> dict[str, Any] {
         log_entry = {
             "@timestamp": datetime.utcnow().isoformat(),
             "level": level,
@@ -160,10 +162,14 @@ class ElasticsearchLogger(Logger) {
                 } for log in self.bulk_buffer
             ];
 
-            (success_count, failed_items) = bulk(self.client, actions, raise_on_error=False);
+            (success_count, failed_items) = bulk(
+                self.client, actions, raise_on_error=False
+            );
             failed_count = len(failed_items) if isinstance(failed_items, list) else 0;
             if failed_count > 0 {
-                console.warning(f"[ElasticsearchLogger] Failed to index {failed_count} log entries");
+                console.warning(
+                    f"[ElasticsearchLogger] Failed to index {failed_count} log entries"
+                );
             }
             self.bulk_buffer = [];
         } except Exception as e {
