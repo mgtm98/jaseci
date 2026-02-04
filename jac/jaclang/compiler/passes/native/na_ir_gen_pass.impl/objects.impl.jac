@@ -450,7 +450,6 @@ impl NaIRGenPass._codegen_instantiation(node: uni.FuncCall) -> (ir.Value | None)
             self.builder.call(init_fn, coerced_args, name="call.__init__");
         }
     }
-    
     # Call postinit if it exists (Jac renames postinit → __post_init__)
     for pname in [f"{type_name}.__post_init__", f"{type_name}.postinit"] {
         if pname in self.method_funcs {

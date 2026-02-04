@@ -54,13 +54,13 @@ def test_none() -> int {
 obj SimpleObj {
     has value: int;
     has name: str;
-    
+
     def init(v: int, n: str) {
         self.value = v;
         self.name = n;
         print("init called with value:", v, "name:", n);
     }
-    
+
     def display() -> None {
         print("SimpleObj - value:", self.value, "name:", self.name);
     }
