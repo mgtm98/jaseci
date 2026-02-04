@@ -252,6 +252,9 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
     if val.type == target_type {
         return val;
     }
+    if isinstance(val.type, ir.PointerType) and isinstance(target_type, ir.IntType) {
+        return self.builder.ptrtoint(val, target_type, name="ptr2int");
+    }
     if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.DoubleType) {
         return self.builder.sitofp(val, target_type, name="cast");
     }
