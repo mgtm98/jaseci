@@ -68,6 +68,6 @@ obj SimpleObj {
 
 with entry {
     print("Creating object with constructor parameters");
-    obj1 = SimpleObj(42, "test");
+    obj1 = SimpleObj(43, "test");
     obj1.display();
 }
