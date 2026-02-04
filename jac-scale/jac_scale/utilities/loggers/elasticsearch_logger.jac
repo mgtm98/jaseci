@@ -79,15 +79,17 @@ class ElasticsearchLogger(Logger) {
 
     """Enrich log entry with metadata."""
     def _enrich_context(self: ElasticsearchLogger, message: str, level: str, context: dict[str, Any]) -> dict[str, Any] {
-        return {
-            "timestamp": datetime.utcnow().isoformat(),
+        log_entry = {
+            "@timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.utcnow().isoformat(),  # Keep both for compatibility
             "level": level,
             "message": message,
             "pod_name": self.pod_name,
             "namespace": self.namespace,
-            "service_name": self.service_name,
-            "context": context
+            "service_name": self.service_name
         };
+        log_entry.update(context);
+        return log_entry;
     }
 
     """Add log entry to bulk buffer and flush if needed."""
@@ -153,14 +155,11 @@ class ElasticsearchLogger(Logger) {
                 for log in self.bulk_buffer
             ];
 
-            # Perform bulk insert
-            (success, failed) = bulk(self.client, actions, raise_on_error=False);
-            
-            if failed > 0 {
-                console.warning(f"[ElasticsearchLogger] Failed to index {failed} log entries");
+            (success_count, failed_items) = bulk(self.client, actions, raise_on_error=False);
+            failed_count = len(failed_items) if isinstance(failed_items, list) else 0;
+            if failed_count > 0 {
+                console.warning(f"[ElasticsearchLogger] Failed to index {failed_count} log entries");
             }
-
-            # Clear buffer
             self.bulk_buffer = [];
         } except Exception as e {
             console.error(f"[ElasticsearchLogger] Failed to flush logs: {e}");
