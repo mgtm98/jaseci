@@ -5,6 +5,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.9.16 (Unreleased)
 
 - **Native Compiler: Cross-Module Linking**: Native `.na.jac` modules can now import and call functions from other `.na.jac` modules. The compiler performs LLVM IR-level linking enabling modular native code organization with `import from module { func1, func2 }` syntax.
+- **Native Compiler: Multi-Parameter Print Fix**: The `print()` builtin in native code now correctly handles multiple arguments, printing them space-separated on a single line (e.g., `print("x =", 10, "y =", 20)` outputs `x = 10 y = 20`). Previously only the first argument was printed.
 
 ## jaclang 0.9.15 (Latest Release)
 
