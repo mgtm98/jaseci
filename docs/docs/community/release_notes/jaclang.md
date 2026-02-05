@@ -5,6 +5,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.9.16 (Unreleased)
 
 - **Native Compiler: Cross-Module Linking**: Native `.na.jac` modules can now import and call functions from other `.na.jac` modules. The compiler performs LLVM IR-level linking enabling modular native code organization with `import from module { func1, func2 }` syntax.
+- **Native Compiler: Constructor `init` Method Auto-Invocation**: Fixed a bug where object constructors with positional parameters were not automatically calling the `init` method. Now, `init` is properly invoked with constructor arguments during object instantiation, enabling proper initialization of objects with parameterized constructors.
+
 
 ## jaclang 0.9.15 (Latest Release)
 
@@ -25,7 +27,6 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Native Compiler: Runtime Error Checks**: The native backend now generates runtime safety checks that raise structured exceptions: `ZeroDivisionError` for integer and float division/modulo by zero, `IndexError` for list index out of bounds, `KeyError` for missing dictionary keys, `OverflowError` for integer arithmetic overflow, `AttributeError` for null pointer dereference, `ValueError` for invalid `int()` parsing, and `AssertionError` for failed assertions.
 - **Native Compiler: Python↔Native Interop**: Added cross-boundary function call support between Python (`sv`) and native (`na`) codespaces within the same module. Native functions can now call Python functions via LLVM extern declarations backed by ctypes callbacks, and Python code can call native functions via auto-generated ctypes stubs.
 - **Fix:** `sv import` Lost During Unparse in `.cl.jac` Files
-- **Native Compiler: Constructor `init` Method Auto-Invocation**: Fixed a bug where object constructors with positional parameters were not automatically calling the `init` method. Now, `init` is properly invoked with constructor arguments during object instantiation, enabling proper initialization of objects with parameterized constructors.
 
 ## jaclang 0.9.14
 
