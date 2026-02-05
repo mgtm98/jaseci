@@ -7,7 +7,6 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Native Compiler: Cross-Module Linking**: Native `.na.jac` modules can now import and call functions from other `.na.jac` modules. The compiler performs LLVM IR-level linking enabling modular native code organization with `import from module { func1, func2 }` syntax.
 - **Native Compiler: Constructor `init` Method Auto-Invocation**: Fixed a bug where object constructors with positional parameters were not automatically calling the `init` method. Now, `init` is properly invoked with constructor arguments during object instantiation, enabling proper initialization of objects with parameterized constructors.
 
-
 ## jaclang 0.9.15 (Latest Release)
 
 - **Fix: Type Errors in Impl Files Now Show Correct Location**: Type errors in `.impl.jac` files now point to the actual error location instead of the declaration in the main file.
