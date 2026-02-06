@@ -335,6 +335,353 @@ impl NaIRGenPass._codegen_call(node: uni.FuncCall) -> (ir.Value | None) {
     if func_name == "open" {
         return self._emit_open(node);
     }
+    # ─── Unsafe Memory Primitives ────────────────────────────
+    # Handle ptr_load_i8: load i8 from pointer
+    if func_name == "ptr_load_i8" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i8_ptr = ir.IntType(8).as_pointer();
+                if ptr_val.type != i8_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i8_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.i8");
+            }
+        }
+    }
+    # Handle ptr_load_i16: load i16 from pointer
+    if func_name == "ptr_load_i16" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i16_ptr = ir.IntType(16).as_pointer();
+                if ptr_val.type != i16_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i16_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.i16");
+            }
+        }
+    }
+    # Handle ptr_load_i32: load i32 from pointer
+    if func_name == "ptr_load_i32" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i32_ptr = ir.IntType(32).as_pointer();
+                if ptr_val.type != i32_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i32_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.i32");
+            }
+        }
+    }
+    # Handle ptr_load_i64: load i64 from pointer
+    if func_name == "ptr_load_i64" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i64_ptr = ir.IntType(64).as_pointer();
+                if ptr_val.type != i64_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i64_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.i64");
+            }
+        }
+    }
+    # Handle ptr_load_f32: load float from pointer
+    if func_name == "ptr_load_f32" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                f32_ptr = ir.FloatType().as_pointer();
+                if ptr_val.type != f32_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, f32_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.f32");
+            }
+        }
+    }
+    # Handle ptr_load_f64: load double from pointer
+    if func_name == "ptr_load_f64" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                f64_ptr = ir.DoubleType().as_pointer();
+                if ptr_val.type != f64_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, f64_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.f64");
+            }
+        }
+    }
+    # Handle ptr_load_ptr: load pointer from pointer
+    if func_name == "ptr_load_ptr" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                ptr_ptr = i8p.as_pointer();
+                if ptr_val.type != ptr_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, ptr_ptr, name="ptr.cast");
+                }
+                return self.builder.load(ptr_val, name="load.ptr");
+            }
+        }
+    }
+    # Handle ptr_store_i8: store i8 to pointer
+    if func_name == "ptr_store_i8" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                i8_ptr = ir.IntType(8).as_pointer();
+                if ptr_val.type != i8_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i8_ptr, name="ptr.cast");
+                }
+                if val.type != ir.IntType(8) {
+                    val = self.builder.trunc(val, ir.IntType(8), name="val.trunc");
+                }
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_i16: store i16 to pointer
+    if func_name == "ptr_store_i16" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                i16_ptr = ir.IntType(16).as_pointer();
+                if ptr_val.type != i16_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i16_ptr, name="ptr.cast");
+                }
+                if val.type != ir.IntType(16) {
+                    val = self.builder.trunc(val, ir.IntType(16), name="val.trunc");
+                }
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_i32: store i32 to pointer
+    if func_name == "ptr_store_i32" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                i32_ptr = ir.IntType(32).as_pointer();
+                if ptr_val.type != i32_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i32_ptr, name="ptr.cast");
+                }
+                if val.type != ir.IntType(32) {
+                    val = self.builder.trunc(val, ir.IntType(32), name="val.trunc");
+                }
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_i64: store i64 to pointer
+    if func_name == "ptr_store_i64" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                i64_ptr = ir.IntType(64).as_pointer();
+                if ptr_val.type != i64_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, i64_ptr, name="ptr.cast");
+                }
+                val = self._coerce_type(val, ir.IntType(64));
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_f32: store float to pointer
+    if func_name == "ptr_store_f32" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                f32_ptr = ir.FloatType().as_pointer();
+                if ptr_val.type != f32_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, f32_ptr, name="ptr.cast");
+                }
+                if val.type != ir.FloatType() {
+                    val = self.builder.fptrunc(val, ir.FloatType(), name="val.trunc");
+                }
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_f64: store double to pointer
+    if func_name == "ptr_store_f64" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                f64_ptr = ir.DoubleType().as_pointer();
+                if ptr_val.type != f64_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, f64_ptr, name="ptr.cast");
+                }
+                val = self._coerce_type(val, ir.DoubleType());
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_store_ptr: store pointer to pointer
+    if func_name == "ptr_store_ptr" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                ptr_ptr = i8p.as_pointer();
+                if ptr_val.type != ptr_ptr {
+                    ptr_val = self.builder.bitcast(ptr_val, ptr_ptr, name="ptr.cast");
+                }
+                if val.type != i8p {
+                    val = self.builder.bitcast(val, i8p, name="val.cast");
+                }
+                self.builder.store(val, ptr_val);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+        }
+    }
+    # Handle ptr_add: pointer arithmetic (ptr + offset)
+    if func_name == "ptr_add" {
+        params_l = node.params or [];
+        if len(params_l) >= 2 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            offset_val = self._codegen_expr(params_l[1]);
+            if ptr_val is not None and offset_val is not None {
+                offset_val = self._coerce_type(offset_val, ir.IntType(64));
+                return self.builder.gep(ptr_val, [offset_val], name="ptr.add");
+            }
+        }
+    }
+    # Handle malloc: allocate memory with GC
+    if func_name == "malloc" {
+        params_l = node.params or [];
+        if params_l {
+            size_val = self._codegen_expr(params_l[0]);
+            if size_val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                i64 = ir.IntType(64);
+                size_val = self._coerce_type(size_val, i64);
+                gc_malloc = self._get_or_declare_extern("GC_malloc", i8p, [i64]);
+                return self.builder.call(gc_malloc, [size_val], name="malloc");
+            }
+        }
+    }
+    # Handle memcpy: copy memory
+    if func_name == "memcpy" {
+        params_l = node.params or [];
+        if len(params_l) >= 3 {
+            dest_val = self._codegen_expr(params_l[0]);
+            src_val = self._codegen_expr(params_l[1]);
+            size_val = self._codegen_expr(params_l[2]);
+            if dest_val is not None and src_val is not None and size_val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                i64 = ir.IntType(64);
+                if dest_val.type != i8p {
+                    dest_val = self.builder.bitcast(dest_val, i8p, name="dest.cast");
+                }
+                if src_val.type != i8p {
+                    src_val = self.builder.bitcast(src_val, i8p, name="src.cast");
+                }
+                size_val = self._coerce_type(size_val, i64);
+                memcpy_fn = self._get_or_declare_extern("memcpy", i8p, [i8p, i8p, i64]);
+                return self.builder.call(
+                    memcpy_fn, [dest_val, src_val, size_val], name="memcpy"
+                );
+            }
+        }
+    }
+    # Handle memset: set memory
+    if func_name == "memset" {
+        params_l = node.params or [];
+        if len(params_l) >= 3 {
+            ptr_val = self._codegen_expr(params_l[0]);
+            val = self._codegen_expr(params_l[1]);
+            size_val = self._codegen_expr(params_l[2]);
+            if ptr_val is not None and val is not None and size_val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                i32 = ir.IntType(32);
+                i64 = ir.IntType(64);
+                if ptr_val.type != i8p {
+                    ptr_val = self.builder.bitcast(ptr_val, i8p, name="ptr.cast");
+                }
+                val = self._coerce_type(val, i32);
+                size_val = self._coerce_type(size_val, i64);
+                memset_fn = self._get_or_declare_extern("memset", i8p, [i8p, i32, i64]);
+                return self.builder.call(
+                    memset_fn, [ptr_val, val, size_val], name="memset"
+                );
+            }
+        }
+    }
+    # Handle ptr_to_int: convert pointer to integer
+    if func_name == "ptr_to_int" {
+        params_l = node.params or [];
+        if params_l {
+            ptr_val = self._codegen_expr(params_l[0]);
+            if ptr_val is not None {
+                i64 = ir.IntType(64);
+                return self.builder.ptrtoint(ptr_val, i64, name="ptr.to.int");
+            }
+        }
+    }
+    # Handle int_to_ptr: convert integer to pointer
+    if func_name == "int_to_ptr" {
+        params_l = node.params or [];
+        if params_l {
+            int_val = self._codegen_expr(params_l[0]);
+            if int_val is not None {
+                i8p = ir.IntType(8).as_pointer();
+                i64 = ir.IntType(64);
+                int_val = self._coerce_type(int_val, i64);
+                return self.builder.inttoptr(int_val, i8p, name="int.to.ptr");
+            }
+        }
+    }
+    # Handle sizeof: get size of type (using GEP-from-null trick)
+    if func_name == "sizeof" {
+        params_l = node.params or [];
+        if params_l {
+            # Get type from argument expression
+            arg_val = self._codegen_expr(params_l[0]);
+            if arg_val is not None {
+                i64 = ir.IntType(64);
+                i32 = ir.IntType(32);
+                elem_type = arg_val.type;
+                # Use GEP-from-null trick to get sizeof
+                null_ptr = ir.Constant(elem_type.as_pointer(), None);
+                size_gep = self.builder.gep(
+                    null_ptr, [ir.Constant(i32, 1)], name="sizeof.gep"
+                );
+                return self.builder.ptrtoint(size_gep, i64, name="sizeof");
+            }
+        }
+    }
+    # ─────────────────────────────────────────────────────────
     # Handle object instantiation: ClassName(args)
     if func_name in self.struct_types {
         return self._codegen_instantiation(node);
