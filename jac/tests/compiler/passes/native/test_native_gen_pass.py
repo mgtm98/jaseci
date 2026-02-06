@@ -256,6 +256,33 @@ class TestNativeStrings:
         assert f(b"Alice", 30) == b"name=Alice, age=30"
 
 
+class TestNativeOptionalInt:
+    """Verify optional return types (int | None)."""
+
+    def test_optional_compiles(self):
+        """The fixture compiles without errors."""
+        engine, _ = compile_native("optional_int.na.jac")
+        assert engine is not None
+
+    def test_optional_returns_int(self):
+        """Function returns int when condition is met."""
+        engine, _ = compile_native("optional_int.na.jac")
+        f = get_func(engine, "a", ctypes.c_int64, ctypes.c_int64)
+        # When x > 0, should return x
+        assert f(10) == 10
+        assert f(5) == 5
+        assert f(1) == 1
+
+    def test_optional_returns_none(self):
+        """Function returns None (0) when condition is not met."""
+        engine, _ = compile_native("optional_int.na.jac")
+        f = get_func(engine, "a", ctypes.c_int64, ctypes.c_int64)
+        # When x <= 0, should return None (represented as 0 in native code)
+        assert f(-5) == 0
+        assert f(0) == 0
+        assert f(-100) == 0
+
+
 class TestNativeObjects:
     """Verify object creation, field access, methods, None comparison."""
 
