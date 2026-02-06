@@ -12,7 +12,6 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Support custom Vite Configurations to `dev` mode**: Added support for custom Vite configuration from `jac.toml`.
 - **Native Compiler: Optional Type Returns**: Fixed support for optional integer return types (e.g., `int | None`). Functions returning `None` from an `int`-returning function now correctly coerce the null pointer to integer value `0` using LLVM's `ptrtoint` instruction. This enables idiomatic optional return patterns where `None` is represented as a sentinel integer value in native code.
 
-
 ## jaclang 0.9.15 (Latest Release)
 
 - **Fix: Type Errors in Impl Files Now Show Correct Location**: Type errors in `.impl.jac` files now point to the actual error location instead of the declaration in the main file.
