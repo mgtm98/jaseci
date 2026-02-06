@@ -30,22 +30,22 @@ impl NaIRGenPass._emit_print(node: uni.FuncCall) -> (ir.Value | None) {
         self.builder.call(printf, [fmt_ptr]);
         return ir.Constant(ir.IntType(64), 0);
     }
-    
+
     # Build format string and collect args for all parameters
     fmt_parts = [];
     args = [];
-    
+
     for (i, param) in enumerate(params) {
         val = self._codegen_expr(param);
         if val is None {
             continue;
         }
-        
+
         # Add space separator between arguments (except before first)
         if i > 0 {
             fmt_parts.append(" ");
         }
-        
+
         # Determine format specifier based on type
         if isinstance(val.type, ir.IntType) and val.type.width == 64 {
             fmt_parts.append("%lld");
@@ -62,7 +62,7 @@ impl NaIRGenPass._emit_print(node: uni.FuncCall) -> (ir.Value | None) {
             args.append(val);
         }
     }
-    
+
     # Build complete format string and emit single printf call
     if fmt_parts {
         fmt_str = "".join(fmt_parts);
@@ -70,7 +70,7 @@ impl NaIRGenPass._emit_print(node: uni.FuncCall) -> (ir.Value | None) {
         fmt_ptr = self.builder.bitcast(fmt, ir.IntType(8).as_pointer());
         self.builder.call(printf, [fmt_ptr] + args);
     }
-    
+
     return ir.Constant(ir.IntType(64), 0);
 }
 
