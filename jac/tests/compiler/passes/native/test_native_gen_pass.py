@@ -285,6 +285,18 @@ class TestNativeObjects:
         f = get_func(engine, "test_none", ctypes.c_int64)
         assert f() == 1
 
+    def test_init_called(self):
+        """Verify that init method is automatically called on object creation."""
+        engine, _ = compile_native("objects.na.jac")
+        f = get_func(engine, "test_init_called", ctypes.c_int64)
+        assert f() == 42
+
+    def test_init_executed(self):
+        """Verify that init method logic is executed (not just called)."""
+        engine, _ = compile_native("objects.na.jac")
+        f = get_func(engine, "test_init_executed", ctypes.c_int64)
+        assert f() == 20
+
 
 class TestNativeInheritance:
     """Verify inheritance, vtable dispatch, polymorphism."""

@@ -58,16 +58,40 @@ obj SimpleObj {
     def init(v: int, n: str) {
         self.value = v;
         self.name = n;
-        print("init called with value:", v, "name:", n);
     }
 
-    def display() -> None {
-        print("SimpleObj - value:", self.value, "name:", self.name);
+    def get_value() -> int {
+        return self.value;
     }
 }
 
-with entry {
-    print("Creating object with constructor parameters");
-    obj1 = SimpleObj(43, "test");
-    obj1.display();
+def test_init_called() -> int {
+    sobj = SimpleObj(42, "hello");
+    return sobj.get_value();
+}
+
+obj InitCounter {
+    has init_count: int;
+    has final_value: int;
+
+    def init(val: int) {
+        self.init_count = 1;
+        self.final_value = val * 2;
+    }
+
+    def get_init_count() -> int {
+        return self.init_count;
+    }
+
+    def get_final_value() -> int {
+        return self.final_value;
+    }
+}
+
+def test_init_executed() -> int {
+    iobj = InitCounter(10);
+    if iobj.get_init_count() == 1 {
+        return iobj.get_final_value();
+    }
+    return 0;
 }
