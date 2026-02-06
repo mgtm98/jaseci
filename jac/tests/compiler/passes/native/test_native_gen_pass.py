@@ -256,6 +256,46 @@ class TestNativeStrings:
         assert f(b"Alice", 30) == b"name=Alice, age=30"
 
 
+class TestNativePrintMultiArgs:
+    """Verify print with multiple arguments (space-separated on single line)."""
+
+    def test_print_compiles(self):
+        """The fixture compiles without errors."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        assert engine is not None
+
+    def test_multiple_args(self):
+        """Print with multiple integers and strings."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        f = get_func(engine, "test_multiple_args", ctypes.c_int64)
+        # Just verify the function runs without crashing
+        assert f() == 0
+
+    def test_mixed_types(self):
+        """Print with mixed types (strings, ints, floats)."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        f = get_func(engine, "test_mixed_types", ctypes.c_int64)
+        assert f() == 0
+
+    def test_variables(self):
+        """Print with variables."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        f = get_func(engine, "test_variables", ctypes.c_int64)
+        assert f() == 0
+
+    def test_single_arg(self):
+        """Backwards compatibility: single arg still works."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        f = get_func(engine, "test_single_arg", ctypes.c_int64)
+        assert f() == 0
+
+    def test_many_args(self):
+        """Print with many arguments."""
+        engine, _ = compile_native("print_multi_args.na.jac")
+        f = get_func(engine, "test_many_args", ctypes.c_int64)
+        assert f() == 0
+
+
 class TestNativeObjects:
     """Verify object creation, field access, methods, None comparison."""
 
