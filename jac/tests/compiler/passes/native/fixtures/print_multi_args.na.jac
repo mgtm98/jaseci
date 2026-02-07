@@ -1,18 +1,18 @@
 """Test print with multiple arguments in native mode."""
 
-def test_multiple_args() -> int {
+def test_multiple_args -> int {
     # Test with multiple integers and strings
     print("Test 1:", 10, 20, 30);
     return 0;
 }
 
-def test_mixed_types() -> int {
+def test_mixed_types -> int {
     # Test with mixed types
     print("Value:", 42, "Result:", 3.14);
     return 0;
 }
 
-def test_variables() -> int {
+def test_variables -> int {
     # Test with variables
     x = 100;
     y = 200;
@@ -20,14 +20,14 @@ def test_variables() -> int {
     return 0;
 }
 
-def test_single_arg() -> int {
+def test_single_arg -> int {
     # Test backwards compatibility with single arg
     print("Single arg");
     print(999);
     return 0;
 }
 
-def test_many_args() -> int {
+def test_many_args -> int {
     # Test with many arguments
     print("a", "b", "c", 1, 2, 3);
     return 0;
