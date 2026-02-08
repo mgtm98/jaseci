@@ -291,6 +291,138 @@ def register_clear_method(
     return clear_fn;
 }
 
+"""Register __list_extend_T: add all elements from another list."""
+def register_extend_method(
+    pass_obj: NaIRGenPass,
+    elem_type_name: str,
+    elem_type: ir.Type,
+    list_ptr_type: ir.Type
+) -> ir.Function {
+    i64 = ir.IntType(64);
+    i32 = ir.IntType(32);
+    i8_ptr = ir.IntType(8).as_pointer();
+    gc_malloc = pass_obj._get_or_declare_extern("GC_malloc", i8_ptr, [i64]);
+    memcpy_fn = pass_obj._get_or_declare_extern(
+        "memcpy", i8_ptr, [i8_ptr, i8_ptr, i64]
+    );
+
+    extend_fnty = ir.FunctionType(ir.VoidType(), [list_ptr_type, list_ptr_type]);
+    extend_fn = ir.Function(
+        pass_obj.llvm_module, extend_fnty, name=f"__list_extend_{elem_type_name}"
+    );
+    extend_fn.linkage = "private";
+    extend_fn.args[0].name = "self";
+    extend_fn.args[1].name = "other";
+
+    entry_bb = extend_fn.append_basic_block("entry");
+    check_empty_bb = extend_fn.append_basic_block("check_empty");
+    grow_bb = extend_fn.append_basic_block("grow");
+    copy_bb = extend_fn.append_basic_block("copy");
+    done_bb = extend_fn.append_basic_block("done");
+
+    b = ir.IRBuilder(entry_bb);
+    self_arg = extend_fn.args[0];
+    other_arg = extend_fn.args[1];
+
+    # Get other list's length
+    other_len_p = b.gep(
+        other_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="other.len.ptr"
+    );
+    other_len = b.load(other_len_p, name="other.len");
+
+    # Check if other list is empty - if so, return early
+    is_empty = b.icmp_signed("==", other_len, ir.Constant(i64, 0), name="is.empty");
+    b.cbranch(is_empty, done_bb, check_empty_bb);
+
+    # Check if we need to grow capacity
+    b.position_at_end(check_empty_bb);
+    self_len_p = b.gep(
+        self_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="self.len.ptr"
+    );
+    self_cap_p = b.gep(
+        self_arg, [ir.Constant(i32, 0), ir.Constant(i32, 1)], name="self.cap.ptr"
+    );
+    self_len = b.load(self_len_p, name="self.len");
+    self_cap = b.load(self_cap_p, name="self.cap");
+
+    # Calculate new length: self.len + other.len
+    new_len = b.add(self_len, other_len, name="new.len");
+
+    # Check if we need to grow
+    needs_grow = b.icmp_signed(">", new_len, self_cap, name="needs.grow");
+    b.cbranch(needs_grow, grow_bb, copy_bb);
+
+    # Grow block: allocate larger capacity
+    b.position_at_end(grow_bb);
+    # Calculate new capacity: max(new_len, self.cap * 2)
+    doubled_cap = b.mul(self_cap, ir.Constant(i64, 2), name="doubled.cap");
+    is_doubled_enough = b.icmp_signed(
+        ">=", doubled_cap, new_len, name="doubled.enough"
+    );
+    final_cap = b.select(is_doubled_enough, doubled_cap, new_len, name="final.cap");
+
+    # Allocate new data array
+    elem_null = ir.Constant(elem_type.as_pointer(), None);
+    elem_gep = b.gep(elem_null, [ir.Constant(i32, 1)], name="elem.sizeof");
+    elem_sz = b.ptrtoint(elem_gep, i64, name="elem.size");
+    new_data_sz = b.mul(final_cap, elem_sz, name="new.data.sz");
+    new_data_raw = b.call(gc_malloc, [new_data_sz], name="new.data.raw");
+    new_data = b.bitcast(new_data_raw, elem_type.as_pointer(), name="new.data");
+
+    # Copy existing elements from self
+    self_data_p = b.gep(
+        self_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="self.data.ptr"
+    );
+    self_data = b.load(self_data_p, name="self.data");
+    old_data_sz = b.mul(self_len, elem_sz, name="old.data.sz");
+    self_data_i8 = b.bitcast(self_data, i8_ptr, name="self.data.i8");
+    new_data_i8 = b.bitcast(new_data, i8_ptr, name="new.data.i8");
+    b.call(memcpy_fn, [new_data_i8, self_data_i8, old_data_sz]);
+
+    # Update self's data pointer and capacity
+    b.store(new_data, self_data_p);
+    b.store(final_cap, self_cap_p);
+    b.branch(copy_bb);
+
+    # Copy block: copy elements from other to self
+    b.position_at_end(copy_bb);
+    # Reload data pointer (it may have been updated in grow block)
+    self_data_p2 = b.gep(
+        self_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="self.data.ptr2"
+    );
+    self_data2 = b.load(self_data_p2, name="self.data2");
+
+    # Get other's data pointer
+    other_data_p = b.gep(
+        other_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="other.data.ptr"
+    );
+    other_data = b.load(other_data_p, name="other.data");
+
+    # Calculate destination: self.data + self.len
+    dest_ptr = b.gep(self_data2, [self_len], name="dest.ptr");
+
+    # Calculate bytes to copy: other.len * elem_size
+    elem_null2 = ir.Constant(elem_type.as_pointer(), None);
+    elem_gep2 = b.gep(elem_null2, [ir.Constant(i32, 1)], name="elem.sizeof2");
+    elem_sz2 = b.ptrtoint(elem_gep2, i64, name="elem.size2");
+    copy_sz = b.mul(other_len, elem_sz2, name="copy.sz");
+
+    # memcpy from other to self
+    dest_i8 = b.bitcast(dest_ptr, i8_ptr, name="dest.i8");
+    other_i8 = b.bitcast(other_data, i8_ptr, name="other.i8");
+    b.call(memcpy_fn, [dest_i8, other_i8, copy_sz]);
+
+    # Update self's length
+    b.store(new_len, self_len_p);
+    b.branch(done_bb);
+
+    # Done block
+    b.position_at_end(done_bb);
+    b.ret_void();
+
+    return extend_fn;
+}
+
 """Register __list_insert_T: insert element at index, shifting others right."""
 def register_insert_method(
     pass_obj: NaIRGenPass,
@@ -548,6 +680,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
     len_fn = register_len_method(self, elem_type_name, elem_type, list_ptr_type);
     pop_fn = register_pop_method(self, elem_type_name, elem_type, list_ptr_type);
     clear_fn = register_clear_method(self, elem_type_name, elem_type, list_ptr_type);
+    extend_fn = register_extend_method(self, elem_type_name, elem_type, list_ptr_type);
     insert_fn = register_insert_method(self, elem_type_name, elem_type, list_ptr_type);
     remove_fn = register_remove_method(self, elem_type_name, elem_type, list_ptr_type);
     # Store helpers
@@ -559,6 +692,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
         "len": len_fn,
         "pop": pop_fn,
         "clear": clear_fn,
+        "extend": extend_fn,
         "insert": insert_fn,
         "remove": remove_fn,
         "elem_type": elem_type
@@ -788,4 +922,16 @@ impl NaIRGenPass._codegen_list_remove(
     value = self._coerce_type(value, elem_type);
     # Call the helper function directly (it searches for the value)
     self.builder.call(helpers["remove"], [target_val, value]);
+}
+
+"""Call list.extend(other) method - add all elements from another list."""
+impl NaIRGenPass._codegen_list_extend(
+    target_val: ir.Value, other_val: ir.Value, elem_type_name: str
+) -> None {
+    helpers = self.list_helpers.get(elem_type_name);
+    if helpers is None {
+        return;
+    }
+    # Call the helper function directly
+    self.builder.call(helpers["extend"], [target_val, other_val]);
 }

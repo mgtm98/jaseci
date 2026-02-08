@@ -499,6 +499,56 @@ class TestNativeLists:
         f = get_func(engine, "list_nested_insert", ctypes.c_int64)
         assert f() == 4
 
+    def test_list_extend_basic(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_basic", ctypes.c_int64)
+        assert f() == 6
+
+    def test_list_extend_values(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_values", ctypes.c_int64)
+        assert f() == 4
+
+    def test_list_extend_empty(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_empty", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_extend_to_empty(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_to_empty", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_extend_multiple(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_multiple", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_extend_float(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_float", ctypes.c_int64)
+        assert f() == 4
+
+    def test_list_extend_growth(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_growth", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_extend_then_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_then_append", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_extend_object_field(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_object_field", ctypes.c_int64)
+        assert f() == 4
+
+    def test_list_extend_nested(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_extend_nested", ctypes.c_int64)
+        assert f() == 4
+
 
 class TestNativeComplexObjects:
     """Verify chained field access, chained method calls, indexed fields."""

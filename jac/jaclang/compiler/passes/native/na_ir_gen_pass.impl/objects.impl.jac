@@ -533,6 +533,17 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                 }
                 return ir.Constant(ir.IntType(64), 0);
             }
+            # extend(other)
+            elif method_name == "extend" {
+                params = node.params or [];
+                if params {
+                    other_val = self._codegen_expr(params[0]);
+                    if other_val is not None {
+                        self.builder.call(helpers["extend"], [list_val, other_val]);
+                    }
+                }
+                return ir.Constant(ir.IntType(64), 0);
+            }
         }
     }
     # Handle set methods: add (simple name target)
@@ -685,6 +696,19 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                                     value_val = self._coerce_type(value_val, elem_type);
                                     self.builder.call(
                                         helpers["remove"], [obj_val, value_val]
+                                    );
+                                }
+                            }
+                            return ir.Constant(ir.IntType(64), 0);
+                        }
+                        # extend(other)
+                        elif method_name == "extend" {
+                            params = node.params or [];
+                            if params {
+                                other_val = self._codegen_expr(params[0]);
+                                if other_val is not None {
+                                    self.builder.call(
+                                        helpers["extend"], [obj_val, other_val]
                                     );
                                 }
                             }

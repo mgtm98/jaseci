@@ -1,3 +1,8 @@
+obj MyObject {
+    has value: int = 0;
+    has list_field: list[int] = [];
+}
+
 def list_len_test() -> int {
     items: list[int] = [10, 20, 30];
     return len(items);
@@ -267,4 +272,92 @@ def list_nested_insert() -> int {
     list2: list[int] = [4, 5, 6];
     nested.insert(1, list2);
     return nested[1][0];  # Should return 4
+}
+
+# Test 38: Basic extend - add elements from another list
+def list_extend_basic() -> int {
+    a: list[int] = [1, 2, 3];
+    b: list[int] = [4, 5, 6];
+    a.extend(b);
+    return len(a);  # Should return 6
+}
+
+# Test 39: Extend and verify values
+def list_extend_values() -> int {
+    a: list[int] = [1, 2];
+    b: list[int] = [3, 4];
+    a.extend(b);
+    return a[3];  # Should return 4
+}
+
+# Test 40: Extend with empty list
+def list_extend_empty() -> int {
+    a: list[int] = [1, 2, 3];
+    b: list[int] = [];
+    a.extend(b);
+    return len(a);  # Should return 3
+}
+
+# Test 41: Extend empty list
+def list_extend_to_empty() -> int {
+    a: list[int] = [];
+    b: list[int] = [1, 2, 3];
+    a.extend(b);
+    return len(a);  # Should return 3
+}
+
+# Test 42: Multiple extends
+def list_extend_multiple() -> int {
+    a: list[int] = [1];
+    b: list[int] = [2, 3];
+    c: list[int] = [4, 5];
+    a.extend(b);
+    a.extend(c);
+    return len(a);  # Should return 5
+}
+
+# Test 43: Extend with floats
+def list_extend_float() -> int {
+    a: list[float] = [1.0, 2.0];
+    b: list[float] = [3.0, 4.0];
+    a.extend(b);
+    return len(a);  # Should return 4
+}
+
+# Test 44: Extend causing capacity growth
+def list_extend_growth() -> int {
+    a: list[int] = [1, 2, 3, 4, 5, 6, 7, 8];  # At capacity 8
+    b: list[int] = [9, 10];
+    a.extend(b);
+    return len(a);  # Should return 10
+}
+
+# Test 45: Append after extend
+def list_extend_then_append() -> int {
+    a: list[int] = [1, 2];
+    b: list[int] = [3, 4];
+    a.extend(b);
+    a.append(5);
+    return a[4];  # Should return 5
+}
+
+# Test 46: Extend list field in object
+def list_extend_object_field() -> int {
+    object: MyObject = MyObject();
+    object.list_field = [1, 2];
+    other: list[int] = [3, 4];
+    object.list_field.extend(other);
+    return len(object.list_field);  # Should return 4
+}
+
+# Test 47: Extend nested list
+def list_extend_nested() -> int {
+    list1: list[int] = [1, 2];
+    list2: list[int] = [3, 4];
+    list3: list[int] = [5, 6];
+    list4: list[int] = [7, 8];
+    nested: list[list[int]] = [list1, list2];
+    extend_with: list[list[int]] = [list3, list4];
+    nested.extend(extend_with);
+    return len(nested);  # Should return 4
 }
