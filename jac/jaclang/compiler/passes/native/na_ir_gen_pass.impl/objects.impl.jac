@@ -444,25 +444,95 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
     if method_name is None {
         return None;
     }
-    # Handle list methods: append (simple name target)
+    # Handle list methods (simple name target)
     if target_name is not None and target_name in self.var_list_elem_type {
         elem_type_name = self.var_list_elem_type[target_name];
         helpers = self.list_helpers.get(elem_type_name);
-        if helpers is not None and method_name == "append" {
+        if helpers is not None {
             list_val = self._codegen_expr(trailer.target);
             if list_val is None {
                 return None;
             }
-            params = node.params or [];
-            if params {
-                val = self._codegen_expr(params[0]);
-                if val is not None {
-                    elem_type = helpers["elem_type"];
-                    val = self._coerce_type(val, elem_type);
-                    self.builder.call(helpers["append"], [list_val, val]);
+            # append(value)
+            if method_name == "append" {
+                params = node.params or [];
+                if params {
+                    val = self._codegen_expr(params[0]);
+                    if val is not None {
+                        elem_type = helpers["elem_type"];
+                        val = self._coerce_type(val, elem_type);
+                        self.builder.call(helpers["append"], [list_val, val]);
+                    }
                 }
+                return ir.Constant(ir.IntType(64), 0);
             }
-            return ir.Constant(ir.IntType(64), 0);
+            # pop()
+            elif method_name == "pop" {
+                return self.builder.call(helpers["pop"], [list_val]);
+            }
+            # clear()
+            elif method_name == "clear" {
+                self.builder.call(helpers["clear"], [list_val]);
+                return ir.Constant(ir.IntType(64), 0);
+            }
+            # insert(index, value)
+            elif method_name == "insert" {
+                params = node.params or [];
+                if len(params) >= 2 {
+                    index_val = self._codegen_expr(params[0]);
+                    value_val = self._codegen_expr(params[1]);
+                    if index_val is not None and value_val is not None {
+                        # Adjust negative indices and clamp to [0, len]
+                        i64 = ir.IntType(64);
+                        index_val = self._coerce_type(index_val, i64);
+                        len_val = self.builder.call(
+                            helpers["len"], [list_val], name="list.len.insert"
+                        );
+                        is_neg = self.builder.icmp_signed(
+                            "<", index_val, ir.Constant(i64, 0), name="insert.is.neg"
+                        );
+                        adjusted_for_neg = self.builder.add(
+                            len_val, index_val, name="insert.adjusted.neg"
+                        );
+                        adjusted_index = self.builder.select(
+                            is_neg, adjusted_for_neg, index_val, name="insert.adjusted"
+                        );
+                        zero = ir.Constant(i64, 0);
+                        is_below = self.builder.icmp_signed(
+                            "<", adjusted_index, zero, name="insert.below"
+                        );
+                        clamped_low = self.builder.select(
+                            is_below, zero, adjusted_index, name="insert.clamped.low"
+                        );
+                        is_above = self.builder.icmp_signed(
+                            ">", clamped_low, len_val, name="insert.above"
+                        );
+                        final_index = self.builder.select(
+                            is_above, len_val, clamped_low, name="insert.final"
+                        );
+                        # Call the low-level insert with adjusted index
+                        elem_type = helpers["elem_type"];
+                        value_val = self._coerce_type(value_val, elem_type);
+                        self.builder.call(
+                            helpers["insert"], [list_val, final_index, value_val]
+                        );
+                    }
+                }
+                return ir.Constant(ir.IntType(64), 0);
+            }
+            # remove(value)
+            elif method_name == "remove" {
+                params = node.params or [];
+                if params {
+                    value_val = self._codegen_expr(params[0]);
+                    if value_val is not None {
+                        elem_type = helpers["elem_type"];
+                        value_val = self._coerce_type(value_val, elem_type);
+                        self.builder.call(helpers["remove"], [list_val, value_val]);
+                    }
+                }
+                return ir.Constant(ir.IntType(64), 0);
+            }
         }
     }
     # Handle set methods: add (simple name target)
@@ -518,19 +588,108 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
             # Handle list methods on complex targets (e.g. g.items.append(x))
             if type_name is None {
                 elem_type_name = self._infer_list_elem_type(obj_val);
-                if elem_type_name is not None and method_name == "append" {
+                if elem_type_name is not None {
                     helpers = self.list_helpers.get(elem_type_name);
                     if helpers is not None {
-                        params = node.params or [];
-                        if params {
-                            val = self._codegen_expr(params[0]);
-                            if val is not None {
-                                elem_type = helpers["elem_type"];
-                                val = self._coerce_type(val, elem_type);
-                                self.builder.call(helpers["append"], [obj_val, val]);
+                        # append(value)
+                        if method_name == "append" {
+                            params = node.params or [];
+                            if params {
+                                val = self._codegen_expr(params[0]);
+                                if val is not None {
+                                    elem_type = helpers["elem_type"];
+                                    val = self._coerce_type(val, elem_type);
+                                    self.builder.call(
+                                        helpers["append"], [obj_val, val]
+                                    );
+                                }
                             }
+                            return ir.Constant(ir.IntType(64), 0);
                         }
-                        return ir.Constant(ir.IntType(64), 0);
+                        # pop()
+                        elif method_name == "pop" {
+                            return self.builder.call(helpers["pop"], [obj_val]);
+                        }
+                        # clear()
+                        elif method_name == "clear" {
+                            self.builder.call(helpers["clear"], [obj_val]);
+                            return ir.Constant(ir.IntType(64), 0);
+                        }
+                        # insert(index, value)
+                        elif method_name == "insert" {
+                            params = node.params or [];
+                            if len(params) >= 2 {
+                                index_val = self._codegen_expr(params[0]);
+                                value_val = self._codegen_expr(params[1]);
+                                if index_val is not None and value_val is not None {
+                                    # Adjust negative indices and clamp to [0, len]
+                                    i64 = ir.IntType(64);
+                                    index_val = self._coerce_type(index_val, i64);
+                                    len_val = self.builder.call(
+                                        helpers["len"],
+                                        [obj_val],
+                                        name="list.len.insert"
+                                    );
+                                    is_neg = self.builder.icmp_signed(
+                                        "<",
+                                        index_val,
+                                        ir.Constant(i64, 0),
+                                        name="insert.is.neg"
+                                    );
+                                    adjusted_for_neg = self.builder.add(
+                                        len_val, index_val, name="insert.adjusted.neg"
+                                    );
+                                    adjusted_index = self.builder.select(
+                                        is_neg,
+                                        adjusted_for_neg,
+                                        index_val,
+                                        name="insert.adjusted"
+                                    );
+                                    zero = ir.Constant(i64, 0);
+                                    is_below = self.builder.icmp_signed(
+                                        "<", adjusted_index, zero, name="insert.below"
+                                    );
+                                    clamped_low = self.builder.select(
+                                        is_below,
+                                        zero,
+                                        adjusted_index,
+                                        name="insert.clamped.low"
+                                    );
+                                    is_above = self.builder.icmp_signed(
+                                        ">", clamped_low, len_val, name="insert.above"
+                                    );
+                                    final_index = self.builder.select(
+                                        is_above,
+                                        len_val,
+                                        clamped_low,
+                                        name="insert.final"
+                                    );
+                                    # Call the low-level insert with adjusted index
+                                    elem_type = helpers["elem_type"];
+                                    value_val = self._coerce_type(value_val, elem_type);
+                                    self.builder.call(
+                                        helpers["insert"],
+                                        [obj_val, final_index, value_val]
+                                    );
+                                }
+                            }
+                            return ir.Constant(ir.IntType(64), 0);
+                        }
+                        # remove(value)
+                        elif method_name == "remove" {
+                            params = node.params or [];
+                            if params {
+                                value_val = self._codegen_expr(params[0]);
+                                if value_val is not None {
+                                    elem_type = helpers["elem_type"];
+                                    value_val = self._coerce_type(value_val, elem_type);
+                                    self.builder.call(
+                                        helpers["remove"], [obj_val, value_val]
+                                    );
+                                }
+                            }
+                            return ir.Constant(ir.IntType(64), 0);
+                        }
                     }
                 }
             }

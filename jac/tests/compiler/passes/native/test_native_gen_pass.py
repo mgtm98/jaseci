@@ -339,6 +339,166 @@ class TestNativeLists:
         f = get_func(engine, "list_set_test", ctypes.c_int64)
         assert f() == 99
 
+    def test_list_negative_index_get(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_negative_index_get", ctypes.c_int64)
+        assert f() == 40
+
+    def test_list_negative_index_middle(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_negative_index_middle", ctypes.c_int64)
+        assert f() == 30
+
+    def test_list_negative_index_set(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_negative_index_set", ctypes.c_int64)
+        assert f() == 99
+
+    def test_list_pop(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_pop_test", ctypes.c_int64)
+        assert f() == 30
+
+    def test_list_pop_len(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_pop_len", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_clear(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_clear_test", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_insert_start(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_insert_start", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_insert_middle(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_insert_middle", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_insert_end(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_insert_end", ctypes.c_int64)
+        assert f() == 40
+
+    def test_list_insert_negative(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_insert_negative", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_remove_first(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_remove_first", ctypes.c_int64)
+        assert f() == 30
+
+    def test_list_remove_len(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_remove_len", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_float_sum(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_float_sum", ctypes.c_double)
+        assert abs(f() - 7.0) < 1e-10
+
+    def test_list_float_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_float_append", ctypes.c_double)
+        assert abs(f() - 3.5) < 1e-10
+
+    def test_list_empty_len(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_empty_len", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_empty_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_empty_append", ctypes.c_int64)
+        assert f() == 42
+
+    def test_list_growth(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_growth_test", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_growth_values(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_growth_values", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_sequential_ops(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_sequential_ops", ctypes.c_int64)
+        assert f() == 25
+
+    def test_list_duplicate_values(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_duplicate_values", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_remove_duplicate(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_remove_duplicate", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_objects_create(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_objects_create", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_objects_get(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_objects_get", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_objects_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_objects_append", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_objects_pop(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_objects_pop", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_objects_insert(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_objects_insert", ctypes.c_int64)
+        assert f() == 20
+
+    def test_list_nested_create(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_create", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_nested_get(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_get", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_nested_append_inner(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_append_inner", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_nested_append_outer(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_append_outer", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_nested_pop(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_pop", ctypes.c_int64)
+        assert f() == 4
+
+    def test_list_nested_insert(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_nested_insert", ctypes.c_int64)
+        assert f() == 4
+
 
 class TestNativeComplexObjects:
     """Verify chained field access, chained method calls, indexed fields."""
