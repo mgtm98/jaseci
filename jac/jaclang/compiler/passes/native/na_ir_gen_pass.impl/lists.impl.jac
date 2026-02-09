@@ -930,6 +930,120 @@ def register_reverse_method(
     return reverse_fn;
 }
 
+"""Register __list_sort_T: sort list in-place using quicksort."""
+def register_sort_method(
+    pass_obj: NaIRGenPass,
+    elem_type_name: str,
+    elem_type: ir.Type,
+    list_ptr_type: ir.Type
+) -> ir.Function {
+    i64 = ir.IntType(64);
+    i32 = ir.IntType(32);
+
+    # Signature: void sort(list)
+    sort_fnty = ir.FunctionType(ir.VoidType(), [list_ptr_type]);
+    sort_fn = ir.Function(
+        pass_obj.llvm_module, sort_fnty, name=f"__list_sort_{elem_type_name}"
+    );
+    sort_fn.linkage = "private";
+    sort_fn.args[0].name = "list";
+
+    entry_bb = sort_fn.append_basic_block("entry");
+    b = ir.IRBuilder(entry_bb);
+    l_arg = sort_fn.args[0];
+
+    # Load len
+    len_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="len.ptr");
+    cur_len = b.load(len_p, name="len");
+
+    # Get data pointer
+    data_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="data.ptr");
+    data = b.load(data_p, name="data");
+
+    # Calculate element size
+    elem_null = ir.Constant(elem_type.as_pointer(), None);
+    elem_gep = b.gep(elem_null, [ir.Constant(i32, 1)], name="elem.sizeof");
+    elem_size = b.ptrtoint(elem_gep, i64, name="elem.size");
+
+    # Call qsort from libc
+    # void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
+    i8_ptr = ir.IntType(8).as_pointer();
+    void_ptr = i8_ptr;
+    size_t = i64;
+
+    # Define comparison function type: int (*)(const void*, const void*)
+    cmp_fnty = ir.FunctionType(i32, [void_ptr, void_ptr]);
+    cmp_fn_ptr_type = cmp_fnty.as_pointer();
+
+    # Declare qsort from libc
+    qsort_fnty = ir.FunctionType(
+        ir.VoidType(), [void_ptr, size_t, size_t, cmp_fn_ptr_type]
+    );
+    qsort_fn = pass_obj._get_or_declare_extern(
+        "qsort", ir.VoidType(), [void_ptr, size_t, size_t, cmp_fn_ptr_type]
+    );
+
+    # Create comparison function for this element type
+    cmp_fn = ir.Function(
+        pass_obj.llvm_module, cmp_fnty, name=f"__list_cmp_{elem_type_name}"
+    );
+    cmp_fn.linkage = "private";
+    cmp_fn.args[0].name = "a";
+    cmp_fn.args[1].name = "b";
+
+    cmp_bb = cmp_fn.append_basic_block("entry");
+    cmp_b = ir.IRBuilder(cmp_bb);
+
+    # Cast void* to elem_type*
+    a_typed = cmp_b.bitcast(cmp_fn.args[0], elem_type.as_pointer(), name="a.typed");
+    b_typed = cmp_b.bitcast(cmp_fn.args[1], elem_type.as_pointer(), name="b.typed");
+
+    # Load values
+    a_val = cmp_b.load(a_typed, name="a.val");
+    b_val = cmp_b.load(b_typed, name="b.val");
+
+    # Compare based on type
+    if isinstance(elem_type, ir.IntType) {
+        # Integer comparison: return a - b (but safely)
+        a_lt_b = cmp_b.icmp_signed("<", a_val, b_val, name="a.lt.b");
+        a_gt_b = cmp_b.icmp_signed(">", a_val, b_val, name="a.gt.b");
+        result = cmp_b.select(
+            a_lt_b, ir.Constant(i32, -1), ir.Constant(i32, 0), name="cmp.lt"
+        );
+        result = cmp_b.select(a_gt_b, ir.Constant(i32, 1), result, name="cmp.result");
+        cmp_b.ret(result);
+    } elif isinstance(elem_type, ir.DoubleType) {
+        # Float comparison
+        a_lt_b = cmp_b.fcmp_ordered("<", a_val, b_val, name="a.lt.b");
+        a_gt_b = cmp_b.fcmp_ordered(">", a_val, b_val, name="a.gt.b");
+        result = cmp_b.select(
+            a_lt_b, ir.Constant(i32, -1), ir.Constant(i32, 0), name="cmp.lt"
+        );
+        result = cmp_b.select(a_gt_b, ir.Constant(i32, 1), result, name="cmp.result");
+        cmp_b.ret(result);
+    } else {
+        # Pointer comparison (compare addresses)
+        a_int = cmp_b.ptrtoint(a_val, i64, name="a.int");
+        b_int = cmp_b.ptrtoint(b_val, i64, name="b.int");
+        a_lt_b = cmp_b.icmp_unsigned("<", a_int, b_int, name="a.lt.b");
+        a_gt_b = cmp_b.icmp_unsigned(">", a_int, b_int, name="a.gt.b");
+        result = cmp_b.select(
+            a_lt_b, ir.Constant(i32, -1), ir.Constant(i32, 0), name="cmp.lt"
+        );
+        result = cmp_b.select(a_gt_b, ir.Constant(i32, 1), result, name="cmp.result");
+        cmp_b.ret(result);
+    }
+
+    # Cast data to void*
+    data_void = b.bitcast(data, void_ptr, name="data.void");
+
+    # Call qsort(data, len, elem_size, cmp_fn)
+    b.call(qsort_fn, [data_void, cur_len, elem_size, cmp_fn]);
+
+    b.ret_void();
+    return sort_fn;
+}
+
 """Emit LLVM IR helper functions for a list with given element type."""
 impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> None {
     if elem_type_name in self.list_helpers {
@@ -962,6 +1076,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
     reverse_fn = register_reverse_method(
         self, elem_type_name, elem_type, list_ptr_type
     );
+    sort_fn = register_sort_method(self, elem_type_name, elem_type, list_ptr_type);
     # Store helpers
     self.list_helpers[elem_type_name] = {
         "new": new_fn,
@@ -977,6 +1092,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
         "index": index_fn,
         "count": count_fn,
         "reverse": reverse_fn,
+        "sort": sort_fn,
         "elem_type": elem_type
     };
 }
@@ -1258,4 +1374,14 @@ impl NaIRGenPass._codegen_list_reverse(
     }
     # Call the helper function directly
     self.builder.call(helpers["reverse"], [target_val]);
+}
+
+"""Call list.sort() method - sort list in-place."""
+impl NaIRGenPass._codegen_list_sort(target_val: ir.Value, elem_type_name: str) -> None {
+    helpers = self.list_helpers.get(elem_type_name);
+    if helpers is None {
+        return;
+    }
+    # Call the helper function directly
+    self.builder.call(helpers["sort"], [target_val]);
 }

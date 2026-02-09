@@ -314,14 +314,20 @@ class TestNativeInheritance:
 class TestNativeLists:
     """Verify list creation, access, append, len, set."""
 
+    engine = None
+    ir = None
+
+    @classmethod
+    def setup_class(cls):
+        """Compile lists.na.jac once and reuse the engine for all tests."""
+        cls.engine, cls.ir = compile_native("lists.na.jac")
+
     def test_list_len(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_len_test", ctypes.c_int64)
+        f = get_func(self.engine, "list_len_test", ctypes.c_int64)
         assert f() == 3
 
     def test_list_get(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_get_test", ctypes.c_int64)
+        f = get_func(self.engine, "list_get_test", ctypes.c_int64)
         assert f() == 20
 
     def test_list_append(self):
@@ -340,334 +346,320 @@ class TestNativeLists:
         assert f() == 99
 
     def test_list_negative_index_get(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_negative_index_get", ctypes.c_int64)
+        f = get_func(self.engine, "list_negative_index_get", ctypes.c_int64)
         assert f() == 40
 
     def test_list_negative_index_middle(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_negative_index_middle", ctypes.c_int64)
+        f = get_func(self.engine, "list_negative_index_middle", ctypes.c_int64)
         assert f() == 30
 
     def test_list_negative_index_set(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_negative_index_set", ctypes.c_int64)
+        f = get_func(self.engine, "list_negative_index_set", ctypes.c_int64)
         assert f() == 99
 
     def test_list_pop(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_pop_test", ctypes.c_int64)
+        f = get_func(self.engine, "list_pop_test", ctypes.c_int64)
         assert f() == 30
 
     def test_list_pop_len(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_pop_len", ctypes.c_int64)
+        f = get_func(self.engine, "list_pop_len", ctypes.c_int64)
         assert f() == 2
 
     def test_list_clear(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_clear_test", ctypes.c_int64)
+        f = get_func(self.engine, "list_clear_test", ctypes.c_int64)
         assert f() == 0
 
     def test_list_insert_start(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_insert_start", ctypes.c_int64)
+        f = get_func(self.engine, "list_insert_start", ctypes.c_int64)
         assert f() == 10
 
     def test_list_insert_middle(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_insert_middle", ctypes.c_int64)
+        f = get_func(self.engine, "list_insert_middle", ctypes.c_int64)
         assert f() == 20
 
     def test_list_insert_end(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_insert_end", ctypes.c_int64)
+        f = get_func(self.engine, "list_insert_end", ctypes.c_int64)
         assert f() == 40
 
     def test_list_insert_negative(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_insert_negative", ctypes.c_int64)
+        f = get_func(self.engine, "list_insert_negative", ctypes.c_int64)
         assert f() == 20
 
     def test_list_remove_first(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_remove_first", ctypes.c_int64)
+        f = get_func(self.engine, "list_remove_first", ctypes.c_int64)
         assert f() == 30
 
     def test_list_remove_len(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_remove_len", ctypes.c_int64)
+        f = get_func(self.engine, "list_remove_len", ctypes.c_int64)
         assert f() == 2
 
     def test_list_float_sum(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_float_sum", ctypes.c_double)
+        f = get_func(self.engine, "list_float_sum", ctypes.c_double)
         assert abs(f() - 7.0) < 1e-10
 
     def test_list_float_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_float_append", ctypes.c_double)
+        f = get_func(self.engine, "list_float_append", ctypes.c_double)
         assert abs(f() - 3.5) < 1e-10
 
     def test_list_empty_len(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_empty_len", ctypes.c_int64)
+        f = get_func(self.engine, "list_empty_len", ctypes.c_int64)
         assert f() == 0
 
     def test_list_empty_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_empty_append", ctypes.c_int64)
+        f = get_func(self.engine, "list_empty_append", ctypes.c_int64)
         assert f() == 42
 
     def test_list_growth(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_growth_test", ctypes.c_int64)
+        f = get_func(self.engine, "list_growth_test", ctypes.c_int64)
         assert f() == 20
 
     def test_list_growth_values(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_growth_values", ctypes.c_int64)
+        f = get_func(self.engine, "list_growth_values", ctypes.c_int64)
         assert f() == 20
 
     def test_list_sequential_ops(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_sequential_ops", ctypes.c_int64)
+        f = get_func(self.engine, "list_sequential_ops", ctypes.c_int64)
         assert f() == 25
 
     def test_list_duplicate_values(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_duplicate_values", ctypes.c_int64)
+        f = get_func(self.engine, "list_duplicate_values", ctypes.c_int64)
         assert f() == 5
 
     def test_list_remove_duplicate(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_remove_duplicate", ctypes.c_int64)
+        f = get_func(self.engine, "list_remove_duplicate", ctypes.c_int64)
         assert f() == 3
 
     def test_list_objects_create(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_objects_create", ctypes.c_int64)
+        f = get_func(self.engine, "list_objects_create", ctypes.c_int64)
         assert f() == 3
 
     def test_list_objects_get(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_objects_get", ctypes.c_int64)
+        f = get_func(self.engine, "list_objects_get", ctypes.c_int64)
         assert f() == 20
 
     def test_list_objects_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_objects_append", ctypes.c_int64)
+        f = get_func(self.engine, "list_objects_append", ctypes.c_int64)
         assert f() == 2
 
     def test_list_objects_pop(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_objects_pop", ctypes.c_int64)
+        f = get_func(self.engine, "list_objects_pop", ctypes.c_int64)
         assert f() == 20
 
     def test_list_objects_insert(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_objects_insert", ctypes.c_int64)
+        f = get_func(self.engine, "list_objects_insert", ctypes.c_int64)
         assert f() == 20
 
     def test_list_nested_create(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_create", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_create", ctypes.c_int64)
         assert f() == 3
 
     def test_list_nested_get(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_get", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_get", ctypes.c_int64)
         assert f() == 5
 
     def test_list_nested_append_inner(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_append_inner", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_append_inner", ctypes.c_int64)
         assert f() == 10
 
     def test_list_nested_append_outer(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_append_outer", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_append_outer", ctypes.c_int64)
         assert f() == 2
 
     def test_list_nested_pop(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_pop", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_pop", ctypes.c_int64)
         assert f() == 4
 
     def test_list_nested_insert(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_nested_insert", ctypes.c_int64)
+        f = get_func(self.engine, "list_nested_insert", ctypes.c_int64)
         assert f() == 4
 
     def test_list_extend_basic(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_basic", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_basic", ctypes.c_int64)
         assert f() == 6
 
     def test_list_extend_values(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_values", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_values", ctypes.c_int64)
         assert f() == 4
 
     def test_list_extend_empty(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_empty", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_empty", ctypes.c_int64)
         assert f() == 3
 
     def test_list_extend_to_empty(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_to_empty", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_to_empty", ctypes.c_int64)
         assert f() == 3
 
     def test_list_extend_multiple(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_multiple", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_multiple", ctypes.c_int64)
         assert f() == 5
 
     def test_list_extend_float(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_float", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_float", ctypes.c_int64)
         assert f() == 4
 
     def test_list_extend_growth(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_growth", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_growth", ctypes.c_int64)
         assert f() == 10
 
     def test_list_extend_then_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_then_append", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_then_append", ctypes.c_int64)
         assert f() == 5
 
     def test_list_extend_object_field(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_object_field", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_object_field", ctypes.c_int64)
         assert f() == 4
 
     def test_list_extend_nested(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_extend_nested", ctypes.c_int64)
+        f = get_func(self.engine, "list_extend_nested", ctypes.c_int64)
         assert f() == 4
 
     def test_list_index_basic(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_basic", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_basic", ctypes.c_int64)
         assert f() == 2
 
     def test_list_index_first(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_first", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_first", ctypes.c_int64)
         assert f() == 0
 
     def test_list_index_last(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_last", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_last", ctypes.c_int64)
         assert f() == 2
 
     def test_list_index_duplicate(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_duplicate", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_duplicate", ctypes.c_int64)
         assert f() == 1
 
     def test_list_index_float(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_float", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_float", ctypes.c_int64)
         assert f() == 2
 
     def test_list_index_after_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_after_append", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_after_append", ctypes.c_int64)
         assert f() == 2
 
     def test_list_index_single(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_single", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_single", ctypes.c_int64)
         assert f() == 0
 
     def test_list_index_object_field(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_index_object_field", ctypes.c_int64)
+        f = get_func(self.engine, "list_index_object_field", ctypes.c_int64)
         assert f() == 1
 
     def test_list_count_basic(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_basic", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_basic", ctypes.c_int64)
         assert f() == 2
 
     def test_list_count_zero(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_zero", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_zero", ctypes.c_int64)
         assert f() == 0
 
     def test_list_count_all_same(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_all_same", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_all_same", ctypes.c_int64)
         assert f() == 5
 
     def test_list_count_single(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_single", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_single", ctypes.c_int64)
         assert f() == 1
 
     def test_list_count_float(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_float", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_float", ctypes.c_int64)
         assert f() == 2
 
     def test_list_count_after_append(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_after_append", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_after_append", ctypes.c_int64)
         assert f() == 2
 
     def test_list_count_empty(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_empty", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_empty", ctypes.c_int64)
         assert f() == 0
 
     def test_list_count_object_field(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_count_object_field", ctypes.c_int64)
+        f = get_func(self.engine, "list_count_object_field", ctypes.c_int64)
         assert f() == 3
 
     def test_list_reverse_basic(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_basic", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_basic", ctypes.c_int64)
         assert f() == 5
 
     def test_list_reverse_values(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_values", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_values", ctypes.c_int64)
         assert f() == 10
 
     def test_list_reverse_empty(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_empty", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_empty", ctypes.c_int64)
         assert f() == 0
 
     def test_list_reverse_single(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_single", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_single", ctypes.c_int64)
         assert f() == 42
 
     def test_list_reverse_two(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_two", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_two", ctypes.c_int64)
         assert f() == 2
 
     def test_list_reverse_float(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_float", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_float", ctypes.c_int64)
         assert f() == 1
 
     def test_list_reverse_multiple(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_multiple", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_multiple", ctypes.c_int64)
         assert f() == 1
 
     def test_list_reverse_object_field(self):
-        engine, _ = compile_native("lists.na.jac")
-        f = get_func(engine, "list_reverse_object_field", ctypes.c_int64)
+        f = get_func(self.engine, "list_reverse_object_field", ctypes.c_int64)
         assert f() == 30
+
+    def test_list_sort_basic(self):
+        f = get_func(self.engine, "list_sort_basic", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_sort_values(self):
+        f = get_func(self.engine, "list_sort_values", ctypes.c_int64)
+        assert f() == 8
+
+    def test_list_sort_empty(self):
+        f = get_func(self.engine, "list_sort_empty", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_sort_single(self):
+        f = get_func(self.engine, "list_sort_single", ctypes.c_int64)
+        assert f() == 42
+
+    def test_list_sort_two(self):
+        f = get_func(self.engine, "list_sort_two", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_sort_already_sorted(self):
+        f = get_func(self.engine, "list_sort_already_sorted", ctypes.c_int64)
+        assert f() == 3
+
+    def test_list_sort_reverse_sorted(self):
+        f = get_func(self.engine, "list_sort_reverse_sorted", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_sort_duplicates(self):
+        f = get_func(self.engine, "list_sort_duplicates", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_sort_float(self):
+        f = get_func(self.engine, "list_sort_float", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_sort_negative(self):
+        f = get_func(self.engine, "list_sort_negative", ctypes.c_int64)
+        assert f() == -5
+
+    def test_list_sort_large(self):
+        f = get_func(self.engine, "list_sort_large", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_sort_object_field(self):
+        f = get_func(self.engine, "list_sort_object_field", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_sort_after_append(self):
+        f = get_func(self.engine, "list_sort_after_append", ctypes.c_int64)
+        assert f() == 20
 
 
 class TestNativeComplexObjects:

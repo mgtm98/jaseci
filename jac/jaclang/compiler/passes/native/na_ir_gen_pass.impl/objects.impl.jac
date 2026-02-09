@@ -579,6 +579,11 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                 self.builder.call(helpers["reverse"], [list_val]);
                 return None;
             }
+            # sort() -> None
+            elif method_name == "sort" {
+                self.builder.call(helpers["sort"], [list_val]);
+                return None;
+            }
         }
     }
     # Handle set methods: add (simple name target)
@@ -782,6 +787,11 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                         # reverse() -> None
                         elif method_name == "reverse" {
                             self.builder.call(helpers["reverse"], [obj_val]);
+                            return None;
+                        }
+                        # sort() -> None
+                        elif method_name == "sort" {
+                            self.builder.call(helpers["sort"], [obj_val]);
                             return None;
                         }
                     }

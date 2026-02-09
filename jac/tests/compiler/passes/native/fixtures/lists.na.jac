@@ -524,3 +524,103 @@ def list_reverse_object_field() -> int {
     object.list_field.reverse();
     return object.list_field[0];  # Should return 30
 }
+
+# Test 72: Basic sort - sort integers in ascending order
+def list_sort_basic() -> int {
+    items: list[int] = [30, 10, 40, 20];
+    items.sort();
+    return items[0];  # Should return 10 (smallest)
+}
+
+# Test 73: Sort and verify all values
+def list_sort_values() -> int {
+    items: list[int] = [5, 2, 8, 1, 9];
+    items.sort();
+    # After sort: [1, 2, 5, 8, 9]
+    return items[3];  # Should return 8
+}
+
+# Test 74: Sort empty list
+def list_sort_empty() -> int {
+    items: list[int] = [];
+    items.sort();
+    return len(items);  # Should return 0
+}
+
+# Test 75: Sort single element
+def list_sort_single() -> int {
+    items: list[int] = [42];
+    items.sort();
+    return items[0];  # Should return 42
+}
+
+# Test 76: Sort two elements
+def list_sort_two() -> int {
+    items: list[int] = [20, 10];
+    items.sort();
+    return items[0];  # Should return 10
+}
+
+# Test 77: Sort already sorted list
+def list_sort_already_sorted() -> int {
+    items: list[int] = [1, 2, 3, 4, 5];
+    items.sort();
+    return items[2];  # Should return 3
+}
+
+# Test 78: Sort reverse sorted list
+def list_sort_reverse_sorted() -> int {
+    items: list[int] = [5, 4, 3, 2, 1];
+    items.sort();
+    return items[0];  # Should return 1
+}
+
+# Test 79: Sort with duplicates
+def list_sort_duplicates() -> int {
+    items: list[int] = [3, 1, 4, 1, 5];
+    items.sort();
+    # After sort: [1, 1, 3, 4, 5]
+    return items[1];  # Should return 1
+}
+
+# Test 80: Sort floats
+def list_sort_float() -> int {
+    values: list[float] = [3.5, 1.2, 4.8, 2.1];
+    values.sort();
+    # After sort: [1.2, 2.1, 3.5, 4.8]
+    if values[0] == 1.2 and values[3] == 4.8 {
+        return 1;  # Success
+    }
+    return 0;
+}
+
+# Test 81: Sort negative numbers
+def list_sort_negative() -> int {
+    items: list[int] = [3, -1, 4, -5, 2];
+    items.sort();
+    # After sort: [-5, -1, 2, 3, 4]
+    return items[0];  # Should return -5
+}
+
+# Test 82: Sort large list
+def list_sort_large() -> int {
+    items: list[int] = [9, 7, 5, 3, 1, 8, 6, 4, 2, 0];
+    items.sort();
+    return items[5];  # Should return 5 (middle element after sort)
+}
+
+# Test 83: Sort in object field list
+def list_sort_object_field() -> int {
+    object: MyObject = MyObject();
+    object.list_field = [30, 10, 20];
+    object.list_field.sort();
+    return object.list_field[0];  # Should return 10
+}
+
+# Test 84: Sort after append
+def list_sort_after_append() -> int {
+    items: list[int] = [30, 10];
+    items.append(20);
+    items.sort();
+    return items[1];  # Should return 20
+}
