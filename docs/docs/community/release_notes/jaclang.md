@@ -4,6 +4,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.10.1 (Unreleased)
 
+- **Native List Implementation: Extended Method Support**: The native LLVM list implementation (`list[int]`, `list[float]`, `list[Object]`) now supports 5 additional Python-compatible methods: `extend(other_list)` for bulk element addition, `index(value)` for finding element positions, `count(value)` for counting occurrences, `reverse()` for in-place reversal using two-pointer swap algorithm, and `sort()` for in-place sorting using C library qsort with type-specific comparators (i64, f64, ptr).
+
 ## jaclang 0.10.0 (Latest Release)
 
 - **KWESC_NAME syntax changed from `<>` to backtick**: Keyword-escaped names now use a backtick prefix (`` `node ``) instead of the angle-bracket prefix (`<>node`). All `.jac` source files, the lexer, parser, unparse/DocIR passes, and auto-lint rules have been updated accordingly.
