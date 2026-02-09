@@ -849,6 +849,87 @@ def register_count_method(
     return count_fn;
 }
 
+"""Register __list_reverse_T: reverse list in-place."""
+def register_reverse_method(
+    pass_obj: NaIRGenPass,
+    elem_type_name: str,
+    elem_type: ir.Type,
+    list_ptr_type: ir.Type
+) -> ir.Function {
+    i64 = ir.IntType(64);
+    i32 = ir.IntType(32);
+
+    # Signature: void reverse(list)
+    reverse_fnty = ir.FunctionType(ir.VoidType(), [list_ptr_type]);
+    reverse_fn = ir.Function(
+        pass_obj.llvm_module, reverse_fnty, name=f"__list_reverse_{elem_type_name}"
+    );
+    reverse_fn.linkage = "private";
+    reverse_fn.args[0].name = "list";
+
+    entry_bb = reverse_fn.append_basic_block("entry");
+    loop_bb = reverse_fn.append_basic_block("loop");
+    swap_bb = reverse_fn.append_basic_block("swap");
+    done_bb = reverse_fn.append_basic_block("done");
+
+    b = ir.IRBuilder(entry_bb);
+    l_arg = reverse_fn.args[0];
+
+    # Load len
+    len_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="len.ptr");
+    cur_len = b.load(len_p, name="len");
+
+    # Get data pointer
+    data_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="data.ptr");
+    data = b.load(data_p, name="data");
+
+    # Calculate end index: len - 1
+    end_idx = b.sub(cur_len, ir.Constant(i64, 1), name="end.idx");
+
+    # Start loop with left=0, right=len-1
+    b.branch(loop_bb);
+
+    # Loop: swap elements while left < right
+    b.position_at_end(loop_bb);
+    left_phi = b.phi(i64, name="left");
+    right_phi = b.phi(i64, name="right");
+    left_phi.add_incoming(ir.Constant(i64, 0), entry_bb);
+    right_phi.add_incoming(end_idx, entry_bb);
+
+    # Check if left < right
+    should_continue = b.icmp_signed("<", left_phi, right_phi, name="should.continue");
+    b.cbranch(should_continue, swap_bb, done_bb);
+
+    # Swap block
+    b.position_at_end(swap_bb);
+
+    # Load left element
+    left_p = b.gep(data, [left_phi], name="left.ptr");
+    left_val = b.load(left_p, name="left.val");
+
+    # Load right element
+    right_p = b.gep(data, [right_phi], name="right.ptr");
+    right_val = b.load(right_p, name="right.val");
+
+    # Swap: store right_val at left, left_val at right
+    b.store(right_val, left_p);
+    b.store(left_val, right_p);
+
+    # Increment left, decrement right
+    new_left = b.add(left_phi, ir.Constant(i64, 1), name="new.left");
+    new_right = b.sub(right_phi, ir.Constant(i64, 1), name="new.right");
+
+    left_phi.add_incoming(new_left, swap_bb);
+    right_phi.add_incoming(new_right, swap_bb);
+    b.branch(loop_bb);
+
+    # Done
+    b.position_at_end(done_bb);
+    b.ret_void();
+
+    return reverse_fn;
+}
+
 """Emit LLVM IR helper functions for a list with given element type."""
 impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> None {
     if elem_type_name in self.list_helpers {
@@ -878,6 +959,9 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
     remove_fn = register_remove_method(self, elem_type_name, elem_type, list_ptr_type);
     index_fn = register_index_method(self, elem_type_name, elem_type, list_ptr_type);
     count_fn = register_count_method(self, elem_type_name, elem_type, list_ptr_type);
+    reverse_fn = register_reverse_method(
+        self, elem_type_name, elem_type, list_ptr_type
+    );
     # Store helpers
     self.list_helpers[elem_type_name] = {
         "new": new_fn,
@@ -892,6 +976,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
         "remove": remove_fn,
         "index": index_fn,
         "count": count_fn,
+        "reverse": reverse_fn,
         "elem_type": elem_type
     };
 }
@@ -1161,4 +1246,16 @@ impl NaIRGenPass._codegen_list_count(
     value = self._coerce_type(value, elem_type);
     # Call the helper function and return the count
     return self.builder.call(helpers["count"], [target_val, value]);
+}
+
+"""Call list.reverse() method - reverse list in-place."""
+impl NaIRGenPass._codegen_list_reverse(
+    target_val: ir.Value, elem_type_name: str
+) -> None {
+    helpers = self.list_helpers.get(elem_type_name);
+    if helpers is None {
+        return;
+    }
+    # Call the helper function directly
+    self.builder.call(helpers["reverse"], [target_val]);
 }

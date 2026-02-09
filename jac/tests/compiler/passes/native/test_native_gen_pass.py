@@ -629,6 +629,46 @@ class TestNativeLists:
         f = get_func(engine, "list_count_object_field", ctypes.c_int64)
         assert f() == 3
 
+    def test_list_reverse_basic(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_basic", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_reverse_values(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_values", ctypes.c_int64)
+        assert f() == 10
+
+    def test_list_reverse_empty(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_empty", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_reverse_single(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_single", ctypes.c_int64)
+        assert f() == 42
+
+    def test_list_reverse_two(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_two", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_reverse_float(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_float", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_reverse_multiple(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_multiple", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_reverse_object_field(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_reverse_object_field", ctypes.c_int64)
+        assert f() == 30
+
 
 class TestNativeComplexObjects:
     """Verify chained field access, chained method calls, indexed fields."""
@@ -1216,7 +1256,7 @@ class TestNativeRuntimeErrors:
     def test_list_negative_index(self):
         engine, _ = compile_native("runtime_errors.na.jac")
         f = get_func(engine, "test_list_negative_index", ctypes.c_int64)
-        assert f() == 1
+        assert f() == -1  # Negative indexing is supported now
 
     def test_list_index_at_len(self):
         engine, _ = compile_native("runtime_errors.na.jac")

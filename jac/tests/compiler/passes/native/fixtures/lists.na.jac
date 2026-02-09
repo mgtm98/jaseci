@@ -461,3 +461,66 @@ def list_count_object_field() -> int {
     object.list_field = [10, 20, 10, 30, 10];
     return object.list_field.count(10);  # Should return 3
 }
+
+# Test 64: Basic reverse - reverse list in-place
+def list_reverse_basic() -> int {
+    items: list[int] = [1, 2, 3, 4, 5];
+    items.reverse();
+    return items[0];  # Should return 5 (was last, now first)
+}
+
+# Test 65: Reverse and verify all values
+def list_reverse_values() -> int {
+    items: list[int] = [10, 20, 30];
+    items.reverse();
+    # After reverse: [30, 20, 10]
+    return items[2];  # Should return 10
+}
+
+# Test 66: Reverse empty list
+def list_reverse_empty() -> int {
+    items: list[int] = [];
+    items.reverse();
+    return len(items);  # Should return 0
+}
+
+# Test 67: Reverse single element
+def list_reverse_single() -> int {
+    items: list[int] = [42];
+    items.reverse();
+    return items[0];  # Should return 42
+}
+
+# Test 68: Reverse two elements
+def list_reverse_two() -> int {
+    items: list[int] = [1, 2];
+    items.reverse();
+    return items[0];  # Should return 2
+}
+
+# Test 69: Reverse floats
+def list_reverse_float() -> int {
+    values: list[float] = [1.0, 2.0, 3.0];
+    values.reverse();
+    # After reverse: [3.0, 2.0, 1.0]
+    if values[0] == 3.0 and values[2] == 1.0 {
+        return 1;  # Success
+    }
+    return 0;
+}
+
+# Test 70: Multiple reverses
+def list_reverse_multiple() -> int {
+    items: list[int] = [1, 2, 3];
+    items.reverse();
+    items.reverse();
+    return items[0];  # Should return 1 (back to original)
+}
+
+# Test 71: Reverse in object field list
+def list_reverse_object_field() -> int {
+    object: MyObject = MyObject();
+    object.list_field = [10, 20, 30];
+    object.list_field.reverse();
+    return object.list_field[0];  # Should return 30
+}
