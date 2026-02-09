@@ -549,6 +549,46 @@ class TestNativeLists:
         f = get_func(engine, "list_extend_nested", ctypes.c_int64)
         assert f() == 4
 
+    def test_list_index_basic(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_basic", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_index_first(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_first", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_index_last(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_last", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_index_duplicate(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_duplicate", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_index_float(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_float", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_index_after_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_after_append", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_index_single(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_single", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_index_object_field(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_index_object_field", ctypes.c_int64)
+        assert f() == 1
+
 
 class TestNativeComplexObjects:
     """Verify chained field access, chained method calls, indexed fields."""

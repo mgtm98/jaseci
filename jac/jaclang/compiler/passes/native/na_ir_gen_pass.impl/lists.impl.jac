@@ -656,6 +656,108 @@ def register_remove_method(
     return remove_fn;
 }
 
+"""Register __list_index_T: return index of first occurrence of value."""
+def register_index_method(
+    pass_obj: NaIRGenPass,
+    elem_type_name: str,
+    elem_type: ir.Type,
+    list_ptr_type: ir.Type
+) -> ir.Function {
+    i64 = ir.IntType(64);
+    i32 = ir.IntType(32);
+    i8_ptr = ir.IntType(8).as_pointer();
+
+    # Signature: i64 index(list, value)
+    index_fnty = ir.FunctionType(i64, [list_ptr_type, elem_type]);
+    index_fn = ir.Function(
+        pass_obj.llvm_module, index_fnty, name=f"__list_index_{elem_type_name}"
+    );
+    index_fn.linkage = "private";
+    index_fn.args[0].name = "list";
+    index_fn.args[1].name = "value";
+
+    entry_bb = index_fn.append_basic_block("entry");
+    loop_bb = index_fn.append_basic_block("loop");
+    check_bb = index_fn.append_basic_block("check");
+    next_bb = index_fn.append_basic_block("next");
+    found_bb = index_fn.append_basic_block("found");
+    not_found_bb = index_fn.append_basic_block("not_found");
+
+    b = ir.IRBuilder(entry_bb);
+    l_arg = index_fn.args[0];
+    val_arg = index_fn.args[1];
+
+    # Load len
+    len_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="len.ptr");
+    cur_len = b.load(len_p, name="len");
+
+    # Get data pointer
+    data_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="data.ptr");
+    data = b.load(data_p, name="data");
+
+    # Start loop: search for value
+    b.branch(loop_bb);
+
+    # Loop: iterate through list
+    b.position_at_end(loop_bb);
+    idx_phi = b.phi(i64, name="idx");
+    idx_phi.add_incoming(ir.Constant(i64, 0), entry_bb);
+
+    # Check if idx < len
+    in_bounds = b.icmp_signed("<", idx_phi, cur_len, name="in.bounds");
+    b.cbranch(in_bounds, check_bb, not_found_bb);
+
+    # Check if data[idx] == value
+    b.position_at_end(check_bb);
+    elem_p = b.gep(data, [idx_phi], name="elem.ptr");
+    elem_val = b.load(elem_p, name="elem");
+
+    # Compare values (works for i64, f64, ptr)
+    if isinstance(elem_type, ir.IntType) {
+        is_equal = b.icmp_signed("==", elem_val, val_arg, name="is.equal");
+    } elif isinstance(elem_type, ir.DoubleType) {
+        is_equal = b.fcmp_ordered("==", elem_val, val_arg, name="is.equal");
+    } else {
+        # Pointer comparison
+        is_equal = b.icmp_signed("==", elem_val, val_arg, name="is.equal");
+    }
+
+    b.cbranch(is_equal, found_bb, next_bb);
+
+    # Not equal, continue loop
+    b.position_at_end(next_bb);
+    next_idx = b.add(idx_phi, ir.Constant(i64, 1), name="next.idx");
+    idx_phi.add_incoming(next_idx, next_bb);
+    b.branch(loop_bb);
+
+    # Not found: print error and exit
+    b.position_at_end(not_found_bb);
+    printf_fn = pass_obj._get_printf();
+    exit_fn = pass_obj._get_or_declare_extern("exit", ir.VoidType(), [i32]);
+    # Create error message string constant (unique name per element type)
+    err_str = "ValueError: list.index(x): x not in list\n\0";
+    err_bytes = bytearray(err_str.encode("utf8"));
+    err_const = ir.Constant(ir.ArrayType(ir.IntType(8), len(err_bytes)), err_bytes);
+    err_global = ir.GlobalVariable(
+        pass_obj.llvm_module, err_const.type, name=f".index_err_msg_{elem_type_name}"
+    );
+    err_global.linkage = "private";
+    err_global.global_constant = True;
+    err_global.initializer = err_const;
+    err_msg_ptr = b.gep(
+        err_global, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="err.msg.ptr"
+    );
+    b.call(printf_fn, [err_msg_ptr]);
+    b.call(exit_fn, [ir.Constant(i32, 1)]);
+    b.unreachable();
+
+    # Found: return index
+    b.position_at_end(found_bb);
+    b.ret(idx_phi);
+
+    return index_fn;
+}
+
 """Emit LLVM IR helper functions for a list with given element type."""
 impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> None {
     if elem_type_name in self.list_helpers {
@@ -683,6 +785,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
     extend_fn = register_extend_method(self, elem_type_name, elem_type, list_ptr_type);
     insert_fn = register_insert_method(self, elem_type_name, elem_type, list_ptr_type);
     remove_fn = register_remove_method(self, elem_type_name, elem_type, list_ptr_type);
+    index_fn = register_index_method(self, elem_type_name, elem_type, list_ptr_type);
     # Store helpers
     self.list_helpers[elem_type_name] = {
         "new": new_fn,
@@ -695,6 +798,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
         "extend": extend_fn,
         "insert": insert_fn,
         "remove": remove_fn,
+        "index": index_fn,
         "elem_type": elem_type
     };
 }
@@ -934,4 +1038,19 @@ impl NaIRGenPass._codegen_list_extend(
     }
     # Call the helper function directly
     self.builder.call(helpers["extend"], [target_val, other_val]);
+}
+
+"""Call list.index(value) method - return index of first occurrence."""
+impl NaIRGenPass._codegen_list_index(
+    target_val: ir.Value, value: ir.Value, elem_type_name: str
+) -> ir.Value {
+    helpers = self.list_helpers.get(elem_type_name);
+    if helpers is None {
+        return ir.Constant(ir.IntType(64), 0);
+    }
+    # Coerce value to the correct element type
+    elem_type = helpers["elem_type"];
+    value = self._coerce_type(value, elem_type);
+    # Call the helper function and return the index
+    return self.builder.call(helpers["index"], [target_val, value]);
 }

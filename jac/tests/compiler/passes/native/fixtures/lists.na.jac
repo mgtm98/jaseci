@@ -361,3 +361,53 @@ def list_extend_nested() -> int {
     nested.extend(extend_with);
     return len(nested);  # Should return 4
 }
+
+# Test 48: Basic index - find element position
+def list_index_basic() -> int {
+    items: list[int] = [10, 20, 30, 40];
+    return items.index(30);  # Should return 2
+}
+
+# Test 49: Index first element
+def list_index_first() -> int {
+    items: list[int] = [10, 20, 30];
+    return items.index(10);  # Should return 0
+}
+
+# Test 50: Index last element
+def list_index_last() -> int {
+    items: list[int] = [10, 20, 30];
+    return items.index(30);  # Should return 2
+}
+
+# Test 51: Index with duplicates - returns first occurrence
+def list_index_duplicate() -> int {
+    items: list[int] = [10, 20, 30, 20, 40];
+    return items.index(20);  # Should return 1 (first occurrence)
+}
+
+# Test 52: Index in float list
+def list_index_float() -> int {
+    values: list[float] = [1.0, 2.5, 3.0, 4.5];
+    return values.index(3.0);  # Should return 2
+}
+
+# Test 53: Index after append
+def list_index_after_append() -> int {
+    items: list[int] = [10, 20];
+    items.append(30);
+    return items.index(30);  # Should return 2
+}
+
+# Test 54: Index in single element list
+def list_index_single() -> int {
+    items: list[int] = [42];
+    return items.index(42);  # Should return 0
+}
+
+# Test 55: Index in object field list
+def list_index_object_field() -> int {
+    object: MyObject = MyObject();
+    object.list_field = [10, 20, 30];
+    return object.list_field.index(20);  # Should return 1
+}

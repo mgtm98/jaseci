@@ -544,6 +544,21 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                 }
                 return ir.Constant(ir.IntType(64), 0);
             }
+            # index(value) -> int
+            elif method_name == "index" {
+                params = node.params or [];
+                if params {
+                    value_val = self._codegen_expr(params[0]);
+                    if value_val is not None {
+                        elem_type = helpers["elem_type"];
+                        value_val = self._coerce_type(value_val, elem_type);
+                        return self.builder.call(
+                            helpers["index"], [list_val, value_val]
+                        );
+                    }
+                }
+                return ir.Constant(ir.IntType(64), 0);
+            }
         }
     }
     # Handle set methods: add (simple name target)
@@ -709,6 +724,21 @@ impl NaIRGenPass._codegen_method_call(node: uni.FuncCall) -> (ir.Value | None) {
                                 if other_val is not None {
                                     self.builder.call(
                                         helpers["extend"], [obj_val, other_val]
+                                    );
+                                }
+                            }
+                            return ir.Constant(ir.IntType(64), 0);
+                        }
+                        # index(value) -> int
+                        elif method_name == "index" {
+                            params = node.params or [];
+                            if params {
+                                value_val = self._codegen_expr(params[0]);
+                                if value_val is not None {
+                                    elem_type = helpers["elem_type"];
+                                    value_val = self._coerce_type(value_val, elem_type);
+                                    return self.builder.call(
+                                        helpers["index"], [obj_val, value_val]
                                     );
                                 }
                             }
