@@ -758,6 +758,97 @@ def register_index_method(
     return index_fn;
 }
 
+"""Register __list_count_T: return count of occurrences of value."""
+def register_count_method(
+    pass_obj: NaIRGenPass,
+    elem_type_name: str,
+    elem_type: ir.Type,
+    list_ptr_type: ir.Type
+) -> ir.Function {
+    i64 = ir.IntType(64);
+    i32 = ir.IntType(32);
+
+    # Signature: i64 count(list, value)
+    count_fnty = ir.FunctionType(i64, [list_ptr_type, elem_type]);
+    count_fn = ir.Function(
+        pass_obj.llvm_module, count_fnty, name=f"__list_count_{elem_type_name}"
+    );
+    count_fn.linkage = "private";
+    count_fn.args[0].name = "list";
+    count_fn.args[1].name = "value";
+
+    entry_bb = count_fn.append_basic_block("entry");
+    loop_bb = count_fn.append_basic_block("loop");
+    check_bb = count_fn.append_basic_block("check");
+    match_bb = count_fn.append_basic_block("match");
+    next_bb = count_fn.append_basic_block("next");
+    done_bb = count_fn.append_basic_block("done");
+
+    b = ir.IRBuilder(entry_bb);
+    l_arg = count_fn.args[0];
+    val_arg = count_fn.args[1];
+
+    # Load len
+    len_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="len.ptr");
+    cur_len = b.load(len_p, name="len");
+
+    # Get data pointer
+    data_p = b.gep(l_arg, [ir.Constant(i32, 0), ir.Constant(i32, 2)], name="data.ptr");
+    data = b.load(data_p, name="data");
+
+    # Initialize counter to 0
+    b.branch(loop_bb);
+
+    # Loop: iterate through list
+    b.position_at_end(loop_bb);
+    idx_phi = b.phi(i64, name="idx");
+    count_phi = b.phi(i64, name="count");
+    idx_phi.add_incoming(ir.Constant(i64, 0), entry_bb);
+    count_phi.add_incoming(ir.Constant(i64, 0), entry_bb);
+
+    # Check if idx < len
+    in_bounds = b.icmp_signed("<", idx_phi, cur_len, name="in.bounds");
+    b.cbranch(in_bounds, check_bb, done_bb);
+
+    # Check if data[idx] == value
+    b.position_at_end(check_bb);
+    elem_p = b.gep(data, [idx_phi], name="elem.ptr");
+    elem_val = b.load(elem_p, name="elem");
+
+    # Compare values (works for i64, f64, ptr)
+    if isinstance(elem_type, ir.IntType) {
+        is_equal = b.icmp_signed("==", elem_val, val_arg, name="is.equal");
+    } elif isinstance(elem_type, ir.DoubleType) {
+        is_equal = b.fcmp_ordered("==", elem_val, val_arg, name="is.equal");
+    } else {
+        # Pointer comparison
+        is_equal = b.icmp_signed("==", elem_val, val_arg, name="is.equal");
+    }
+
+    b.cbranch(is_equal, match_bb, next_bb);
+
+    # Match: increment counter
+    b.position_at_end(match_bb);
+    new_count = b.add(count_phi, ir.Constant(i64, 1), name="new.count");
+    next_idx_match = b.add(idx_phi, ir.Constant(i64, 1), name="next.idx");
+    idx_phi.add_incoming(next_idx_match, match_bb);
+    count_phi.add_incoming(new_count, match_bb);
+    b.branch(loop_bb);
+
+    # Not equal, continue loop
+    b.position_at_end(next_bb);
+    next_idx = b.add(idx_phi, ir.Constant(i64, 1), name="next.idx");
+    idx_phi.add_incoming(next_idx, next_bb);
+    count_phi.add_incoming(count_phi, next_bb);
+    b.branch(loop_bb);
+
+    # Done: return count
+    b.position_at_end(done_bb);
+    b.ret(count_phi);
+
+    return count_fn;
+}
+
 """Emit LLVM IR helper functions for a list with given element type."""
 impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> None {
     if elem_type_name in self.list_helpers {
@@ -786,6 +877,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
     insert_fn = register_insert_method(self, elem_type_name, elem_type, list_ptr_type);
     remove_fn = register_remove_method(self, elem_type_name, elem_type, list_ptr_type);
     index_fn = register_index_method(self, elem_type_name, elem_type, list_ptr_type);
+    count_fn = register_count_method(self, elem_type_name, elem_type, list_ptr_type);
     # Store helpers
     self.list_helpers[elem_type_name] = {
         "new": new_fn,
@@ -799,6 +891,7 @@ impl NaIRGenPass._emit_list_helpers(elem_type_name: str, elem_type: ir.Type) -> 
         "insert": insert_fn,
         "remove": remove_fn,
         "index": index_fn,
+        "count": count_fn,
         "elem_type": elem_type
     };
 }
@@ -1053,4 +1146,19 @@ impl NaIRGenPass._codegen_list_index(
     value = self._coerce_type(value, elem_type);
     # Call the helper function and return the index
     return self.builder.call(helpers["index"], [target_val, value]);
+}
+
+"""Call list.count(value) method - return count of occurrences."""
+impl NaIRGenPass._codegen_list_count(
+    target_val: ir.Value, value: ir.Value, elem_type_name: str
+) -> ir.Value {
+    helpers = self.list_helpers.get(elem_type_name);
+    if helpers is None {
+        return ir.Constant(ir.IntType(64), 0);
+    }
+    # Coerce value to the correct element type
+    elem_type = helpers["elem_type"];
+    value = self._coerce_type(value, elem_type);
+    # Call the helper function and return the count
+    return self.builder.call(helpers["count"], [target_val, value]);
 }

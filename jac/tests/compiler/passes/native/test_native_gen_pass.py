@@ -589,6 +589,46 @@ class TestNativeLists:
         f = get_func(engine, "list_index_object_field", ctypes.c_int64)
         assert f() == 1
 
+    def test_list_count_basic(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_basic", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_count_zero(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_zero", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_count_all_same(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_all_same", ctypes.c_int64)
+        assert f() == 5
+
+    def test_list_count_single(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_single", ctypes.c_int64)
+        assert f() == 1
+
+    def test_list_count_float(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_float", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_count_after_append(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_after_append", ctypes.c_int64)
+        assert f() == 2
+
+    def test_list_count_empty(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_empty", ctypes.c_int64)
+        assert f() == 0
+
+    def test_list_count_object_field(self):
+        engine, _ = compile_native("lists.na.jac")
+        f = get_func(engine, "list_count_object_field", ctypes.c_int64)
+        assert f() == 3
+
 
 class TestNativeComplexObjects:
     """Verify chained field access, chained method calls, indexed fields."""

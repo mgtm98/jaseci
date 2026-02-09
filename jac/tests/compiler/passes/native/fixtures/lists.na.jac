@@ -411,3 +411,53 @@ def list_index_object_field() -> int {
     object.list_field = [10, 20, 30];
     return object.list_field.index(20);  # Should return 1
 }
+
+# Test 56: Basic count - count occurrences
+def list_count_basic() -> int {
+    items: list[int] = [10, 20, 30, 20, 40];
+    return items.count(20);  # Should return 2
+}
+
+# Test 57: Count zero occurrences
+def list_count_zero() -> int {
+    items: list[int] = [10, 20, 30];
+    return items.count(99);  # Should return 0
+}
+
+# Test 58: Count all same values
+def list_count_all_same() -> int {
+    items: list[int] = [5, 5, 5, 5, 5];
+    return items.count(5);  # Should return 5
+}
+
+# Test 59: Count single occurrence
+def list_count_single() -> int {
+    items: list[int] = [10, 20, 30];
+    return items.count(10);  # Should return 1
+}
+
+# Test 60: Count in float list
+def list_count_float() -> int {
+    values: list[float] = [1.0, 2.5, 3.0, 2.5, 4.5];
+    return values.count(2.5);  # Should return 2
+}
+
+# Test 61: Count after append
+def list_count_after_append() -> int {
+    items: list[int] = [10, 20];
+    items.append(20);
+    return items.count(20);  # Should return 2
+}
+
+# Test 62: Count in empty list
+def list_count_empty() -> int {
+    items: list[int] = [];
+    return items.count(10);  # Should return 0
+}
+
+# Test 63: Count in object field list
+def list_count_object_field() -> int {
+    object: MyObject = MyObject();
+    object.list_field = [10, 20, 10, 30, 10];
+    return object.list_field.count(10);  # Should return 3
+}
