@@ -30,6 +30,36 @@ PARSER_PATH = (
     / "parser.jac"
 )
 
+SPEC_PATH = Path(__file__).parent.parent.parent.parent.parent / "jaclang" / "jac.spec"
+
+
+def _parse_spec(text: str) -> dict[str, str]:
+    """Parse EBNF text into {rule_name: rule_body} dict.
+
+    Handles multi-line rules by detecting lines without '::='.
+    """
+    rules: dict[str, str] = {}
+    current_name: str | None = None
+    current_body: str = ""
+    for line in text.strip().splitlines():
+        line = line.rstrip()
+        if not line:
+            continue
+        if "::=" in line:
+            # Flush previous rule
+            if current_name is not None:
+                rules[current_name] = current_body.strip()
+            name, _, body = line.partition("::=")
+            current_name = name.strip()
+            current_body = body.strip()
+        elif current_name is not None:
+            # Continuation of previous rule
+            current_body += " " + line.strip()
+    # Flush last rule
+    if current_name is not None:
+        rules[current_name] = current_body.strip()
+    return rules
+
 
 def _fmt(expr: GSeq | GAlt | GOpt | GStar | GTok | GRef) -> str:
     """Helper: format a GExpr as EBNF using the pass method."""
@@ -252,3 +282,70 @@ class TestGrammarExtraction:
         # At least some refs should resolve to known rules
         resolved = all_refs & rule_names
         assert len(resolved) > 10, f"Only {len(resolved)} refs resolved to known rules"
+
+
+# =========================================================================
+# Snapshot test: grammar output matches jac.spec
+# =========================================================================
+
+
+class TestGrammarSpec:
+    """Verify extracted grammar matches the checked-in jac.spec golden file."""
+
+    @pytest.fixture(scope="class")
+    def extracted(self) -> GrammarExtractPass:
+        prog = JacProgram()
+        mod = prog.compile(str(PARSER_PATH), no_cgen=True)
+        assert not prog.errors_had
+        return GrammarExtractPass(ir_in=mod, prog=prog)
+
+    def test_spec_file_exists(self) -> None:
+        assert SPEC_PATH.exists(), (
+            f"Grammar spec file missing: {SPEC_PATH}\n"
+            f"Generate it with: jac grammar -o {SPEC_PATH}"
+        )
+
+    def test_grammar_matches_spec(self, extracted: GrammarExtractPass) -> None:
+        """Each extracted rule must match the corresponding rule in jac.spec.
+
+        If this test fails, a parser change altered the grammar. Review the
+        diff and, if intentional, update the spec:
+
+            jac grammar -o jac/jaclang/jac.spec
+        """
+        if not SPEC_PATH.exists():
+            pytest.skip("jac.spec not found")
+
+        spec_rules = _parse_spec(SPEC_PATH.read_text())
+        current_rules = _parse_spec(extracted.emit_ebnf())
+
+        # Check for rules in spec that disappeared
+        missing = set(spec_rules) - set(current_rules)
+        assert not missing, (
+            f"Rules in jac.spec but no longer extracted: {missing}\n"
+            f"If intentional: jac grammar -o jac/jaclang/jac.spec"
+        )
+
+        # Check for new rules not in spec
+        added = set(current_rules) - set(spec_rules)
+        assert not added, (
+            f"New rules not in jac.spec: {added}\n"
+            f"If intentional: jac grammar -o jac/jaclang/jac.spec"
+        )
+
+        # Check each rule body matches
+        changed: list[str] = []
+        for name in sorted(spec_rules):
+            if name not in current_rules:
+                continue
+            if spec_rules[name] != current_rules[name]:
+                changed.append(
+                    f"  {name}:\n"
+                    f"    spec:    {spec_rules[name]}\n"
+                    f"    current: {current_rules[name]}"
+                )
+        assert not changed, (
+            f"{len(changed)} rule(s) changed:\n"
+            + "\n".join(changed)
+            + "\n\nIf intentional: jac grammar -o jac/jaclang/jac.spec"
+        )

@@ -106,10 +106,14 @@ obj GrammarExtractPass(UniPass) {
     def analyze_if_stmt(stmt: uni.IfStmt) -> GExpr | None;
     def analyze_while_stmt(stmt: uni.WhileStmt) -> GExpr | None;
     def find_break_match_tok(stmts: list) -> tuple | None;
+    def find_break_none_check(stmts: list) -> tuple | None;
     def analyze_condition(cond: uni.Expr) -> tuple | None;
     def collect_elif_chain(stmt: uni.IfStmt) -> list;
     def has_early_return(stmts: list) -> bool;
+    def is_negated_check_condition(cond: uni.Expr) -> bool;
+    def expr_contains_tok(expr: GExpr, tok_name: str) -> bool;
     # AST helpers
+    def extract_token_kind(expr: uni.Expr) -> str | None;
     def get_self_method(nd: uni.Expr) -> str | None;
     def get_token_args(call: uni.FuncCall) -> list;
     def get_call_from_expr(expr: uni.Expr) -> uni.FuncCall | None;

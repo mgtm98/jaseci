@@ -8,6 +8,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Perf: Cache `len()` in Lexer/Parser Hot Paths**: Cached source and token list lengths in the jac0 bootstrap transpiler and the RD parser/lexer, eliminating ~1.8M redundant `len()` calls per startup.
 - 3 Minor refactors/changes.
 - **Fix: `jac grammar` Command Broken Path**: Fixed the `jac grammar` CLI command.
+- **Grammar Extraction Pass Improvements & Spec Snapshot Test**: Improved `jac grammar` extraction accuracy for negated-check loops, optional dispatch branches, `while True` parse-and-break patterns, and standalone `match_tok` calls. Added a golden-file snapshot test (`jac.spec`) that validates extracted grammar rules against a checked-in spec, catching unintended grammar drift on every CI run.
 - 4 Minor refactors/changes.
 
 ## jaclang 0.10.1 (Latest Release)

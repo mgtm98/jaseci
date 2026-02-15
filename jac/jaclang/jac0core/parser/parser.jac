@@ -369,6 +369,8 @@ obj Parser {
     def at_end -> bool;
     def check(kind: TokenKind) -> bool;
     def check_any(*kinds: TokenKind) -> bool;
+    def check_peek(kind: TokenKind) -> bool;
+    def check_peek_any(*kinds: TokenKind) -> bool;
     def check_name -> bool;
     def is_keyword_token -> bool;
     def get_source -> Source;
