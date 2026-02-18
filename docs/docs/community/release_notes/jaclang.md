@@ -2,7 +2,9 @@
 
 This document provides a summary of new features, improvements, and bug fixes in each version of **Jaclang**. For details on changes that might require updates to your existing code, please refer to the [Breaking Changes](../breaking-changes.md) page.
 
-## jaclang 0.10.3 (Unreleased)
+## jaclang 0.10.4 (Unreleased)
+
+## jaclang 0.10.3 (Latest Release)
 
 - **Fix: Type Narrowing in Loops**: Fixed type narrowing loss in loops and also improved CFG accuracy.
 - **Fix: Config Discovery from Target File Path**: Fixed `jac start` commands to discover `jac.toml` from the target file's directory instead of the current working directory when using absolute/relative paths.
@@ -32,7 +34,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: `_jac` Primitive Runtime for ES Codegen**: Fixed unification of compiled JavaScript that uses Python-like primitive operations (`list.sort(key=...)`, `list.count()`, `str.capitalize()`, `int % int`, etc.).
 - 2 Minor refactors/changes.
 
-## jaclang 0.10.2 (Latest Release)
+## jaclang 0.10.2
 
 - **Unified Primitive Codegen Interface**: Added abstract emitter contracts (`primitives.jac`) for all Jac primitive type methods and builtin functions. Each compilation backend (Python, ECMAScript, Native) must implement these interfaces, ensuring consistent primitive support across all code generation pathways. Python, JS, and Native backend implementations provided.
 - **Pytest Plugin for Native Jac Tests**: Added a `pytest11` entry-point plugin (`jaclang.pytest_plugin`) that discovers and runs `test` blocks in `.jac` files alongside Python tests with zero configuration. Migrated ~79 language integration tests and 8 compilation tests from Python to native Jac `test` keyword.
