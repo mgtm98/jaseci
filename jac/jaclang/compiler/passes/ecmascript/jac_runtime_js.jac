@@ -552,6 +552,70 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       const s = JSON.stringify(String(obj));
       return s.replace(/[^\x00-\x7F]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
     },
-    complex(re, im) { return {re: re || 0, im: im || 0}; }
+    complex(re, im) { return {re: re || 0, im: im || 0}; },
+    bool(x) {
+      if (x === null || x === undefined || x === false || x === 0 || x === "" || Number.isNaN(x)) return false;
+      if (Array.isArray(x)) return x.length > 0;
+      if (x instanceof Set || x instanceof Map) return x.size > 0;
+      if (typeof x === "object") return Object.keys(x).length > 0;
+      return true;
+    },
+    range(...args) {
+      let start, stop, step;
+      if (args.length === 1) { start = 0; stop = args[0]; step = 1; }
+      else if (args.length === 2) { start = args[0]; stop = args[1]; step = 1; }
+      else { start = args[0]; stop = args[1]; step = args[2]; }
+      if (step === 0) throw new Error("range() arg 3 must not be zero");
+      const result = [];
+      if (step > 0) { for (let i = start; i < stop; i += step) result.push(i); }
+      else { for (let i = start; i > stop; i += step) result.push(i); }
+      return result;
+    },
+    slice(...args) {
+      if (args.length === 1) return { start: null, stop: args[0], step: null };
+      return { start: args[0] !== undefined ? args[0] : null, stop: args[1] !== undefined ? args[1] : null, step: args[2] !== undefined ? args[2] : null };
+    },
+    format(value, format_spec) {
+      if (!format_spec || format_spec === "") return String(value);
+      const m = format_spec.match(/^([<>^]?)(\d+)?(?:\.(\d+))?([dfseboxXn%]?)$/);
+      if (!m) return String(value);
+      const [, align, widthStr, precStr, ftype] = m;
+      let s;
+      const prec = precStr !== undefined ? parseInt(precStr) : undefined;
+      if (ftype === "f" || ftype === "") {
+        s = prec !== undefined ? Number(value).toFixed(prec) : String(value);
+      } else if (ftype === "d") {
+        s = String(Math.floor(Number(value)));
+      } else if (ftype === "b") {
+        s = Number(value).toString(2);
+      } else if (ftype === "o") {
+        s = Number(value).toString(8);
+      } else if (ftype === "x") {
+        s = Number(value).toString(16);
+      } else if (ftype === "X") {
+        s = Number(value).toString(16).toUpperCase();
+      } else if (ftype === "e") {
+        s = prec !== undefined ? Number(value).toExponential(prec) : Number(value).toExponential();
+      } else if (ftype === "%") {
+        s = (prec !== undefined ? (Number(value) * 100).toFixed(prec) : (Number(value) * 100).toFixed(6)) + "%";
+      } else if (ftype === "s" || ftype === "n") {
+        s = String(value);
+      } else {
+        s = String(value);
+      }
+      if (widthStr) {
+        const width = parseInt(widthStr);
+        if (s.length < width) {
+          const pad = " ".repeat(width - s.length);
+          if (align === "<") s = s + pad;
+          else if (align === "^") {
+            const left = Math.floor((width - s.length) / 2);
+            s = " ".repeat(left) + s + " ".repeat(width - s.length - left);
+          }
+          else s = pad + s;
+        }
+      }
+      return s;
+    }
   }
 }""";

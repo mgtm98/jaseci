@@ -936,15 +936,12 @@ impl EsastGenPass.exit_func_call(nd: uni.FuncCall) -> None {
                     "set": _pes.ESSetEmitter(),
                     "frozenset": _pes.ESFrozensetEmitter(),
                     "tuple": _pes.ESTupleEmitter(),
-                    "range": _pes.ESRangeEmitter()
+                    "range": _pes.ESRangeEmitter(),
+                    "bool": _pes.ESBoolEmitter()
                 };
                 self._es_emit_ctx_class = _pes.ESEmitCtx;
             }
             _type_name = _obj_type.shared.class_name;
-            # bool delegates to int emitter
-            if _type_name == "bool" {
-                _type_name = "int";
-            }
             _emitter = self._primitive_emitters.get(_type_name);
             _method_name = callee.property.name;
             _emit_fn_name = "emit_" + _method_name;
@@ -1375,15 +1372,12 @@ impl EsastGenPass._try_primitive_op(
             "set": _pes.ESSetEmitter(),
             "frozenset": _pes.ESFrozensetEmitter(),
             "tuple": _pes.ESTupleEmitter(),
-            "range": _pes.ESRangeEmitter()
+            "range": _pes.ESRangeEmitter(),
+            "bool": _pes.ESBoolEmitter()
         };
         self._es_emit_ctx_class = _pes.ESEmitCtx;
     }
     _type_name = _obj_type.shared.class_name;
-    # bool delegates to int emitter
-    if _type_name == "bool" {
-        _type_name = "int";
-    }
     _emitter = self._primitive_emitters.get(_type_name);
     _emit_fn = getattr(_emitter, emit_method, None) if _emitter else None;
     if not _emit_fn {
@@ -3282,5 +3276,5 @@ impl EsastGenPass.before_pass -> None {
     self._primitive_emitters: dict[str, object] | None = None;
     self._builtin_emitter: object | None = None;
     self._primitive_type_names: set[str] = {"int","float","complex","str","bytes","list","dict","set","frozenset","tuple","range","bool"};
-    self._emitter_builtins: set[str] = {"print","input","len","abs","round","min","max","sum","sorted","reversed","enumerate","zip","map","filter","any","all","isinstance","issubclass","type","id","hash","repr","chr","ord","hex","oct","bin","pow","divmod","iter","next","callable","getattr","setattr","hasattr","delattr","vars","dir","open","format","ascii","str","int","float","bool","list","dict","set","tuple","frozenset","bytes","complex"};
+    self._emitter_builtins: set[str] = {"print","input","len","abs","round","min","max","sum","sorted","reversed","enumerate","zip","map","filter","any","all","isinstance","issubclass","type","id","hash","repr","chr","ord","hex","oct","bin","pow","divmod","iter","next","callable","getattr","setattr","hasattr","delattr","vars","dir","open","format","ascii","str","int","float","bool","list","dict","set","tuple","frozenset","bytes","complex","range","slice","bytearray"};
 }
