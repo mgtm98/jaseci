@@ -4,6 +4,26 @@ By the end of this tutorial, you'll have built a full-stack AI day planner -- a 
 
 **Prerequisites:** [Installation](../../quick-guide/install.md) complete, [Hello World](../../quick-guide/hello-world.md) done.
 
+**Required Packages:** This tutorial uses **jaclang**, **jac-client**, **jac-scale**, and **byllm**. Install everything at once with:
+
+```bash
+pip install jaseci
+```
+
+Verify your versions meet the minimum requirements:
+
+```bash
+jac version
+pip show jac-client jac-scale byllm
+```
+
+| Package | Minimum Version |
+|---------|----------------|
+| jaclang | 0.10.5 |
+| jac-client | 0.2.19 |
+| jac-scale | 0.1.11 |
+| byllm | 0.4.21 |
+
 The tutorial is split into seven parts. Each builds on the last:
 
 | Part | What You'll Build | Key Concepts |
@@ -20,7 +40,7 @@ The tutorial is split into seven parts. Each builds on the last:
 
 ## Part 1: Your First Lines of Jac
 
-Jac is a programming language that compiles to Python. If you know Python, Jac will feel familiar -- but with curly braces instead of indentation, semicolons at the end of statements, and built-in support for graphs, AI, and full-stack web apps. This section covers the fundamentals.
+Jac is a programming language whose compiler can generate Python bytecode, ES JavaScript, and native binaries. The language design is based on Python, so if you know Python, Jac will feel familiar -- but with curly braces instead of indentation, semicolons at the end of statements, and built-in support for graphs, AI, and full-stack web apps. This section covers the fundamentals. **The Goal** of this section is to orient you to the syntax style of the language.
 
 **Hello, World**
 
@@ -38,7 +58,7 @@ Run it:
 jac run hello.jac
 ```
 
-`with entry { }` is Jac's program entry point -- equivalent to Python's `if __name__ == "__main__"`. Everything inside runs when the file executes.
+In Jac, any free-floating code in a module must live inside a `with entry { }` block. These blocks run when you execute a `.jac` file as a script and at the point it's imported, similar to top-level code in Python. We require this explicit demarcation because it's important to be deliberate about code that executes once on module load -- a common source of bugs in real programs. Fun fact: Python was originally designed as a replacement for bash, and its initial version didn't even have import statements. Jac slightly discourages mistakes stemming from free-floating module code by making it an intentional, visible choice in the language.
 
 **Variables and Types**
 
@@ -57,7 +77,7 @@ with entry {
 }
 ```
 
-Jac supports **f-strings** for string interpolation (just like Python), **comments** with `#`, and **block comments** with `#* ... *#`:
+Jac supports **f-strings** for string interpolation (just like Python), **comments** with `#`, and introduces **block comments** with `#* ... *#`:
 
 ```jac
 # This is a line comment
@@ -68,7 +88,7 @@ Jac supports **f-strings** for string interpolation (just like Python), **commen
 
 **Functions**
 
-Functions use the `def` keyword. Both parameters and return values need type annotations:
+Functions use the familar `def` keyword. Both parameters and return values need type annotations:
 
 ```jac
 def greet(name: str) -> str {
@@ -128,7 +148,22 @@ with entry {
 }
 ```
 
-Jac also supports **`match`/`case`** for pattern matching:
+Jac supports both **`switch`/`case`** and **`match`/`case`**. Use `switch` when you want the classic simple value matching with no fall-through and no explicit `break` needed:
+
+```jac
+def categorize(fruit: str) -> str {
+    switch fruit {
+        case "apple":
+            return "pome";
+        case "banana" | "plantain":
+            return "berry";
+        default:
+            return "unknown";
+    }
+}
+```
+
+Use `match` for Python-style structural pattern matching when you need to destructure or match complex patterns:
 
 ```jac
 def describe(value: any) -> str {
@@ -143,43 +178,99 @@ def describe(value: any) -> str {
 }
 ```
 
+**Classes and Objects**
+
+Since Jac's design is based on Python, you can use Python-style classes directly with the `class` keyword:
+
+```jac
+class Animal {
+
+    # __init__ works here too
+    def init(self: Animal, name: str, sound: str) {
+        self.name = name;
+        self.sound = sound;
+    }
+
+    def speak(self: Animal) -> str {
+        return f"{self.name} says {self.sound}!";
+    }
+}
+
+with entry {
+    dog = Animal("Rex", "Woof");
+    print(dog.speak());  # Rex says Woof!
+}
+```
+
+This works, but notice all the `self` boilerplate. Jac introduces **`obj`** as an improved alternative -- fields declared with `has` are automatically initialized (like a dataclass), and `self` is implicit in methods. For a deeper dive into why this design choice was made, see [Dataclasses: Python's Admission That Classes Are Broken (And How Jac Fixes It Properly)](https://www.mars.ninja/blog/2025/10/25/dataclasses-and-jac-objects/).
+
+```jac
+obj Animal {
+    has name: str,
+        sound: str;
+
+    def speak -> str {
+        return f"{self.name} says {self.sound}!";
+    }
+}
+
+with entry {
+    dog = Animal(name="Rex", sound="Woof");
+    print(dog.speak());  # Rex says Woof!
+}
+```
+
+With `obj`, you don't write `self` in method signatures -- it's always available inside the body. Fields listed in `has` become constructor parameters automatically, so there's no need to write an `init` method for simple cases. Throughout this tutorial, we'll use `obj` for plain data types and `node` (introduced in Part 2) for data that lives in the graph.
+
 **What You Learned**
 
 - **`with entry { }`** -- program entry point
 - **Types**: `str`, `int`, `float`, `bool`
 - **`def`** -- function declaration with typed parameters and return types
-- **Control flow**: `if` / `elif` / `else`, `for`, `while`, `match` -- all with braces
+- **Control flow**: `if` / `elif` / `else`, `for`, `while`, `switch`, `match` -- all with braces
+- **`class`** -- Python-style classes with explicit `self`
+- **`obj`** -- Jac data types with `has` fields and implicit `self`
 - **`#`** -- line comments (`#* block comments *#`)
 - **f-strings** -- string interpolation with `f"...{expr}..."`
 - **Ternary** -- `value if condition else other`
+
+For a quick reference of all Jac syntax, see the [Syntax Cheatsheet](../../quick-guide/syntax-cheatsheet.md).
 
 ---
 
 ## Part 2: Modeling Data with Nodes
 
-Most languages store data in variables, objects, or database rows. Jac adds a powerful alternative: **nodes** that live in a **graph**. Nodes persist automatically -- no database setup, no ORM, no SQL.
+Most languages store data in variables, objects, or database rows. Jac adds a powerful alternative: **nodes** that live in a **graph**. Nodes persist automatically -- no database setup, no ORM, no SQL. **The Goal** of this section is to introduce you to the concept of graphs as a first class citizen of the language and how databases can disappear.
 
 **What is a Node?**
 
-A node is a data type declared with the `node` keyword. Its fields are declared with `has`:
+A node is an `obj` style class type declared with the `node` keyword. Its fields are similarly declared with `has`:
 
 ```jac
 node Task {
     has id: str,
         title: str,
-        done: bool = False;
+        done: bool = F  alse;
 }
 ```
 
-This looks similar to a class, but nodes have a superpower: they can be connected to other nodes with **edges**, forming a graph. When connected to the global `root` node, they persist across server restarts -- no database needed.
+This looks similar to a class, but nodes have a superpower: they can be connected to other nodes with **edges** (also `obj` style classes), forming a graph. Instead of class instance objects floating in space, these objects can have relationships that form first class graphs in the language.
+
+Beyond the more obvious utility of never needing a graph library again, there is a powerful capability that emerges when we couple this with one more abstraction the self referentail `root`.
 
 **The Root Node and the Graph**
 
 Every Jac program has a built-in `root` node -- the entry point of the graph. Think of it as the top of a tree:
 
+```mermaid
+graph LR
+    root((root))
+    style root fill:#f9f,stroke:#333,stroke-width:2px
 ```
-root  (starts empty)
-```
+
+Any node connected to `root` (directly or through a chain of edges) is **persistent** -- it survives across requests, program runs, and server restarts. You don't configure a database or write SQL; connecting a node to `root` is the declaration that it should be saved. Nodes that are *not* reachable from `root` behave like regular objects -- they live in memory for the duration of the current execution and are then garbage collected, though you can still connect them to other nodes for utility while they exist.
+
+When your app serves multiple users, each user gets their **own isolated `root`**. User A's tasks and User B's tasks live in completely separate graphs -- same code, isolated data, enforced by the runtime. Connections *between* user graphs are possible when explicitly created, but by default each user's `root` is a private, independent entry point. We'll see this in action in [Part 6](#part-6-authentication-and-multi-file-organization) when we add authentication.
 
 You add data by creating nodes and connecting them with edges.
 
@@ -206,10 +297,12 @@ with entry {
 
 Run it with `jac run hello.jac`. Your graph now looks like:
 
-```
-root ---> Task("Buy groceries")
-  |-----> Task("Team standup at 10am")
-  |-----> Task("Go for a run")
+```mermaid
+graph LR
+    root((root)) --> T1["Task(#quot;Buy groceries#quot;)"]
+    root --> T2["Task(#quot;Team standup at 10am#quot;)"]
+    root --> T3["Task(#quot;Go for a run#quot;)"]
+    style root fill:#f9f,stroke:#333,stroke-width:2px
 ```
 
 The `++>` operator returns a list containing the newly created node. You can capture it:
@@ -1070,11 +1163,15 @@ def:pub clear_shopping_list -> dict {
 
 Notice how `generate_list` clears old shopping items before generating new ones. The graph now holds both task and shopping data:
 
-```
-root ---> Task("Buy groceries", category="shopping")
-  |-----> Task("Team standup", category="work")
-  |-----> ShoppingItem("Chicken breast", 2lb, $5.99)
-  |-----> ShoppingItem("Soy sauce", 2tbsp, $0.50)
+```mermaid
+graph LR
+    root((root)) --> T1["Task(#quot;Buy groceries#quot;, shopping)"]
+    root --> T2["Task(#quot;Team standup#quot;, work)"]
+    root --> S1["ShoppingItem(#quot;Chicken breast#quot;, 2lb, $5.99)"]
+    root --> S2["ShoppingItem(#quot;Soy sauce#quot;, 2tbsp, $0.50)"]
+    style root fill:#f9f,stroke:#333,stroke-width:2px
+    style S1 fill:#bde0fe,stroke:#333
+    style S2 fill:#bde0fe,stroke:#333
 ```
 
 **Update the Frontend**
@@ -2338,13 +2435,20 @@ This section reimplements the day planner's backend using walkers to show how OS
 
 A walker is code that moves through the graph, triggering abilities as it enters each node:
 
-```
-Walker: ListTasks
-  |
-  v
-[root] ---> [Task: "Buy groceries"]     <- walker enters, ability fires
-  |-------> [Task: "Team standup"]      <- walker enters, ability fires
-  |-------> [Task: "Go running"]        <- walker enters, ability fires
+```mermaid
+graph LR
+    W["Walker: ListTasks"] -.->|spawn| root((root))
+    root -->|visit| T1["Task: #quot;Buy groceries#quot;"]
+    root -->|visit| T2["Task: #quot;Team standup#quot;"]
+    root -->|visit| T3["Task: #quot;Go running#quot;"]
+    T1 -.-o A1(("ability fires"))
+    T2 -.-o A2(("ability fires"))
+    T3 -.-o A3(("ability fires"))
+    style W fill:#ffd166,stroke:#333,stroke-width:2px
+    style root fill:#f9f,stroke:#333,stroke-width:2px
+    style A1 fill:#06d6a0,stroke:#333
+    style A2 fill:#06d6a0,stroke:#333
+    style A3 fill:#06d6a0,stroke:#333
 ```
 
 Think of it like a robot walking through a building. At each room (node), it can look around (`here`), check its own clipboard (`self`), move to connected rooms (`visit`), and write down findings (`report`).
