@@ -8,6 +8,7 @@ Complete reference for jac-scale, the cloud-native deployment and scaling plugin
 
 ```bash
 pip install jac-scale
+jac plugins enable scale
 ```
 
 ---
@@ -62,6 +63,15 @@ jac start app.jac --host 0.0.0.0 --port 8000 --workers 4
 ### Default Persistence
 
 When running locally (without `--scale`), Jac uses **SQLite** for graph persistence by default. You'll see `"Using SQLite for persistence"` in the server output. No external database setup is required for development.
+
+### CORS Configuration
+
+```toml
+[plugins.scale.cors]
+allow_origins = ["https://example.com"]
+allow_methods = ["GET", "POST", "PUT", "DELETE"]
+allow_headers = ["*"]
+```
 
 ---
 
@@ -938,6 +948,13 @@ jac-scale uses a tiered memory system:
 | L2 | Redis | Cache layer |
 | L3 | MongoDB | Persistent storage |
 
+```mermaid
+graph TD
+    App["Application"] --- L1["L1: Volatile (in-memory)"]
+    L1 --- L2["L2: Redis (cache)"]
+    L2 --- L3["L3: MongoDB (persistent)"]
+```
+
 ---
 
 ## Kubernetes Deployment
@@ -956,6 +973,29 @@ jac-scale uses a tiered memory system:
 DOCKER_USERNAME=your-dockerhub-username
 DOCKER_PASSWORD=your-dockerhub-password-or-token
 ```
+
+### Generated Resources
+
+```yaml
+# Example generated deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jac-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: jac-app
+```
+
+### Service Discovery
+
+Kubernetes service mesh integration for:
+
+- Automatic load balancing
+- Service-to-service communication
+- Health monitoring
 
 ### Auto-Provisioning
 
@@ -997,6 +1037,7 @@ This removes all Kubernetes resources created by jac-scale:
 | `K8s_READINESS_PERIOD` | Readiness probe period (seconds) | `20` |
 | `K8s_LIVENESS_INITIAL_DELAY` | Liveness probe initial delay (seconds) | `10` |
 | `K8s_LIVENESS_PERIOD` | Liveness probe period (seconds) | `20` |
+| `K8s_REPLICAS` | Number of replicas | `1` |
 | `K8s_LIVENESS_FAILURE_THRESHOLD` | Failure threshold before restart | `80` |
 | `DOCKER_USERNAME` | DockerHub username | None |
 | `DOCKER_PASSWORD` | DockerHub password/token | None |
@@ -1023,6 +1064,13 @@ jac_byllm = "none"     # Skip installation
 ---
 
 ## Health Checks
+
+Built-in endpoints are available for Kubernetes probes:
+
+- `/health` -- Liveness probe
+- `/ready` -- Readiness probe
+
+You can also create custom health walkers:
 
 ### Health Endpoint
 
@@ -1292,6 +1340,38 @@ kubectl get all
 
 # Check events
 kubectl get events --sort-by='.lastTimestamp'
+```
+
+---
+
+## Library Mode
+
+For teams preferring pure Python syntax or integrating Jac into existing Python codebases, Library Mode provides an alternative deployment approach. Instead of `.jac` files, you use Python files with Jac's runtime as a library.
+
+> **Complete Guide:** See [Library Mode](../language/library-mode.md) for the full API reference, code examples, and migration guide.
+
+**Key Features:**
+
+- All Jac features accessible through `jaclang.lib` imports
+- Pure Python syntax with decorators (`@on_entry`, `@on_exit`)
+- Full IDE/tooling support (autocomplete, type checking, debugging)
+- Zero migration friction for existing Python projects
+
+**Quick Example:**
+
+```python
+from jaclang.lib import Node, Walker, spawn, root, on_entry
+
+class Task(Node):
+    title: str
+    done: bool = False
+
+class TaskFinder(Walker):
+    @on_entry
+    def find(self, here: Task) -> None:
+        print(f"Found: {here.title}")
+
+spawn(TaskFinder(), root())
 ```
 
 ---

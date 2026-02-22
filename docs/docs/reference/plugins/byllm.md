@@ -4,6 +4,56 @@ Complete reference for byLLM, the AI integration framework implementing Meaning-
 
 ---
 
+## Meaning Typed Programming
+
+Meaning Typed Programming (MTP) is Jac's core AI paradigm. Your function signature -- the name, parameter names, and types -- becomes the specification. The LLM reads this "meaning" and generates appropriate behavior. This works because well-named functions already describe their intent; MTP just makes that intent executable.
+
+### The Concept
+
+MTP treats semantic intent as a first-class type. You declare *what* you want, and AI provides *how*:
+
+```jac
+# The function signature IS the specification
+def classify_sentiment(text: str) -> str by llm;
+
+# Usage - the LLM infers behavior from the name and types
+with entry {
+    result = classify_sentiment("I love this product!");
+    # result = "positive"
+}
+```
+
+### Implicit vs Explicit Semantics
+
+**Implicit** -- derived from function/parameter names:
+
+```jac
+def translate_to_spanish(text: str) -> str by llm;
+```
+
+**Explicit** -- using `sem` for detailed descriptions:
+
+```jac
+sem classify = """
+Analyze the emotional tone of the input text.
+Return exactly one of: 'positive', 'negative', 'neutral'.
+Consider context and sarcasm.
+""";
+
+def classify(text: str) -> str by llm;
+```
+
+### Type Validation
+
+byLLM validates that LLM responses match the declared return type. If the LLM returns an invalid type, byLLM will:
+
+1. **Attempt coercion** -- e.g., string `"5"` becomes integer `5`
+2. **Raise an error** if coercion fails
+
+This means your Jac type system functions as the LLM's output schema. Declaring `-> int` guarantees you receive an integer, and declaring `-> MyObj` guarantees you receive a properly structured object.
+
+---
+
 ## Installation
 
 ```bash
@@ -270,6 +320,16 @@ obj MyClass {
 }
 ```
 
+### Inline Expression
+
+The `by llm` operator can also be used as an inline expression without a function declaration:
+
+```jac
+with entry {
+    response = "Explain quantum computing in simple terms" by llm;
+}
+```
+
 ---
 
 ## Return Types
@@ -335,6 +395,20 @@ Parameters passed to `by llm()` at call time:
 | `stream` | bool | Enable streaming output (only supports `str` return type) |
 | `max_react_iterations` | int | Maximum ReAct iterations before forcing final answer |
 
+### Chained Transformations
+
+Compose multiple LLM calls using the pipe operator:
+
+```jac
+with entry {
+    text = "Some input text";
+    result = text
+        |> (lambda t: str -> str: t by llm("Correct grammar"))
+        |> (lambda t: str -> str: t by llm("Simplify language"))
+        |> (lambda t: str -> str: t by llm("Translate to Spanish"));
+}
+```
+
 ### Examples
 
 ```jac
@@ -361,7 +435,10 @@ def generate_essay(topic: str) -> str by llm(stream=True);
 
 ## Semantic Strings (semstrings)
 
-Enrich type semantics for better LLM understanding:
+The `sem` keyword attaches semantic descriptions to functions, parameters, type fields, and enum values. These strings are included in the compiler-generated prompt so the LLM sees them at runtime.
+
+!!! tip "Best practice"
+    Always use `sem` to provide context for `by llm()` functions and parameters. Docstrings are for human documentation (and auto-generated API docs) but are **not** included in compiler-generated prompts. Only `sem` declarations affect LLM behavior.
 
 ```jac
 obj Customer {
@@ -377,6 +454,41 @@ sem Customer = "A customer record in the CRM system";
 sem Customer.id = "Unique customer identifier (UUID format)";
 sem Customer.name = "Full legal name of the customer";
 sem Customer.tier = "Service tier: 'basic', 'premium', or 'enterprise'";
+
+# Enum value semantics
+enum Priority { LOW, MEDIUM, HIGH }
+sem Priority.HIGH = "Urgent: requires immediate attention";
+```
+
+### Parameter Semantics
+
+```jac
+sem analyze_code.code = "The source code to analyze";
+sem analyze_code.language = "Programming language (python, javascript, etc.)";
+sem analyze_code.return = "A structured analysis with issues and suggestions";
+
+def analyze_code(code: str, language: str) -> dict by llm;
+```
+
+### Complex Semantic Types
+
+```jac
+obj CodeAnalysis {
+    has issues: list[str];
+    has suggestions: list[str];
+    has complexity_score: int;
+    has summary: str;
+}
+
+sem analyze.return = """
+Return a CodeAnalysis object with:
+- issues: List of problems found
+- suggestions: Improvement recommendations
+- complexity_score: 1-10 complexity rating
+- summary: One paragraph overview
+""";
+
+def analyze(code: str) -> CodeAnalysis by llm;
 ```
 
 ---
@@ -1097,6 +1209,137 @@ def get_weather(city: str) -> str:
 
 @by(llm(tools=[get_weather]))
 def answer_question(question: str) -> str: ...
+```
+
+---
+
+## Agentic AI Patterns
+
+### AI Agents as Walkers
+
+Combine graph traversal with LLM reasoning by using walkers as AI agents:
+
+```jac
+walker AIAgent {
+    has goal: str;
+    has memory: list = [];
+
+    can decide with Node entry {
+        context = f"Goal: {self.goal}\nCurrent: {here}\nMemory: {self.memory}";
+        decision = context by llm("Decide next action");
+        self.memory.append({"location": here, "decision": decision});
+        visit [-->];
+    }
+}
+```
+
+### Tool-Using Agents
+
+Agents combine LLM reasoning with tool functions. The LLM decides which tools to call and in what order (ReAct loop):
+
+```jac
+import from byllm.lib { Model }
+
+glob llm = Model(model_name="gpt-4o");
+
+glob kb: dict = {
+    "products": ["Widget A", "Widget B", "Service X"],
+    "prices": {"Widget A": 99, "Widget B": 149, "Service X": 29},
+    "inventory": {"Widget A": 50, "Widget B": 0, "Service X": 999}
+};
+
+"""List all available products."""
+def list_products() -> list[str] {
+    return kb["products"];
+}
+
+"""Get the price of a product."""
+def get_price(product: str) -> str {
+    if product in kb["prices"] {
+        return f"${kb['prices'][product]}";
+    }
+    return "Product not found";
+}
+
+"""Check if a product is in stock."""
+def check_inventory(product: str) -> str {
+    qty = kb["inventory"].get(product, 0);
+    return f"In stock ({qty} available)" if qty > 0 else "Out of stock";
+}
+
+def sales_agent(request: str) -> str by llm(
+    tools=[list_products, get_price, check_inventory]
+);
+sem sales_agent = "Help customers browse products, check prices and availability.";
+```
+
+### Context Injection with `incl_info`
+
+Pass additional runtime context to the LLM without modifying function signatures:
+
+```jac
+glob company_info = """
+Company: TechCorp
+Products: CloudDB, SecureAuth, DataViz
+Support Hours: 9 AM - 5 PM EST
+""";
+
+def support_agent(question: str) -> str by llm(
+    incl_info={"company_context": company_info}
+);
+sem support_agent = "Answer customer questions about our products and services.";
+```
+
+The `incl_info` dict keys and values are injected into the prompt as additional context. This is useful for dynamic information that changes between calls.
+
+### Agentic Walkers
+
+Walkers that traverse document graphs and use LLM for analysis:
+
+```jac
+node Document {
+    has title: str;
+    has content: str;
+    has summary: str = "";
+}
+
+def summarize(content: str) -> str by llm();
+sem summarize = "Summarize this document in 2-3 sentences.";
+
+walker DocumentAgent {
+    has query: str;
+
+    can process with Root entry {
+        all_docs = [-->](?:Document);
+
+        for doc in all_docs {
+            if self.query.lower() in doc.content.lower() {
+                doc.summary = summarize(doc.content);
+                report {"title": doc.title, "summary": doc.summary};
+            }
+        }
+    }
+}
+```
+
+### Multi-Agent Systems
+
+Orchestrate multiple specialized walkers:
+
+```jac
+walker Coordinator {
+    can coordinate with Root entry {
+        research = root spawn Researcher(topic="AI");
+        writer = root spawn Writer(style="technical");
+        reviewer = root spawn Reviewer();
+
+        report {
+            "research": research.reports,
+            "draft": writer.reports,
+            "review": reviewer.reports
+        };
+    }
+}
 ```
 
 ---

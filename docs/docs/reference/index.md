@@ -1,19 +1,50 @@
-# Part VIII: Ecosystem
+# Reference
 
-**In this part:**
-
-- [CLI Reference](#cli-reference) - Execution, compilation, testing commands
-- [Plugin System](#plugin-system) - Installing and managing plugins
-- [Project Configuration](#project-configuration) - jac.toml settings
-- [Python Interoperability](#python-interoperability) - Using Python from Jac
-- [JavaScript/npm Interoperability](#javascriptnpm-interoperability) - Using JS from Jac
-- [IDE & AI Tool Integration](#ide--ai-tool-integration) - Context files for AI coding tools
+This section is the complete technical reference for Jac. Use the sidebar to navigate to the topic you need, or use the summaries below to find the right starting point.
 
 ---
 
-The Jac ecosystem includes the `jac` CLI tool, a plugin system for extending functionality, and seamless interoperability with Python and JavaScript. This part covers the practical tools you'll use daily when developing with Jac.
+## Language Specification
 
-### Quick Start
+The language spec covers all core Jac constructs:
+
+- **[Foundation](language/foundation.md)** - Syntax, types, literals, variables, scoping, operators, control flow, pattern matching
+- **[Functions & Objects](language/functions-objects.md)** - Function declarations, `can` vs `def`, OOP, inheritance, enums, access modifiers, impl blocks
+- **[Object-Spatial Programming](language/osp.md)** - Nodes, edges, walkers, `visit`, `report`, `disengage`, graph construction, data spatial queries, common patterns
+- **[Concurrency](language/concurrency.md)** - Async/await, `flow`/`wait` concurrent expressions, parallel operations
+- **[Comprehensions & Filters](language/advanced.md)** - Filter/assign comprehensions, typed filters
+
+## AI Integration
+
+- **[byLLM Reference](plugins/byllm.md)** - `by llm()`, model configuration, tool calling, streaming, multimodal input, agentic patterns
+
+## Full-Stack Development
+
+- **[jac-client Reference](plugins/jac-client.md)** - Codespaces, components, state, routing, authentication, npm packages
+
+## Deployment & Scaling
+
+- **[jac-scale Reference](plugins/jac-scale.md)** - Production deployment, API generation, Kubernetes, monitoring
+
+## Tools & Config
+
+- **[CLI Commands](cli/index.md)** - Every `jac` subcommand with options and examples
+- **[Configuration](config/index.md)** - Project settings via `jac.toml`
+- **[Testing](testing.md)** - Test syntax, assertions, and CLI test commands
+
+## Python Integration
+
+- **[Interoperability](language/python-integration.md)** - Importing and using Python packages in Jac, five adoption patterns
+- **[Library Mode](language/library-mode.md)** - Using Jac features from pure Python code
+
+## Quick Reference
+
+- **[Walker Patterns](language/walker-responses.md)** - The `.reports` array, response patterns, nested walker spawning
+- **[Appendices](language/appendices.md)** - Complete keyword reference, operator quick reference, grammar, gotchas, migration guide
+
+---
+
+## Quick Start
 
 ```bash
 # 1. Install
@@ -28,11 +59,11 @@ jac start main.jac
 
 ---
 
-## CLI Reference
+## CLI Quick Reference
 
-The `jac` command is your primary interface to the Jac toolchain. It handles execution, compilation, testing, formatting, and project management. Most commands work on `.jac` files directly.
+The `jac` command is your primary interface to the Jac toolchain. For the full reference, see [CLI Commands](cli/index.md).
 
-### 1 Execution Commands
+### Execution Commands
 
 | Command | Description |
 |---------|-------------|
@@ -41,7 +72,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 | `jac start [file]` | Start web server |
 | `jac debug <file>` | Run in debug mode |
 
-### 2 Analysis Commands
+### Analysis Commands
 
 | Command | Description |
 |---------|-------------|
@@ -49,7 +80,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 | `jac format` | Format source files |
 | `jac test` | Run test suite |
 
-### 3 Transform Commands
+### Transform Commands
 
 | Command | Description |
 |---------|-------------|
@@ -57,7 +88,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 | `jac jac2py <file>` | Convert Jac to Python |
 | `jac js <file>` | Compile to JavaScript |
 
-### 4 Project Commands
+### Project Commands
 
 | Command | Description |
 |---------|-------------|
@@ -70,7 +101,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 | `jac purge` | Purge global bytecode cache |
 | `jac script <name>` | Run project script |
 
-### 5 Tool Commands
+### Tool Commands
 
 | Command | Description |
 |---------|-------------|
@@ -83,7 +114,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 
 ## Plugin System
 
-### 1 Available Plugins
+### Available Plugins
 
 | Plugin | Package | Description |
 |--------|---------|-------------|
@@ -92,7 +123,7 @@ The `jac` command is your primary interface to the Jac toolchain. It handles exe
 | jac-scale | `pip install jac-scale` | Production deployment |
 | jac-super | `pip install jac-super` | Enhanced console output |
 
-### 2 Managing Plugins
+### Managing Plugins
 
 ```bash
 # List plugins
@@ -108,7 +139,7 @@ jac plugins disable byllm
 jac plugins info byllm
 ```
 
-### 3 Plugin Configuration
+### Plugin Configuration
 
 In `jac.toml`:
 
@@ -129,7 +160,9 @@ replicas = 3
 
 ## Project Configuration
 
-### 1 jac.toml Structure
+For the full reference, see [Configuration](config/index.md).
+
+### jac.toml Structure
 
 ```toml
 [project]
@@ -164,7 +197,7 @@ build = "jac build"
 OPENAI_API_KEY = "${OPENAI_API_KEY}"
 ```
 
-### 2 Running Scripts
+### Running Scripts
 
 ```bash
 jac script dev
@@ -172,7 +205,7 @@ jac script test
 jac script build
 ```
 
-### 3 Configuration Profiles
+### Configuration Profiles
 
 Jac supports multi-file configuration with profile-based overrides.
 
@@ -200,29 +233,29 @@ JAC_PROFILE=ci jac test
 # default_profile = "dev"
 ```
 
-**Example `jac.prod.toml`:**
+**Example profile files:**
 
-```toml
-[serve]
-port = 80
+=== "jac.prod.toml"
+    ```toml
+    [serve]
+    port = 80
 
-[plugins.byllm]
-default_model = "gpt-4"
-```
+    [plugins.byllm]
+    default_model = "gpt-4"
+    ```
 
-**Example `jac.local.toml`** (gitignored, developer-specific):
+=== "jac.local.toml (gitignored, developer-specific)"
+    ```toml
+    [serve]
+    port = 9000
 
-```toml
-[serve]
-port = 9000
-
-[run]
-cache = false
-```
+    [run]
+    cache = false
+    ```
 
 > **Note:** `JAC_ENV` is deprecated. Use `JAC_PROFILE` instead.
 
-### 4 Environment Variables
+### Environment Variables
 
 **Server-side:**
 
@@ -236,12 +269,14 @@ cache = false
 
 **Client-side (Vite):**
 
-Variables prefixed with `VITE_` are exposed to client:
+Variables prefixed with `VITE_` are exposed to client. Define them in a `.env` file:
 
 ```toml
 # .env
 VITE_API_URL=https://api.example.com
 ```
+
+Then access in client code:
 
 ```jac
 cl {
@@ -254,92 +289,9 @@ cl {
 
 ---
 
-## Python Interoperability
-
-> **Deep Dive:** For comprehensive coverage of Python integration patterns, adoption strategies, and transpilation details, see [Python Integration](python-integration.md).
-
-### 1 Using Python Libraries
-
-```jac
-import numpy as np;
-import pandas as pd;
-import from sklearn.linear_model { LinearRegression }
-
-with entry {
-    # NumPy
-    arr = np.array([1, 2, 3, 4, 5]);
-    print(f"Mean: {np.mean(arr)}");
-
-    # Pandas
-    df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]});
-    print(df.describe());
-
-    # Scikit-learn
-    model = LinearRegression();
-}
-```
-
-### 2 Inline Python Blocks
-
-```jac
-::py::
-import numpy as np
-
-def complex_calculation(data):
-    """Pure Python for performance-critical code."""
-    arr = np.array(data)
-    return arr.mean(), arr.std()
-::py::
-
-with entry {
-    (mean, std) = complex_calculation([1, 2, 3, 4, 5]);
-    print(f"Mean: {mean}, Std: {std}");
-}
-```
-
-**When to use inline Python:**
-
-- Complex Python-only APIs
-- Performance-critical numerical code
-- Legacy code integration
-
-**When NOT to use:**
-
-- Simple imports (use `import` instead)
-- New code that could use Jac features
-
-### 3 Type Compatibility
-
-| Jac Type | Python Type |
-|----------|-------------|
-| `int` | `int` |
-| `float` | `float` |
-| `str` | `str` |
-| `bool` | `bool` |
-| `list` | `list` |
-| `dict` | `dict` |
-| `tuple` | `tuple` |
-| `set` | `set` |
-| `None` | `None` |
-
-### 4 Using Jac from Python
-
-```python
-from jaclang import jac_import
-
-# Import Jac module
-my_module = jac_import("my_module.jac")
-
-# Use exported functions/classes
-result = my_module.my_function(arg1, arg2)
-instance = my_module.MyClass()
-```
-
----
-
 ## JavaScript/npm Interoperability
 
-### 1 npm Packages
+### npm Packages
 
 ```jac
 cl {
@@ -350,7 +302,7 @@ cl {
 }
 ```
 
-### 2 TypeScript Configuration
+### TypeScript Configuration
 
 TypeScript is supported through the jac-client Vite toolchain for client-side code. Configure in `jac.toml`:
 
@@ -361,7 +313,7 @@ typescript = true
 
 > **Note:** Jac does not parse TypeScript files directly. TypeScript support is provided through Vite's built-in TypeScript handling in client-side (`cl {}`) code.
 
-### 3 Browser APIs
+### Browser APIs
 
 ```jac
 cl {
@@ -431,5 +383,3 @@ cat candidate.txt >> AGENTS.md
 ```
 
 When you update Jac, pull a fresh copy from the releases page to stay current.
-
----
