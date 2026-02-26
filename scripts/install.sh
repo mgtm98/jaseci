@@ -219,32 +219,29 @@ install_via_uv() {
         info "uv is already installed."
     fi
 
-    # Determine package
-    local pkg
-    if $CORE_ONLY; then
-        pkg="jaclang"
-    else
-        pkg="jaseci"
+    # Always install jaclang as the tool (it provides the 'jac' entry point).
+    # For full ecosystem, add all plugins via --with flags.
+    local spec="jaclang"
+    if [[ -n "$VERSION" ]]; then
+        spec="jaclang==${VERSION}"
     fi
 
-    # Build version spec
-    local spec="$pkg"
-    if [[ -n "$VERSION" ]]; then
-        spec="${pkg}==${VERSION}"
+    local -a with_args=()
+    if ! $CORE_ONLY; then
+        with_args+=(--with byllm --with jac-client --with jac-scale --with jac-super --with jac-mcp)
     fi
 
     # Check if already installed and upgrade vs fresh install
-    if uv tool list 2>/dev/null | grep -q "^${pkg} "; then
-        info "Upgrading ${pkg}..."
+    if uv tool list 2>/dev/null | grep -q "^jaclang "; then
+        info "Upgrading jaclang..."
         if [[ -n "$VERSION" ]]; then
-            # For pinned version, reinstall
-            uv tool install "$spec" --python ">=3.12" --force
+            uv tool install "$spec" "${with_args[@]}" --python ">=3.12" --force
         else
-            uv tool upgrade "$pkg" --python ">=3.12"
+            uv tool upgrade jaclang "${with_args[@]}" --python ">=3.12"
         fi
     else
-        info "Installing ${pkg}..."
-        uv tool install "$spec" --python ">=3.12"
+        info "Installing jaclang..."
+        uv tool install "$spec" "${with_args[@]}" --python ">=3.12"
     fi
 
     ensure_on_path

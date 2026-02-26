@@ -83,7 +83,7 @@ jobs:
             "${{ matrix.package }}==${{ steps.version.outputs.version }}" \
             --console-script jac \
             --scie eager \
-            --python-version 3.12 \
+            --interpreter-constraint "CPython==3.12.*" \
             -o "$ASSET"
 
           echo "asset_name=${ASSET}" >> "$GITHUB_ENV"
