@@ -825,6 +825,89 @@ impl NaIRGenPass._codegen_for(nd: uni.InForStmt) -> None {
         self.builder.position_at_end(end_bb);
         return;
     }
+    # ── Dict .items() iteration: for (k, v) in d.items() ──
+    if isinstance(nd.target, uni.TupleVal) and isinstance(nd.collection, uni.FuncCall) {
+        coll_call = nd.collection;
+        if isinstance(coll_call.target, uni.AtomTrailer) and coll_call.target.is_attr {
+            items_method = self._get_name(coll_call.target.right);
+            items_base = self._get_name(coll_call.target.target);
+            if (
+                items_method == "items"
+                and items_base is not None
+                and items_base in self.var_dict_type
+            ) {
+                dict_type_key = self.var_dict_type[items_base];
+                helpers = self.dict_helpers.get(dict_type_key);
+                unpack_targets = nd.target.values or [];
+                if helpers is not None and len(unpack_targets) == 2 {
+                    key_var_name = self._get_name(unpack_targets[0]);
+                    val_var_name = self._get_name(unpack_targets[1]);
+                    if key_var_name is not None and val_var_name is not None {
+                        collection_val = self._codegen_expr(coll_call.target.target);
+                        if collection_val is not None {
+                            i64 = ir.IntType(64);
+                            key_type = helpers["key_type"];
+                            val_type = helpers["val_type"];
+                            len_val = self.builder.call(
+                                helpers["len"], [collection_val], name="fori.len"
+                            );
+                            idx_alloca = self._entry_alloca(i64, "fori.idx");
+                            self.builder.store(ir.Constant(i64, 0), idx_alloca);
+                            key_alloca = self._entry_alloca(key_type, key_var_name);
+                            val_alloca = self._entry_alloca(val_type, val_var_name);
+                            self.local_vars[key_var_name] = key_alloca;
+                            self.local_vars[val_var_name] = val_alloca;
+                            func = self.builder.function;
+                            cond_bb = func.append_basic_block(name="fori.cond");
+                            body_bb = func.append_basic_block(name="fori.body");
+                            incr_bb = func.append_basic_block(name="fori.incr");
+                            end_bb = func.append_basic_block(name="fori.end");
+                            self.builder.branch(cond_bb);
+                            self.builder.position_at_end(cond_bb);
+                            cur_idx = self.builder.load(idx_alloca, name="fori.cur.idx");
+                            cmp = self.builder.icmp_signed(
+                                "<", cur_idx, len_val, name="fori.cmp"
+                            );
+                            self.builder.cbranch(cmp, body_bb, end_bb);
+                            self.loop_stack.append((incr_bb, end_bb));
+                            self.builder.position_at_end(body_bb);
+                            body_idx = self.builder.load(
+                                idx_alloca, name="fori.body.idx"
+                            );
+                            key_val = self.builder.call(
+                                helpers["get_key"],
+                                [collection_val, body_idx],
+                                name="fori.key"
+                            );
+                            val_val = self.builder.call(
+                                helpers["get_val"],
+                                [collection_val, body_idx],
+                                name="fori.val"
+                            );
+                            self.builder.store(key_val, key_alloca);
+                            self.builder.store(val_val, val_alloca);
+                            if isinstance(nd.body, (list, tuple)) {
+                                self._codegen_body(nd.body);
+                            }
+                            if not self.builder.block.is_terminated {
+                                self.builder.branch(incr_bb);
+                            }
+                            self.loop_stack.pop();
+                            self.builder.position_at_end(incr_bb);
+                            inc_idx = self.builder.load(idx_alloca, name="fori.inc.idx");
+                            next_idx = self.builder.add(
+                                inc_idx, ir.Constant(i64, 1), name="fori.next.idx"
+                            );
+                            self.builder.store(next_idx, idx_alloca);
+                            self.builder.branch(cond_bb);
+                            self.builder.position_at_end(end_bb);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
     # ── Dict iteration: for k in dict ──
     # Only use dict iteration if the collection variable is explicitly tracked as a dict
     # (This avoids premature code generation from type inference)
