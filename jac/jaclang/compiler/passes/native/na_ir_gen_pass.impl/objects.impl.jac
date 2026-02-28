@@ -807,6 +807,29 @@ impl NaIRGenPass._codegen_method_call(nd: uni.FuncCall) -> (ir.Value | None) {
             args.append(val);
         }
     }
+    # Fill in missing optional parameters with their AST default values
+    if full_name in self.method_ast_sigs and len(args) < len(func.args) {
+        sig_params = self.method_ast_sigs[full_name].get_parameters();
+        provided_count = len(args) - 1;  # exclude self
+        for pix in range(provided_count, len(sig_params)) {
+            p = sig_params[pix];
+            if pix < len(sig_params) {
+                expected_type = func.args[len(args)].type
+                    if len(args) < len(func.args)
+                    else ir.IntType(64);
+                if p.value is not None {
+                    dval = self._codegen_expr(p.value);
+                    if dval is not None {
+                        args.append(self._coerce_type(dval, expected_type));
+                    } else {
+                        args.append(ir.Constant(expected_type, 0));
+                    }
+                } else {
+                    args.append(ir.Constant(expected_type, 0));
+                }
+            }
+        }
+    }
     # Virtual dispatch if type has vtable
     if type_name in self.has_vtable {
         result = self._codegen_virtual_call(obj_val, method_name, args, type_name);
