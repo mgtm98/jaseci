@@ -52,8 +52,8 @@ def test_none() -> int {
 }
 
 obj SimpleObj {
-    has value: int;
-    has name: str;
+    has value: int = 0;
+    has name: str = "";
 
     def init(v: int, n: str) {
         self.value = v;
@@ -71,8 +71,8 @@ def test_init_called() -> int {
 }
 
 obj InitCounter {
-    has init_count: int;
-    has final_value: int;
+    has init_count: int = 0;
+    has final_value: int = 0;
 
     def init(val: int) {
         self.init_count = 1;
@@ -97,7 +97,7 @@ def test_init_executed() -> int {
 }
 
 obj AutoInit {
-    has ready: int;
+    has ready: int = 0;
 
     def init {
         self.ready = 99;
@@ -115,8 +115,8 @@ def test_init_no_args() -> int {
 }
 
 obj KWInit {
-    has x: int;
-    has y: int;
+    has x: int = 0;
+    has y: int = 0;
 
     def init(a: int, b: int) {
         self.x = a + 1;
@@ -135,9 +135,9 @@ def test_init_positional() -> int {
 }
 
 obj InitWithSideEffect {
-    has val: int;
-    has doubled: int;
-    has flag: int;
+    has val: int = 0;
+    has doubled: int = 0;
+    has flag: int = 0;
 
     def init(v: int) {
         self.val = v;
