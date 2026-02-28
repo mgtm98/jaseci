@@ -325,6 +325,25 @@ test "objects init executed" {
     assert f() == 20;
 }
 
+test "objects init no args" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_no_args", ctypes.c_int64);
+    assert f() == 99;
+}
+
+test "objects init positional" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_positional", ctypes.c_int64);
+    # KWInit(10, 20) → init adds 1 to each → x=11, y=21 → sum=32
+    assert f() == 32;
+}
+
+test "objects init side effects" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_side_effects", ctypes.c_int64);
+    assert f() == 1;
+}
+
 # --- TestNativeInheritance ---
 test "inheritance dog speak" {
     (eng, _) = compile_native("inheritance.na.jac");

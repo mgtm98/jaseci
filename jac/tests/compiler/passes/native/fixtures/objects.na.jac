@@ -95,3 +95,70 @@ def test_init_executed() -> int {
     }
     return 0;
 }
+
+obj AutoInit {
+    has ready: int;
+
+    def init {
+        self.ready = 99;
+    }
+
+    def get_ready() -> int {
+        return self.ready;
+    }
+}
+
+"""init with zero positional args — tests that init is called even with no arguments."""
+def test_init_no_args() -> int {
+    a = AutoInit();
+    return a.get_ready();
+}
+
+obj KWInit {
+    has x: int;
+    has y: int;
+
+    def init(a: int, b: int) {
+        self.x = a + 1;
+        self.y = b + 1;
+    }
+
+    def sum() -> int {
+        return self.x + self.y;
+    }
+}
+
+"""init with keyword args — tests that init runs when all args are positional."""
+def test_init_positional() -> int {
+    k = KWInit(10, 20);
+    return k.sum();
+}
+
+obj InitWithSideEffect {
+    has val: int;
+    has doubled: int;
+    has flag: int;
+
+    def init(v: int) {
+        self.val = v;
+        self.doubled = v * 2;
+        self.flag = 1;
+    }
+
+    def get_doubled() -> int {
+        return self.doubled;
+    }
+
+    def get_flag() -> int {
+        return self.flag;
+    }
+}
+
+"""init that computes derived fields — verifies init body logic executes fully."""
+def test_init_side_effects() -> int {
+    o = InitWithSideEffect(15);
+    if o.get_flag() == 1 and o.get_doubled() == 30 {
+        return 1;
+    }
+    return 0;
+}
