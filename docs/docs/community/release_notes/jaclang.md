@@ -14,6 +14,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **IDE Hover Types**: Function parameters and `has` vars now display types on hover.
 - **Fix: Bug Fix**: Stop appending lint warnings to `py2jac` converted files.
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
+- **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
 
 ## jaclang 0.11.2 (Latest Release)
 
