@@ -189,8 +189,13 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
     if (nd).body {
         self._codegen_body((nd).body);
     }
-    # Ensure function has a terminator
+    # Flush all stdio buffers before returning to caller
     if not self.builder.block.is_terminated {
+        i32 = ir.IntType(32);
+        i8p = ir.IntType(8).as_pointer();
+        fflush_fn = self._get_or_declare_extern("fflush", i32, [i8p]);
+        null_ptr = ir.Constant(i8p, None);
+        self.builder.call(fflush_fn, [null_ptr]);
         self.builder.ret_void();
     }
     self.has_native_code = True;

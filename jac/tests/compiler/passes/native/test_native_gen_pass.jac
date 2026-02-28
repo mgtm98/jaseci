@@ -1562,3 +1562,75 @@ test "rc stress large dict" {
     f = get_func(eng, "test_large_dict", ctypes.c_int64, ctypes.c_int64);
     assert f(1000) == 1000;
 }
+
+# --- Auto-Promotion Tests ---
+glob CHESS_JAC = str(
+         Path(jaclang.__file__).parent.parent / "examples" / "chess" / "chess.jac"
+     );
+
+"""Compile a regular .jac file with auto-promotion and return the engine."""
+def compile_auto_native(file_path: str) -> tuple {
+    prog = JacProgram();
+    prog._auto_promote_native = True;
+    prog._auto_promote_target = os.path.abspath(file_path);
+    ir = prog.compile(file_path=file_path);
+    errors = [str(e) for e in prog.errors_had] if prog.errors_had else [];
+    assert not prog.errors_had , f"Compilation errors: {errors}";
+    return (ir, prog);
+}
+
+test "auto promote chess.jac detects native compatible" {
+    (ir, _) = compile_auto_native(CHESS_JAC);
+    assert ir is not None;
+    assert getattr(ir.gen, '_auto_promoted_native', False) , (
+        "chess.jac should be auto-promoted to native"
+    );
+    assert ir.gen.native_engine is not None , (
+        "Auto-promoted chess.jac should have a native engine"
+    );
+}
+
+test "auto promote chess.jac has entry and key functions" {
+    (ir, _) = compile_auto_native(CHESS_JAC);
+    eng = ir.gen.native_engine;
+    # jac_entry must exist
+    assert eng.get_function_address("jac_entry") != 0;
+    # Key game functions must be present
+    for func_name in [
+        "opposite_color",
+        "create_piece",
+        "Board.display",
+        "Game.is_checkmate",
+        "Game.find_king",
+        "Game.play"
+    ] {
+        assert eng.get_function_address(func_name) != 0 , (
+            f"{func_name} not found in auto-promoted native engine"
+        );
+    }
+}
+
+test "auto promote chess.jac runs via cli" {
+    # End-to-end: jac run --autonative chess.jac should execute natively.
+    stdin_data = "\n" * 20 + "quit\n";
+    result = subprocess.run(
+        [sys.executable, "-m", "jaclang", "run", "--autonative", CHESS_JAC],
+        input=stdin_data,
+        capture_output=True,
+        text=True,
+        timeout=120
+    );
+    assert result.returncode == 0 , (
+        f"Auto-promoted chess crashed with exit code {result.returncode}.\n"
+        f"stderr: {result.stderr[-500:] if result.stderr else '(empty)'}"
+    );
+    assert "Game ended." in result.stdout , (
+        f"Expected 'Game ended.' in output.\n"
+        f"stdout tail: {result.stdout[-500:] if result.stdout else '(empty)'}"
+    );
+    # Verify the native execution message appears (may be line-wrapped by Rich)
+    combined = " ".join((result.stdout + result.stderr).split());
+    assert "executed natively" in combined , (
+        f"Expected native execution message.\n" f"output tail: {combined[-500:]}"
+    );
+}
