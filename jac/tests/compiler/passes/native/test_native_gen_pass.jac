@@ -248,6 +248,42 @@ test "strings fstring mixed" {
     assert f(b"Alice", 30) == b"name=Alice, age=30";
 }
 
+# --- TestNativePrintMultiArgs ---
+test "print multi args compiles" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    assert eng is not None;
+}
+
+test "print multi args multiple args" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_multiple_args", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args mixed types" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_mixed_types", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args variables" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_variables", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args single arg" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_single_arg", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args many args" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_many_args", ctypes.c_int64);
+    assert f() == 0;
+}
+
 # --- TestNativeObjects ---
 test "objects make point" {
     (eng, _) = compile_native("objects.na.jac");
@@ -1571,4 +1607,76 @@ test "dicts empty glob dict set and get" {
     entry_fn();
     f = get_func(eng, "empty_glob_dict_set_get", ctypes.c_int64);
     assert f() == 7;
+}
+
+# --- Auto-Promotion Tests ---
+glob CHESS_JAC = str(
+         Path(jaclang.__file__).parent.parent / "examples" / "chess" / "chess.jac"
+     );
+
+"""Compile a regular .jac file with auto-promotion and return the engine."""
+def compile_auto_native(file_path: str) -> tuple {
+    prog = JacProgram();
+    prog._auto_promote_native = True;
+    prog._auto_promote_target = os.path.abspath(file_path);
+    ir = prog.compile(file_path=file_path);
+    errors = [str(e) for e in prog.errors_had] if prog.errors_had else [];
+    assert not prog.errors_had , f"Compilation errors: {errors}";
+    return (ir, prog);
+}
+
+test "auto promote chess.jac detects native compatible" {
+    (ir, _) = compile_auto_native(CHESS_JAC);
+    assert ir is not None;
+    assert getattr(ir.gen, '_auto_promoted_native', False) , (
+        "chess.jac should be auto-promoted to native"
+    );
+    assert ir.gen.native_engine is not None , (
+        "Auto-promoted chess.jac should have a native engine"
+    );
+}
+
+test "auto promote chess.jac has entry and key functions" {
+    (ir, _) = compile_auto_native(CHESS_JAC);
+    eng = ir.gen.native_engine;
+    # jac_entry must exist
+    assert eng.get_function_address("jac_entry") != 0;
+    # Key game functions must be present
+    for func_name in [
+        "opposite_color",
+        "create_piece",
+        "Board.display",
+        "Game.is_checkmate",
+        "Game.find_king",
+        "Game.play"
+    ] {
+        assert eng.get_function_address(func_name) != 0 , (
+            f"{func_name} not found in auto-promoted native engine"
+        );
+    }
+}
+
+test "auto promote chess.jac runs via cli" {
+    # End-to-end: jac run --autonative chess.jac should execute natively.
+    stdin_data = "\n" * 20 + "quit\n";
+    result = subprocess.run(
+        [sys.executable, "-m", "jaclang", "run", "--autonative", CHESS_JAC],
+        input=stdin_data,
+        capture_output=True,
+        text=True,
+        timeout=120
+    );
+    assert result.returncode == 0 , (
+        f"Auto-promoted chess crashed with exit code {result.returncode}.\n"
+        f"stderr: {result.stderr[-500:] if result.stderr else '(empty)'}"
+    );
+    assert "Game ended." in result.stdout , (
+        f"Expected 'Game ended.' in output.\n"
+        f"stdout tail: {result.stdout[-500:] if result.stdout else '(empty)'}"
+    );
+    # Verify the native execution message appears (may be line-wrapped by Rich)
+    combined = " ".join((result.stdout + result.stderr).split());
+    assert "executed natively" in combined , (
+        f"Expected native execution message.\n" f"output tail: {combined[-500:]}"
+    );
 }
