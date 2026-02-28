@@ -256,6 +256,20 @@ test "strings str replace count arg respected" {
     assert f(b"banana") == b"bXnana";
 }
 
+test "strings for-in-str join" {
+    (eng, _) = compile_native("strings.na.jac");
+    f = get_func(eng, "str_for_in_join", ctypes.c_char_p, ctypes.c_char_p);
+    assert f(b"Hello") == b"Hello";
+    assert f(b"") == b"";
+}
+
+test "strings for-in-str count" {
+    (eng, _) = compile_native("strings.na.jac");
+    f = get_func(eng, "str_for_in_count", ctypes.c_int64, ctypes.c_char_p);
+    assert f(b"Hello") == 5;
+    assert f(b"") == 0;
+}
+
 # --- TestNativePrintMultiArgs ---
 test "print multi args compiles" {
     (eng, _) = compile_native("print_multi_args.na.jac");

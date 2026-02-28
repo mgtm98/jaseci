@@ -891,6 +891,61 @@ impl NaIRGenPass._codegen_for(nd: uni.InForStmt) -> None {
             }
         }
     }
+    # ── String iteration: for c in str ──
+    # Must be checked before the list path: a raw `i8*` string would otherwise
+    # be misclassified as a `list[ptr]` and hit a type-mismatch when calling
+    # the List.ptr helpers.
+    coll_name_str = self._get_name(nd.collection);
+    is_list_coll = (
+        coll_name_str is not None and coll_name_str in self.var_list_elem_type
+    );
+    is_dict_coll = coll_name_str is not None and coll_name_str in self.var_dict_type;
+    if not is_list_coll and not is_dict_coll {
+        str_coll_val = self._codegen_expr(nd.collection);
+        i8p_s = ir.IntType(8).as_pointer();
+        if str_coll_val is not None and str_coll_val.type == i8p_s {
+            i64 = ir.IntType(64);
+            strlen_fn = self._get_or_declare_extern("strlen", i64, [i8p_s]);
+            str_len = self.builder.call(strlen_fn, [str_coll_val], name="fors.len");
+            idx_alloca = self._entry_alloca(i64, "fors.idx");
+            self.builder.store(ir.Constant(i64, 0), idx_alloca);
+            loop_alloca = self._entry_alloca(i8p_s, loop_var_name);
+            self.local_vars[loop_var_name] = loop_alloca;
+            func = self.builder.function;
+            cond_bb = func.append_basic_block(name="fors.cond");
+            body_bb = func.append_basic_block(name="fors.body");
+            incr_bb = func.append_basic_block(name="fors.incr");
+            end_bb = func.append_basic_block(name="fors.end");
+            self.builder.branch(cond_bb);
+            self.builder.position_at_end(cond_bb);
+            cur_idx = self.builder.load(idx_alloca, name="fors.cur.idx");
+            cmp = self.builder.icmp_signed("<", cur_idx, str_len, name="fors.cmp");
+            self.builder.cbranch(cmp, body_bb, end_bb);
+            self.loop_stack.append((incr_bb, end_bb));
+            self.builder.position_at_end(body_bb);
+            body_idx = self.builder.load(idx_alloca, name="fors.body.idx");
+            char_str = self._codegen_string_index(str_coll_val, body_idx);
+            if char_str is not None {
+                self.builder.store(char_str, loop_alloca);
+            }
+            if isinstance(nd.body, (list, tuple)) {
+                self._codegen_body(nd.body);
+            }
+            if not self.builder.block.is_terminated {
+                self.builder.branch(incr_bb);
+            }
+            self.loop_stack.pop();
+            self.builder.position_at_end(incr_bb);
+            inc_idx = self.builder.load(idx_alloca, name="fors.inc.idx");
+            next_idx = self.builder.add(
+                inc_idx, ir.Constant(i64, 1), name="fors.next.idx"
+            );
+            self.builder.store(next_idx, idx_alloca);
+            self.builder.branch(cond_bb);
+            self.builder.position_at_end(end_bb);
+            return;
+        }
+    }
     # ── List iteration: for x in items ──
     # Set list type hint in case collection is a list literal
     self._list_type_hint = None;
