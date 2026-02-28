@@ -313,6 +313,37 @@ test "objects none check" {
     assert f() == 1;
 }
 
+test "objects init called" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_called", ctypes.c_int64);
+    assert f() == 42;
+}
+
+test "objects init executed" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_executed", ctypes.c_int64);
+    assert f() == 20;
+}
+
+test "objects init no args" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_no_args", ctypes.c_int64);
+    assert f() == 99;
+}
+
+test "objects init positional" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_positional", ctypes.c_int64);
+    # KWInit(10, 20) → init adds 1 to each → x=11, y=21 → sum=32
+    assert f() == 32;
+}
+
+test "objects init side effects" {
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_init_side_effects", ctypes.c_int64);
+    assert f() == 1;
+}
+
 # --- TestNativeInheritance ---
 test "inheritance dog speak" {
     (eng, _) = compile_native("inheritance.na.jac");
@@ -1607,6 +1638,12 @@ test "dicts empty glob dict set and get" {
     entry_fn();
     f = get_func(eng, "empty_glob_dict_set_get", ctypes.c_int64);
     assert f() == 7;
+test "default params omitted trailing defaults" {
+    (eng, _) = compile_native("default_params.na.jac");
+    method_f = get_func(eng, "test_method_default_omitted", ctypes.c_int64);
+    assert method_f() == 22;  # 5 + 7 + 10 (offset default)
+    free_f = get_func(eng, "test_free_fn_default_omitted", ctypes.c_int64);
+    assert free_f() == 142;  # 42 + 100 (bias default)
 }
 
 # --- Auto-Promotion Tests ---

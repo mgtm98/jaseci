@@ -79,8 +79,8 @@ def get_ir_gen_sched -> list[type[Transform[uni.Module, uni.Module]]] {
 
 """Type checking schedule."""
 def get_type_check_sched -> list[type[Transform[uni.Module, uni.Module]]] {
-    import from jaclang.compiler.passes.main { TypeCheckPass }
-    return [TypeCheckPass];
+    import from jaclang.compiler.passes.main { TypeCheckPass, StaticAnalysisPass }
+    return [TypeCheckPass, StaticAnalysisPass];
 }
 
 """Full Python code generation schedule.
