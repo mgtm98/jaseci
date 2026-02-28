@@ -1630,6 +1630,14 @@ test "rc stress large dict" {
     assert f(1000) == 1000;
 }
 
+test "default params omitted trailing defaults" {
+    (eng, _) = compile_native("default_params.na.jac");
+    method_f = get_func(eng, "test_method_default_omitted", ctypes.c_int64);
+    assert method_f() == 22;  # 5 + 7 + 10 (offset default)
+    free_f = get_func(eng, "test_free_fn_default_omitted", ctypes.c_int64);
+    assert free_f() == 142;  # 42 + 100 (bias default)
+}
+
 # --- Auto-Promotion Tests ---
 glob CHESS_JAC = str(
          Path(jaclang.__file__).parent.parent / "examples" / "chess" / "chess.jac"

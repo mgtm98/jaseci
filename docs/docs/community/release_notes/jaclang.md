@@ -21,6 +21,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Native Auto-Promotion (`--autonative`)**: Regular `.jac` modules can now be automatically promoted to native (LLVM JIT) execution without requiring the `.na.jac` extension.
 - **Native Compiler: Constructor `init` Method Auto-Invocation**: Fixed a bug where object constructors with positional parameters were not automatically calling the `init` method. Now, `init` is properly invoked with constructor arguments during object instantiation, enabling proper initialization of objects with parameterized constructors.
 - **`jac nacompile` accepts `.jac` files**: `jac nacompile` now auto-promotes compatible `.jac` files to native compilation, with a clear error message when a file uses unsupported constructs.
+- **Fix: Native Codegen Crash on Omitted Default Parameters**: Calling a method or free function while omitting trailing default-valued parameters (e.g., `obj.method(x)` where `method` declares `param: int = 0`) no longer crashes the compiler with `list index out of range` in `builder.call`. Missing arguments are now filled from the AST default expressions before the call is emitted.
 
 ## jaclang 0.11.2 (Latest Release)
 
