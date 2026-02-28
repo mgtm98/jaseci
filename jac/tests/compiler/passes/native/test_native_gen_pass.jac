@@ -1562,3 +1562,13 @@ test "rc stress large dict" {
     f = get_func(eng, "test_large_dict", ctypes.c_int64, ctypes.c_int64);
     assert f(1000) == 1000;
 }
+
+# --- TestNativeEmptyGlobDict (regression: empty-dict-glob-var-init-null-ptr) ---
+test "dicts empty glob dict set and get" {
+    # glob x: dict[K,V] = {} previously left the global as null -> segfault on first access.
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    entry_fn = get_func(eng, "jac_entry", None);
+    entry_fn();
+    f = get_func(eng, "empty_glob_dict_set_get", ctypes.c_int64);
+    assert f() == 7;
+}

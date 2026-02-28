@@ -176,6 +176,36 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
             init_node = init_tuple[1];
             var_type = init_tuple[2];
             init_val = self._codegen_expr(init_node);
+            # For empty dict literals ({}) _codegen_dict_val returns None.
+            # Fall back to calling helpers["new"] for the matching dict type.
+            if init_val is None and isinstance(var_type, ir.PointerType) {
+                for (dict_key, dtype) in self.dict_types.items() {
+                    if var_type == dtype.as_pointer() {
+                        helpers = self.dict_helpers.get(dict_key);
+                        if helpers is not None {
+                            init_val = self.builder.call(
+                                helpers["new"], [], name=f"dict.init.{var_name}"
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+            # For empty list literals ([]) _codegen_list_val may return None.
+            # Fall back to calling helpers["new"] for the matching list elem type.
+            if init_val is None and isinstance(var_type, ir.PointerType) {
+                for (elem_key, ltype) in self.list_types.items() {
+                    if var_type == ltype.as_pointer() {
+                        helpers = self.list_helpers.get(elem_key);
+                        if helpers is not None {
+                            init_val = self.builder.call(
+                                helpers["new"], [], name=f"list.init.{var_name}"
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
             if init_val is not None {
                 global_var = self.global_vars.get(var_name);
                 if global_var is not None {

@@ -15,6 +15,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: Bug Fix**: Stop appending lint warnings to `py2jac` converted files.
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
+- **Fix: Native Global Empty Dict/List Init Null Pointer**: Declaring a module-level global with an empty dict or list literal (`glob x: dict[str, int] = {}`) no longer leaves the global as a null pointer. Any subsequent dict/list operation would previously segfault; the compiler now falls back to `helpers["new"]()` to produce an initialised empty container.
 
 ## jaclang 0.11.2 (Latest Release)
 

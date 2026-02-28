@@ -186,6 +186,22 @@ def global_set_len() -> int {
     return len(VALID_IDS);
 }
 
+# ===================== Empty Global Dict Tests (regression: empty-dict-glob-var-init-null-ptr) =====================
+# glob x: dict[K,V] = {} previously left the global as a null pointer,
+# causing a segfault on the first dict operation.
+glob EMPTY_COUNTS: dict[str, int] = {};
+
+def empty_glob_dict_set_get() -> int {
+    EMPTY_COUNTS["a"] = 7;
+    return EMPTY_COUNTS["a"];
+}
+
+def empty_glob_dict_len_after_insert() -> int {
+    EMPTY_COUNTS["x"] = 1;
+    EMPTY_COUNTS["y"] = 2;
+    return len(EMPTY_COUNTS);
+}
+
 # ===================== Entry Point =====================
 glob _init_done: int = 0;
 
