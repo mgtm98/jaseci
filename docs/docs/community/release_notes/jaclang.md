@@ -16,6 +16,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
 - **Native Auto-Promotion (`--autonative`)**: Regular `.jac` modules can now be automatically promoted to native (LLVM JIT) execution without requiring the `.na.jac` extension.
+- **`jac nacompile` accepts `.jac` files**: `jac nacompile` now auto-promotes compatible `.jac` files to native compilation, with a clear error message when a file uses unsupported constructs.
 
 ## jaclang 0.11.2 (Latest Release)
 
