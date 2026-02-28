@@ -248,6 +248,14 @@ test "strings fstring mixed" {
     assert f(b"Alice", 30) == b"name=Alice, age=30";
 }
 
+test "strings str replace count arg respected" {
+    (eng, _) = compile_native("strings.na.jac");
+    f = get_func(eng, "str_replace_first_only", ctypes.c_char_p, ctypes.c_char_p);
+    # only the first 'a' should be replaced; remaining 'a's must be untouched
+    assert f(b"aaa") == b"Xaa";
+    assert f(b"banana") == b"bXnana";
+}
+
 # --- TestNativeObjects ---
 test "objects make point" {
     (eng, _) = compile_native("objects.na.jac");

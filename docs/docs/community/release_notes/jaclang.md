@@ -15,6 +15,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: Bug Fix**: Stop appending lint warnings to `py2jac` converted files.
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
+- **Fix: Native `str.replace(old, new, count)` Count Argument Ignored**: The third `count` parameter to `str.replace` is now respected. A `remaining` count phi is threaded through the replacement loop and decrements on each substitution; when it reaches zero the rest of the string is copied unchanged. Omitting the argument (or passing a negative value) retains the replace-all behaviour.
 
 ## jaclang 0.11.2 (Latest Release)
 
