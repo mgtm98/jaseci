@@ -1562,3 +1562,11 @@ test "rc stress large dict" {
     f = get_func(eng, "test_large_dict", ctypes.c_int64, ctypes.c_int64);
     assert f(1000) == 1000;
 }
+
+test "default params omitted trailing defaults" {
+    (eng, _) = compile_native("default_params.na.jac");
+    method_f = get_func(eng, "test_method_default_omitted", ctypes.c_int64);
+    assert method_f() == 22;  # 5 + 7 + 10 (offset default)
+    free_f = get_func(eng, "test_free_fn_default_omitted", ctypes.c_int64);
+    assert free_f() == 142;  # 42 + 100 (bias default)
+}

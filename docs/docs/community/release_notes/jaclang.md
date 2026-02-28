@@ -15,6 +15,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: Bug Fix**: Stop appending lint warnings to `py2jac` converted files.
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
+- **Fix: Native Codegen Crash on Omitted Default Parameters**: Calling a method or free function while omitting trailing default-valued parameters (e.g., `obj.method(x)` where `method` declares `param: int = 0`) no longer crashes the compiler with `list index out of range` in `builder.call`. Missing arguments are now filled from the AST default expressions before the call is emitted.
 
 ## jaclang 0.11.2 (Latest Release)
 
