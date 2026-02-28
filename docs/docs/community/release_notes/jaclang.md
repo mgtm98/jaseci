@@ -17,6 +17,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
 - **Native Auto-Promotion (`--autonative`)**: Regular `.jac` modules can now be automatically promoted to native (LLVM JIT) execution without requiring the `.na.jac` extension.
 - **Native Compiler: Constructor `init` Method Auto-Invocation**: Fixed a bug where object constructors with positional parameters were not automatically calling the `init` method. Now, `init` is properly invoked with constructor arguments during object instantiation, enabling proper initialization of objects with parameterized constructors.
+- **`jac nacompile` accepts `.jac` files**: `jac nacompile` now auto-promotes compatible `.jac` files to native compilation, with a clear error message when a file uses unsupported constructs.
 
 ## jaclang 0.11.2 (Latest Release)
 
@@ -176,6 +177,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **`jac grammar` Command**: Added a `jac grammar` CLI command that extracts the Jac grammar directly from the recursive descent parser's AST and prints it in EBNF or Lark format. Use `jac grammar` for EBNF output, `jac grammar --lark` for Lark format, and `-o <file>` to write to a file. Powered by a new `GrammarExtractPass` compiler pass that analyzes `parse_*` method implementations to reconstruct grammar rules from token-consumption patterns and control-flow structures.
 - **Type Checker Improvements**: Fixed several systemic issues in the type checker: `UnionType` operands are now handled correctly in connection operations (`++>`, `-->`) and instance conversion; the `_get_enclosing_class` helper no longer silently crashes due to a variable name bug; unannotated functions no longer produce false return-type errors; and a new rule requires return type annotations on top-level functions that return a value (bare `return` and `return None` remain annotation-free).
 - **Support custom Vite Configurations to `dev` mode**: Added support for custom Vite configuration from `jac.toml`.
+- **Native Compiler: Multi-Parameter Print Fix**: The `print()` builtin in native code now correctly handles multiple arguments, printing them space-separated on a single line (e.g., `print("x =", 10, "y =", 20)` outputs `x = 10 y = 20`). Previously only the first argument was printed.
 - **Fix: HMR server-side `sys.modules` refresh**: Imported modules now correctly reload in `--dev` mode by clearing stale `sys.modules` entries across the project.
 - **Auto-install watchdog for `--dev` mode**: `jac start --dev` automatically installs `watchdog` if missing, eliminating the manual `jac install --dev` step.
 - **Trim Redundant Parser Test Fixtures**: Removed 46 redundant entries from the micro parser test suite by eliminating exact duplicates across directories, near-identical examples, and files that add no unique syntax coverage, reducing the fixture list from 481 to 435 files.

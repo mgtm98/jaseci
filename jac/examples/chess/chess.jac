@@ -197,11 +197,19 @@ obj Game {
     def parse_input(text: str) -> tuple[int, int, int, int] | None;
     def move_summary -> str;
     def play -> None;
+    def play_auto -> str;
+    def benchmark(num_games: int) -> None;
 }
 
 # ────────────────────── Entry ──────────────────────
-glob game = Game();
+# Set _benchmark_mode > 0 to run that many automated games.
+glob _benchmark_mode: int = 0,
+     game = Game();
 
 with entry {
-    game.play();
+    if _benchmark_mode > 0 {
+        game.benchmark(_benchmark_mode);
+    } else {
+        game.play();
+    }
 }
