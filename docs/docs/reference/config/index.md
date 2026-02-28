@@ -5,11 +5,34 @@ The `jac.toml` file is the central configuration for Jac projects. It defines pr
 ## Creating a Project
 
 ```bash
+# Basic project
 jac create myapp
+cd myapp
+
+# Full-stack web app (recommended for web development)
+jac create myapp --use client
 cd myapp
 ```
 
-This creates a `jac.toml` with default settings.
+This creates a `jac.toml` with default settings. When using `--use client`, the scaffolded project includes:
+
+```
+myapp/
+├── main.jac       # Entry point with server and client code
+├── jac.toml       # Project configuration (auto-generated)
+└── styles.css     # Default stylesheet
+```
+
+The auto-generated `jac.toml` for a `--use client` project looks like:
+
+```toml
+[project]
+name = "myapp"
+version = "0.0.1"
+entry-point = "main.jac"
+```
+
+You typically don't need to modify this file until you add dependencies or customize settings.
 
 ---
 
@@ -72,6 +95,8 @@ my-lib = { git = "https://github.com/user/repo.git", branch = "main" }
 | Range | `">=1.0,<2.0"` | 1.x only |
 | Compatible | `"~=1.4.2"` | 1.4.x |
 
+> **Default behavior:** When you run `jac add requests` without a version, the package is installed unconstrained and then the actual installed version is queried. A compatible-release spec (`~=X.Y`) is recorded -- e.g., if pip installs `2.32.5`, `jac.toml` gets `requests = "~=2.32"`. The `jac update` command also uses this format when writing updated versions back.
+
 ---
 
 ### [run]
@@ -115,7 +140,7 @@ dir = ".jac"        # Build artifacts directory
 The `dir` setting controls where all build artifacts are stored:
 
 - `.jac/cache/` - Bytecode cache
-- `.jac/packages/` - Installed packages
+- `.jac/venv/` - Project virtual environment
 - `.jac/client/` - Client-side builds
 - `.jac/data/` - Runtime data
 
@@ -127,7 +152,7 @@ Defaults for `jac test`:
 
 ```toml
 [test]
-directory = "tests"     # Test directory
+directory = ""          # Test directory (empty = current directory)
 filter = ""             # Filter pattern
 verbose = false         # Verbose output
 fail_fast = false       # Stop on first failure
@@ -143,7 +168,6 @@ Defaults for `jac format`:
 ```toml
 [format]
 outfile = ""        # Output file (empty = in-place)
-fix = false         # Auto-fix issues
 ```
 
 ---
@@ -155,7 +179,6 @@ Defaults for `jac check`:
 ```toml
 [check]
 print_errs = true   # Print errors to console
-warnonly = false     # Treat errors as warnings
 ```
 
 #### [check.lint]
@@ -202,7 +225,7 @@ select = ["combine-has", "remove-empty-parens"]
 | `staticmethod-to-static` | Convert `@staticmethod` decorator to `static` keyword | default |
 | `init-to-can` | Convert `def __init__` / `def __post_init__` to `can init` / `can postinit` | default |
 | `remove-empty-parens` | Remove empty parentheses from declarations (`def foo()` → `def foo`) | default |
-| `remove-kwesc` | Remove unnecessary angle bracket escaping from non-keyword names | default |
+| `remove-kwesc` | Remove unnecessary backtick escaping from non-keyword names | default |
 | `hasattr-to-null-ok` | Convert `hasattr(obj, "attr")` to null-safe access (`obj?.attr`) | default |
 | `simplify-ternary` | Simplify `x if x else default` to `x or default` | default |
 | `remove-future-annotations` | Remove `import from __future__ { annotations }` (not needed in Jac) | default |
@@ -252,11 +275,15 @@ Bytecode cache settings:
 ```toml
 [cache]
 enabled = true      # Enable caching
+dir = ".jac_cache"  # Cache directory
 ```
 
 ---
 
 ### [storage]
+
+!!! warning "Plugin-Specific Configuration"
+    The `[storage]` section requires the **jac-scale** plugin and may not be available in all configurations. Running `jac config list -g storage` will return "Unknown group 'storage'" if the plugin is not installed.
 
 File storage configuration:
 
@@ -318,7 +345,73 @@ jac_client = "latest"
 jac_byllm = "none"           # Use "none" to skip installation
 ```
 
-See [jac-scale Webhooks](../plugins/jac-scale.md#webhooks) and [Kubernetes Deployment](../plugins/jac-scale.md#kubernetes-deployment) for details.
+**Prometheus Metrics (jac-scale):**
+
+```toml
+[plugins.scale.metrics]
+enabled = true
+endpoint = "/metrics"
+namespace = "myapp"
+walker_metrics = true
+```
+
+See [Prometheus Metrics](../plugins/jac-scale.md#prometheus-metrics) for details.
+
+**Kubernetes Secrets (jac-scale):**
+
+```toml
+[plugins.scale.secrets]
+OPENAI_API_KEY = "${OPENAI_API_KEY}"
+DATABASE_PASSWORD = "${DB_PASS}"
+```
+
+See [Kubernetes Secrets](../plugins/jac-scale.md#kubernetes-secrets) for details.
+
+See also [jac-scale Webhooks](../plugins/jac-scale.md#webhooks) and [Kubernetes Deployment](../plugins/jac-scale.md#kubernetes-deployment) for more options.
+
+**Import Path Aliases (jac-client):**
+
+```toml
+[plugins.client.paths]
+"@components/*" = "./components/*"
+"@utils/*" = "./utils/*"
+"@shared" = "./shared/index"
+```
+
+Defines custom import aliases applied to Vite `resolve.alias`, TypeScript `compilerOptions.paths`, and the Jac module resolver. See [jac-client Import Path Aliases](../plugins/jac-client.md#import-path-aliases) for details.
+
+**NPM Registry Configuration (jac-client):**
+
+```toml
+[plugins.client.npm.scoped_registries]
+"@mycompany" = "https://npm.pkg.github.com"
+
+[plugins.client.npm.auth."//npm.pkg.github.com/"]
+_authToken = "${NODE_AUTH_TOKEN}"
+```
+
+This generates an `.npmrc` file during dependency installation for private/scoped npm packages. See [jac-client NPM Registry Configuration](../plugins/jac-client.md#npm-registry-configuration) for details.
+
+**Build-Time Constants (jac-client):**
+
+Define global variables that are replaced at compile time in client code via the `[plugins.client.vite.define]` section:
+
+```toml
+[plugins.client.vite.define]
+"globalThis.API_URL" = "\"https://api.example.com\""
+"globalThis.FEATURE_ENABLED" = true
+"globalThis.BUILD_VERSION" = "\"1.2.3\""
+```
+
+These values are inlined by Vite during bundling. String values must be double-quoted (JSON-encoded). In client code, access them directly:
+
+```jac
+cl {
+    def:pub Footer() -> JsxElement {
+        return <p>Version: {globalThis.BUILD_VERSION}</p>;
+    }
+}
+```
 
 ---
 
@@ -399,10 +492,10 @@ Most settings can be overridden via CLI flags:
 
 ```bash
 # Override run settings
-jac run main.jac --no-cache --session my_session
+jac run --no-cache main.jac
 
 # Override test settings
-jac test --verbose --fail-fast
+jac test --verbose -x
 
 # Override serve settings
 jac start --port 3000

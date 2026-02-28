@@ -31,14 +31,15 @@ import from jaclang.runtimelib.transport {
 }
 import from jaclang { JacRuntime as Jac }
 import from jaclang.project.config { get_config }
+import from jaclang.runtimelib.scheduler { Scheduler }
 
 with entry {
     if TYPE_CHECKING {
-        import from jaclang.pycore.constructs { Archetype, WalkerArchetype }
+        import from jaclang.jac0core.constructs { Archetype, WalkerArchetype }
     }
 }
 
-glob JsonValue: TypeAlias = None | str | int | float | bool | <>list['JsonValue'] | <>dict[
+glob JsonValue: TypeAlias = None | str | int | float | bool | list['JsonValue'] | dict[
          (str, 'JsonValue')
      ],
      StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)];
@@ -55,12 +56,6 @@ obj UserData {
     has username: str,
         token: str,
         root_id: str;
-}
-
-"""Type-safe serializer for Jac objects."""
-obj JacSerializer {
-    static def serialize(<>obj: object) -> JsonValue;
-    static def _serialize_archetype(arch: Archetype) -> dict[str, JsonValue];
 }
 
 """Manage users and their persistent roots (SQLite-backed)."""
@@ -120,6 +115,7 @@ obj ModuleIntrospector {
     def load(force_reload: bool = False) -> None;
     def _load_manifest -> None;
     def _extract_access_levels -> None;
+    def _analyze_endpoint_effects -> None;
     def _collect_functions -> dict[str, Callable[(..., Any)]];
     def _collect_walkers -> dict[str, type[WalkerArchetype]];
     def _check_module_freshness -> None;
@@ -221,7 +217,8 @@ obj JacAPIServer {
         introspection_handler: IntrospectionHandler by postinit,
         execution_handler: ExecutionHandler by postinit,
         transport: BaseTransport by postinit,
-        server: Any by postinit;
+        server: Any by postinit,
+        scheduler: Scheduler by postinit;
 
     obj RestSpecs {
         has method: str = "",
@@ -246,7 +243,11 @@ obj JacAPIServer {
 
     def get_client_bundle_code -> str;
     def print_endpoint_docs -> None;
-    def start(dev: bool = False, no_client: bool = False) -> None;
+    def start(
+        dev: bool = False,
+        no_client: bool = False,
+        on_ready: Callable[[], None] | None = None
+    ) -> None;
 }
 
 """Print comprehensive documentation for all endpoints that would be generated."""

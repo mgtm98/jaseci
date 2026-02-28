@@ -2,7 +2,7 @@
 import from typing { List, Optional, Tuple }
 import logging;
 
-import jaclang.pycore.unitree as uni;
+import jaclang.jac0core.unitree as uni;
 import from jaclang { JacRuntimeInterface as Jac }
 import from jaclang.langserve.utils {
     find_surrounding_tokens,
@@ -27,10 +27,10 @@ obj SemTokManager {
     has ir: uni.Module,
         hub: dict = {},
         sem_tokens: List[int] by postinit,
-        static_sem_tokens: List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]] by postinit;
+        static_sem_tokens:
+            List[Tuple[(lspt.Position, int, int, uni.AstSymbolNode)]] by postinit;
 
     def postinit -> None;
-    def resolve_symbol(nd: uni.NameAtom) -> None;
     def collect_resolved_nodes(ir: uni.Module) -> list;
     def gen_sem_tokens(ir: uni.Module) -> list[int];
     def gen_sem_tok_node(
@@ -47,12 +47,12 @@ obj SemTokManager {
         self: SemTokManager,
         sem_tokens: list[int],
         next_token_index: int,
-        nxt_tok_pos: <>tuple[(int, int, int)],
+        nxt_tok_pos: tuple[(int, int, int)],
         change_start_line: int,
         change_end_line: int,
         change_start_char: int,
         change_end_char: int,
-        prev_tok_pos: <>tuple[(int, int, int)],
+        prev_tok_pos: tuple[(int, int, int)],
         is_next_token_same_line: bool
     ) -> list[int];
 
@@ -82,7 +82,7 @@ obj SemTokManager {
         is_next_token_same_line: bool,
         change: lspt.TextDocumentContentChangeEvent_Type1,
         tokens_on_same_line: bool,
-        nxt_tok_pos: <>tuple[(int, int, int)],
+        nxt_tok_pos: tuple[(int, int, int)],
         change_start_line: int,
         line_delta: int
     ) -> list[int];
@@ -91,13 +91,13 @@ obj SemTokManager {
         self: SemTokManager,
         sem_tokens: list[int],
         next_token_index: int,
-        nxt_tok_pos: <>tuple[(int, int, int)],
+        nxt_tok_pos: tuple[(int, int, int)],
         change_start_line: int,
         change_end_line: int,
         change_end_char: int,
-        prev_tok_pos: <>tuple[(int, int, int)],
+        prev_tok_pos: tuple[(int, int, int)],
         tokens_on_same_line: bool,
-        changing_line_text: <>tuple[(str, int)],
+        changing_line_text: tuple[(str, int)],
         line_delta: int
     ) -> list[int];
 
@@ -106,12 +106,12 @@ obj SemTokManager {
         change: lspt.TextDocumentContentChangeEvent_Type1,
         sem_tokens: list[int],
         prev_token_index: int,
-        changing_line_text: <>tuple[(str, int)],
+        changing_line_text: tuple[(str, int)],
         line_delta: int,
-        prev_tok_pos: <>tuple[(int, int, int)],
+        prev_tok_pos: tuple[(int, int, int)],
         change_start_char: int,
         change_end_char: int,
         is_token_boundary_edit: bool,
-        nxt_tok_pos: <>tuple[(int, int, int)]
-    ) -> <>tuple[list[int], bool, <>tuple[(int, int, int)], Optional[int]];
+        nxt_tok_pos: tuple[(int, int, int)]
+    ) -> tuple[list[int], bool, tuple[(int, int, int)], Optional[int]];
 }

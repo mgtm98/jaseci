@@ -1,13 +1,7 @@
-import from byllm.lib { Model }
-
 # Note that these tools are not available in byllm package and
 # Should be defined by the user him/herself.
-import from byllm.tools.wikipedia_utils {
-    wikipedia_summary
-}
+import from byllm.tools.wikipedia_utils { wikipedia_summary }
 import from byllm.tools.serper { search, scrape }
-
-glob llm = Model(model_name="gpt-4o-mini");
 
 def save_output_as_md(output: str, filename: str) -> None {
     with open(filename, 'w') as f {
@@ -16,7 +10,6 @@ def save_output_as_md(output: str, filename: str) -> None {
 }
 
 def persona_expert(requirements: str) -> str by llm(
-    method="ReAct",
     tools=[wikipedia_summary, search, scrape],
     max_prev_react_outputs=10,
     max_react_iterations=10,
@@ -24,7 +17,6 @@ def persona_expert(requirements: str) -> str by llm(
 );
 
 def demographic_expert(requirements: str) -> str by llm(
-    method="ReAct",
     tools=[wikipedia_summary, search, scrape],
     max_prev_react_outputs=10,
     max_react_iterations=10,
@@ -32,7 +24,6 @@ def demographic_expert(requirements: str) -> str by llm(
 );
 
 def market_expert(requirements: str) -> str by llm(
-    method="ReAct",
     tools=[wikipedia_summary, scrape, search],
     max_prev_react_outputs=10,
     max_react_iterations=10,
@@ -40,7 +31,6 @@ def market_expert(requirements: str) -> str by llm(
 );
 
 def demand_expert(requirements: str) -> str by llm(
-    method="ReAct",
     tools=[wikipedia_summary, search, scrape],
     max_prev_react_outputs=10,
     max_react_iterations=10,
@@ -48,7 +38,6 @@ def demand_expert(requirements: str) -> str by llm(
 );
 
 def manager(query: str) -> str by llm(
-    method="ReAct",
     tools=[persona_expert, demographic_expert, market_expert, search, scrape],
     max_react_iterations=10,
     max_prev_react_outputs=10,

@@ -3,9 +3,7 @@
 # ===============================================================================
 # Environment Variable Interpolation Implementation
 # ===============================================================================
-impl interpolate_env_vars(
-    value: str
-) -> str {
+impl interpolate_env_vars(value: str) -> str {
     import os;
     import re;
     if not isinstance(value, str) {
@@ -27,7 +25,9 @@ impl interpolate_env_vars(
         if operator == ":-" {
             return operand;
         } elif operator == ":?" {
-            raise ValueError(f"Environment variable {var_name} is required: {operand}") ;
+            raise ValueError(
+                f"Environment variable {var_name} is required: {operand}"
+            ) ;
         } else {
             raise ValueError(f"Environment variable {var_name} is not set") ;
         }
@@ -38,9 +38,7 @@ impl interpolate_env_vars(
 # ===============================================================================
 # Project Discovery Implementation
 # ===============================================================================
-impl find_project_root(
-    start: Path | None = None
-) -> tuple[Path, Path] | None {
+impl find_project_root(start: Path | None = None) -> tuple[Path, Path] | None {
     import from pathlib { Path }
     if start is None {
         start = Path.cwd();
@@ -169,7 +167,9 @@ impl JacConfig.apply_cli_overrides(args: dict[(str, Any)]) -> None {
 def _deep_merge(base: dict, override: dict) -> dict {
     result = base.copy();
     for (key, value) in override.items() {
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict) {
+        if key in result
+        and isinstance(result[key], dict)
+        and isinstance(value, dict) {
             result[key] = _deep_merge(result[key], value);
         } else {
             result[key] = value;
@@ -500,20 +500,30 @@ impl JacConfig.save -> None {
     } else {
         doc = {};
     }
-    # Update Python dependencies
-    if "dependencies" not in doc {
-        doc["dependencies"] = {};
+    # Replace Python dependencies (use replace to handle removals)
+    # Preserve sub-tables (git, npm, etc.) that live under [dependencies]
+    old_deps = doc.get("dependencies", {});
+    sub_tables = {
+        k: v
+        for (k, v) in old_deps.items()
+        if isinstance(v, dict)
+    };
+    doc["dependencies"] = dict(self.dependencies);
+    # Restore sub-tables
+    for (k, v) in sub_tables.items() {
+        doc["dependencies"][k] = v;
     }
-    for (name, version) in self.dependencies.items() {
-        doc["dependencies"][name] = version;
+    # Replace git dependencies under [dependencies.git]
+    if self.git_dependencies {
+        doc["dependencies"]["git"] = dict(self.git_dependencies);
+    } elif "git" in doc.get("dependencies", {}) {
+        del doc["dependencies"]["git"];
     }
+    # Replace dev-dependencies (use replace to handle removals)
     if self.dev_dependencies {
-        if "dev-dependencies" not in doc {
-            doc["dev-dependencies"] = {};
-        }
-        for (name, version) in self.dev_dependencies.items() {
-            doc["dev-dependencies"][name] = version;
-        }
+        doc["dev-dependencies"] = dict(self.dev_dependencies);
+    } elif "dev-dependencies" in doc {
+        doc["dev-dependencies"] = {};
     }
     # Update plugin dependencies (npm, etc.)
     # Replace the entire plugin dep section to handle removals
@@ -559,9 +569,7 @@ impl JacConfig.save -> None {
 }
 
 # Check if a TOML key needs quoting (bare keys can only contain A-Za-z0-9_-)
-def _needs_quoting(
-    key: str
-) -> bool {
+def _needs_quoting(key: str) -> bool {
     import re;
     return not bool(re.match(r'^[A-Za-z0-9_-]+$', key));
 }
@@ -576,9 +584,7 @@ def _quote_key(key: str) -> str {
 }
 
 # Simple TOML serializer (does not preserve comments)
-def _serialize_toml(
-    data: dict, prefix: str = ""
-) -> str {
+def _serialize_toml(data: dict, prefix: str = "") -> str {
     lines: list[str] = [];
     tables: list[tuple[str, dict]] = [];
 
@@ -724,9 +730,7 @@ impl JacConfig.remove_dependency(
 # ===============================================================================
 # Helper Functions Implementation
 # ===============================================================================
-impl _parse_toml_data(
-    data: dict[str, Any], toml_path: Path | None = None
-) -> JacConfig {
+impl _parse_toml_data(data: dict[str, Any], toml_path: Path | None = None) -> JacConfig {
     config = JacConfig();
     config._raw_data = data;
     if toml_path {
@@ -782,7 +786,8 @@ impl _parse_toml_data(
         config.run = RunConfig(
             session=run_data.get("session", ""),
             main=run_data.get("main", True),
-            cache=run_data.get("cache", True)
+            cache=run_data.get("cache", True),
+            autonative=run_data.get("autonative", False)
         );
     }
     if "build" in data {
@@ -830,9 +835,7 @@ impl _parse_toml_data(
             );
         }
         config.check = CheckConfig(
-            print_errs=check_data.get("print_errs", True),
-            warnonly=check_data.get("warnonly", False),
-            lint=lint_config
+            print_errs=check_data.get("print_errs", True), lint=lint_config
         );
     }
     if "dot" in data {
@@ -908,11 +911,11 @@ impl _interpolate_recursive(obj: Any) -> Any {
 # Global Configuration Singleton Implementation
 # ===============================================================================
 impl get_config(
-    force_discover: bool = False
+    start_path: Path | None = None, force_discover: bool = False
 ) -> JacConfig | None {
     global _config;
     if _config is None or force_discover {
-        _config = JacConfig.discover();
+        _config = JacConfig.discover(start_path=start_path);
     }
     return _config;
 }

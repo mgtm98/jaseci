@@ -21,17 +21,17 @@ impl all_issubclass(
 
 """Check if object is instance of target type."""
 impl is_instance(
-    <>obj: object, target: type | UnionType | tuple[((type | UnionType), ...)]
+    `obj: object, target: type | UnionType | tuple[((type | UnionType), ...)]
 ) -> bool {
     match target {
         case UnionType():
-            return <>any(is_instance(<>obj, trg) for trg in target.__args__);
+            return any(is_instance(`obj, trg) for trg in target.__args__);
 
         case tuple():
-            return <>any(is_instance(<>obj, trg) for trg in target);
+            return any(is_instance(`obj, trg) for trg in target);
 
         case type():
-            return isinstance(<>obj, target);
+            return isinstance(`obj, target);
 
         case _:
             return False;
@@ -60,44 +60,44 @@ impl extract_params(
                 } elif (key == 'incl_info') {
                     if isinstance(value, uni.AtomUnit) {
                         var_name = value.value.right.value
-                        if (
-                            isinstance(value.value, uni.AtomTrailer)
-                            and isinstance(value.value.right, uni.Name)
-                        )
-                        else value.value.value
-                        if isinstance(value.value, uni.Name)
-                        else '';
+                            if (
+                                isinstance(value.value, uni.AtomTrailer)
+                                and isinstance(value.value.right, uni.Name)
+                            )
+                            else value.value.value
+                                if isinstance(value.value, uni.Name)
+                                else '';
                         include_info.append((var_name, value.gen.py_ast[0]));
                     } elif (isinstance(value, uni.TupleVal) and value.values) {
                         for i in value.values {
                             var_name = i.right.value
-                            if (
-                                isinstance(i, uni.AtomTrailer)
-                                and isinstance(i.right, uni.Name)
-                            )
-                            else i.value if isinstance(i, uni.Name) else '';
+                                if (
+                                    isinstance(i, uni.AtomTrailer)
+                                    and isinstance(i.right, uni.Name)
+                                )
+                                else i.value if isinstance(i, uni.Name) else '';
                             include_info.append((var_name, i.gen.py_ast[0]));
                         }
                     }
                 } elif (key == 'excl_info') {
                     if isinstance(value, uni.AtomUnit) {
                         var_name = value.value.right.value
-                        if (
-                            isinstance(value.value, uni.AtomTrailer)
-                            and isinstance(value.value.right, uni.Name)
-                        )
-                        else value.value.value
-                        if isinstance(value.value, uni.Name)
-                        else '';
+                            if (
+                                isinstance(value.value, uni.AtomTrailer)
+                                and isinstance(value.value.right, uni.Name)
+                            )
+                            else value.value.value
+                                if isinstance(value.value, uni.Name)
+                                else '';
                         exclude_info.append((var_name, value.gen.py_ast[0]));
                     } elif (isinstance(value, uni.TupleVal) and value.values) {
                         for i in value.values {
                             var_name = i.right.value
-                            if (
-                                isinstance(i, uni.AtomTrailer)
-                                and isinstance(i.right, uni.Name)
-                            )
-                            else i.value if isinstance(i, uni.Name) else '';
+                                if (
+                                    isinstance(i, uni.AtomTrailer)
+                                    and isinstance(i.right, uni.Name)
+                                )
+                                else i.value if isinstance(i, uni.Name) else '';
                             exclude_info.append((var_name, i.gen.py_ast[0]));
                         }
                     }
@@ -109,12 +109,12 @@ impl extract_params(
 }
 
 """Collect type information in assignment using bfs."""
-impl extract_type(<>node: uni.UniNode) -> list[str] {
+impl extract_type(nd: uni.UniNode) -> list[str] {
     extracted_type = [];
-    if isinstance(<>node, (uni.BuiltinType, uni.Token)) {
-        extracted_type.append(<>node.value);
+    if isinstance(nd, (uni.BuiltinType, uni.Token)) {
+        extracted_type.append(nd.value);
     }
-    for child in <>node.kid {
+    for child in nd.kid {
         extracted_type.extend(extract_type(child));
     }
     return extracted_type;
@@ -122,7 +122,7 @@ impl extract_type(<>node: uni.UniNode) -> list[str] {
 
 """Traverse the graph using Breadth-First Search (BFS) or Depth-First Search (DFS)."""
 impl traverse_graph(
-    <>node: NodeArchetype,
+    nd: NodeArchetype,
     cur_depth: int,
     depth: int,
     edge_type: list[str],
@@ -136,38 +136,34 @@ impl traverse_graph(
     node_limit: int,
     edge_limit: int
 ) -> None {
-    for <>edge in <>node.__jac__.edges {
-        is_self_loop = id(<>edge.source) == id(<>edge.target);
-        is_in_edge = <>edge.target == <>node.__jac__;
+    for `edge in nd.__jac__.edges {
+        is_self_loop = id(`edge.source) == id(`edge.target);
+        is_in_edge = `edge.target == nd.__jac__;
         if (
             (traverse and is_in_edge)
-            or (<>edge.archetype.__class__.__name__ in edge_type)
+            or (`edge.archetype.__class__.__name__ in edge_type)
         ) {
             continue;
         }
         if is_self_loop {
             continue;
         } elif (
-            (other_nda := (<>edge.target if not is_in_edge else <>edge.source))
+            (other_nda := (`edge.target if not is_in_edge else `edge.source))
             and (other_nd := other_nda.archetype)
         ) {
-            new_con = (<>node, other_nd, <>edge.archetype)
-            if not is_in_edge
-            else (other_nd, <>node, <>edge.archetype);
-            if ((<>node in node_depths) and (node_depths[<>node] is not None)) {
+            new_con = (nd, other_nd, `edge.archetype)
+                if not is_in_edge
+                else (other_nd, nd, `edge.archetype);
+            if ((nd in node_depths) and (node_depths[nd] is not None)) {
                 if (other_nd in node_depths) {
-                    node_depths[<>node] = min(
-                        cur_depth, node_depths[<>node], (node_depths[other_nd] + 1)
+                    node_depths[nd] = min(
+                        cur_depth, node_depths[nd], (node_depths[other_nd] + 1)
                     );
                     node_depths[other_nd] = min(
-                        (cur_depth + 1),
-                        (node_depths[<>node] + 1),
-                        node_depths[other_nd]
+                        (cur_depth + 1), (node_depths[nd] + 1), node_depths[other_nd]
                     );
                 } elif other_nd {
-                    node_depths[other_nd] = min(
-                        (cur_depth + 1), (node_depths[<>node] + 1)
-                    );
+                    node_depths[other_nd] = min((cur_depth + 1), (node_depths[nd] + 1));
                 } else {
                     raise ValueError('Edge is detached from node in graph') ;
                 }
@@ -178,9 +174,7 @@ impl traverse_graph(
                 and (
                     (
                         (depth < 0)
-                        or (
-                            (min(node_depths[<>node], node_depths[other_nd]) + 1) <= depth
-                        )
+                        or ((min(node_depths[nd], node_depths[other_nd]) + 1) <= depth)
                     )
                     and (node_limit > len(visited_nodes))
                     and (edge_limit > len(connections))

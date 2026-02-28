@@ -1,21 +1,14 @@
 # # Features Test Page - Client-side UI
 # # Demonstrates: props, exports, cl files, TypeScript imports, string methods,
 # # imports from JAC/JS/TS, spawning walkers from cl file
-import from "@jac/runtime" {
-    Link,
-    useNavigate
-}
+import from "@jac/runtime" { Link, useNavigate }
 import from react { useState }
 
 # # Import TypeScript component
 # import from ..components.PieChart { PieChart }
 
 # # Import JavaScript helpers
-import from ..utils.helpers {
-    generateId,
-    calculatePercentage,
-    sumBy
-}
+import from ..utils.helpers { generateId, calculatePercentage, sumBy }
 
 # # Import from other JAC files
 import from ..utils.formatters { formatCurrency }
@@ -36,9 +29,7 @@ sv import from ..main {
 # ============================================================================
 
 # Button component demonstrating props - NEW PATTERN: Direct parameters
-def:pub TestButton(
-    text: str, onClick: any, variant: str
-) -> JsxElement {
+def:pub TestButton(text: str, onClick: any, variant: str) -> JsxElement {
     bg_color = "#3b82f6" if variant == "primary" else "#6b7280";
     hover_color = "#2563eb" if variant == "primary" else "#4b5563";
 
@@ -64,9 +55,7 @@ def:pub TestButton(
 }
 
 # # Card component with props - NEW PATTERN: Direct parameters
-def:pub TestCard(
-    title: str, children: any, color: str
-) -> JsxElement {
+def:pub TestCard(title: str, children: any, color: str) -> JsxElement {
     return
         <div
             style={{
@@ -104,9 +93,7 @@ def:pub TestCard(
 }
 
 # Result display component - NEW PATTERN: Direct parameters
-def:pub ResultDisplay(
-    data: any, label: str
-) -> JsxElement {
+def:pub ResultDisplay(data: any, label: str) -> JsxElement {
     if not data {
         return
             <div style={{"color": "#9ca3af", "fontStyle": "italic"}}>
@@ -165,7 +152,7 @@ def:pub FeaturesTest -> JsxElement {
             result = root spawn read_test_data();
             testData = result.reports if result.reports[0] else [];
         } except Exception as e {
-            console.log("Error loading data:", e);
+            print("Error loading data:", e);
         }
     }
 
@@ -175,21 +162,21 @@ def:pub FeaturesTest -> JsxElement {
 
     # Create test data
     async def handleCreate -> None {
-        if not testMessage.trim() {
+        if not testMessage.strip() {
             alert("Please enter a message");
             return;
         }
 
         loading = true;
         try {
-            response = root spawn create_test_data(message=testMessage.trim());
+            response = root spawn create_test_data(message=testMessage.strip());
             new_item = response.reports[0][0];
-            testData = testData.concat([new_item]);
+            testData = testData + [new_item];
             testMessage = "";
             alert("Data created successfully!");
         } except Exception as e {
-            console.error("Error creating data:", e);
-            alert("Error creating data: " + e.toString());
+            print("Error creating data:", e);
+            alert("Error creating data: " + str(e));
         }
         loading = false;
     }
@@ -209,8 +196,8 @@ def:pub FeaturesTest -> JsxElement {
             testData = result.reports if result.reports[0] else [];
             alert("Data updated successfully!");
         } except Exception as e {
-            console.error("Error updating data:", e);
-            alert("Error updating data: " + e.toString());
+            print("Error updating data:", e);
+            alert("Error updating data: " + str(e));
         }
         loading = false;
     }
@@ -225,13 +212,15 @@ def:pub FeaturesTest -> JsxElement {
         try {
             item_id spawn delete_test_data();
             # Remove from local state
-            testData = testData.filter(
-                lambda item: any  -> bool { return item._jac_id != item_id; }
-            );
+            testData = [
+                item
+                for item in testData
+                if item._jac_id != item_id
+            ];
             alert("Data deleted successfully!");
         } except Exception as e {
-            console.error("Error deleting data:", e);
-            alert("Error deleting data: " + e.toString());
+            print("Error deleting data:", e);
+            alert("Error deleting data: " + str(e));
         }
         loading = false;
     }
@@ -244,8 +233,8 @@ def:pub FeaturesTest -> JsxElement {
             result = response.reports[0];
             stringResult = result;
         } except Exception as e {
-            console.error("Error testing strings:", e);
-            alert("Error testing strings: " + e.toString());
+            print("Error testing strings:", e);
+            alert("Error testing strings: " + str(e));
         }
         loading = false;
     }
@@ -255,18 +244,18 @@ def:pub FeaturesTest -> JsxElement {
         loading = true;
         try {
             # Parse number list
-            numbers = numberList.split(",").map(
-                lambda x: str  -> int { return parseInt(x.trim()); }
-            ).filter(
-                lambda x: any  -> bool { return not isNaN(x); }
-            );
+            numbers = [
+                int(x.strip())
+                for x in numberList.split(",")
+                if x.strip().isdigit()
+            ];
 
             response = root spawn test_list_operations(numbers=numbers);
             result = response.reports[0];
             listResult = result;
         } except Exception as e {
-            console.error("Error testing lists:", e);
-            alert("Error testing lists: " + e.toString());
+            print("Error testing lists:", e);
+            alert("Error testing lists: " + str(e));
         }
         loading = false;
     }
@@ -286,8 +275,8 @@ def:pub FeaturesTest -> JsxElement {
             result = response.reports[0];
             complexResult = result;
         } except Exception as e {
-            console.error("Error processing complex data:", e);
-            alert("Error processing complex data: " + e.toString());
+            print("Error processing complex data:", e);
+            alert("Error processing complex data: " + str(e));
         }
         loading = false;
     }
@@ -298,10 +287,10 @@ def:pub FeaturesTest -> JsxElement {
     demo_text = "JAC Language Features";
     string_demos = {
         "Original": demo_text,
-        "Uppercase": demo_text.toUpperCase(),
-        "Lowercase": demo_text.toLowerCase(),
-        "Length": demo_text.length.toString(),
-        "Split by space": demo_text.split(" ").join(", ")
+        "Uppercase": demo_text.upper(),
+        "Lowercase": demo_text.lower(),
+        "Length": str(len(demo_text)),
+        "Split by space": ", ".join(demo_text.split(" "))
     };
 
     # Demo chart data for TypeScript component
@@ -365,10 +354,7 @@ def:pub FeaturesTest -> JsxElement {
                 Processing...
             </div>}
             # Section 1: Walker CRUD Operations
-            <TestCard
-                title="1. Walker CRUD Operations (Spawn from CL)"
-                color="#dbeafe"
-            >
+            <TestCard title="1. Walker CRUD Operations (Spawn from CL)" color="#dbeafe">
                 <div style={{"marginBottom": "15px"}}>
                     <p style={{"color": "#4b5563", "marginBottom": "10px"}}>
                         Test creating, reading, updating, and deleting data using walkers spawned from client code.
@@ -401,62 +387,58 @@ def:pub FeaturesTest -> JsxElement {
                     </div>
                     <div style={{"marginTop": "20px"}}>
                         <strong style={{"color": "#374151"}}>
-                            Stored Data ({testData.length}items):
+                            Stored Data ({len(testData)}items):
                         </strong>
-                        {testData.length == 0
+                        {len(testData) == 0
                         and <p style={{"color": "#9ca3af", "fontStyle": "italic"}}>
                             No data yet. Create some!
                         </p>}
-                        {testData.map(
-                            lambda item: any  -> JsxElement { return
-                                <div
-                                    key={item._jac_id}
-                                    style={{
-                                        "backgroundColor": "#f9fafb",
-                                        "padding": "12px",
-                                        "borderRadius": "6px",
-                                        "marginTop": "8px",
-                                        "display": "flex",
-                                        "justifyContent": "space-between",
-                                        "alignItems": "center"
-                                    }}
-                                >
-                                    <div>
-                                        <div
-                                            style={{
-                                                "fontWeight": "600",
-                                                "color": "#1f2937"
-                                            }}
-                                        >
-                                            {item.message}
-                                        </div>
-                                        <div
-                                            style={{
-                                                "fontSize": "12px",
-                                                "color": "#6b7280"
-                                            }}
-                                        >
-                                            Count: {item.count}| Created: {item.created_at}
-                                        </div>
+                        {[
+                            <div
+                                key={item._jac_id}
+                                style={{
+                                    "backgroundColor": "#f9fafb",
+                                    "padding": "12px",
+                                    "borderRadius": "6px",
+                                    "marginTop": "8px",
+                                    "display": "flex",
+                                    "justifyContent": "space-between",
+                                    "alignItems": "center"
+                                }}
+                            >
+                                <div>
+                                    <div
+                                        style={{
+                                            "fontWeight": "600",
+                                            "color": "#1f2937"
+                                        }}
+                                    >
+                                        {item.message}
                                     </div>
-                                    <div style={{"display": "flex", "gap": "8px"}}>
-                                        <TestButton
-                                            text="Edit"
-                                            onClick={lambda -> None { handleUpdate(
-                                                item._jac_id
-                                            );}}
-                                            variant="secondary"
-                                        />
-                                        <TestButton
-                                            text="Delete"
-                                            onClick={lambda -> None { handleDelete(
-                                                item._jac_id
-                                            );}}
-                                            variant="secondary"
-                                        />
+                                    <div
+                                        style={{"fontSize": "12px", "color": "#6b7280"}}
+                                    >
+                                        Count:{item.count}| Created:{item.created_at}
                                     </div>
-                                </div>; }
-                        )}
+                                </div>
+                                <div style={{"display": "flex", "gap": "8px"}}>
+                                    <TestButton
+                                        text="Edit"
+                                        onClick={lambda -> None { handleUpdate(
+                                            item._jac_id
+                                        );}}
+                                        variant="secondary"
+                                    />
+                                    <TestButton
+                                        text="Delete"
+                                        onClick={lambda -> None { handleDelete(
+                                            item._jac_id
+                                        );}}
+                                        variant="secondary"
+                                    />
+                                </div>
+                            </div> for item in testData
+                        ]}
                     </div>
                 </div>
             </TestCard>
@@ -479,15 +461,14 @@ def:pub FeaturesTest -> JsxElement {
                                 "marginTop": "8px"
                             }}
                         >
-                            {Object.keys(string_demos).map(
-                                lambda key: str  -> JsxElement { return
-                                    <div key={key} style={{"marginBottom": "5px"}}>
-                                        <span style={{"fontWeight": "600"}}>
-                                            {key}:
-                                        </span>
-                                        {string_demos[key]}
-                                    </div>; }
-                            )}
+                            {[
+                                <div key={key} style={{"marginBottom": "5px"}}>
+                                    <span style={{"fontWeight": "600"}}>
+                                        {key}:
+                                    </span>
+                                    {string_demos[key]}
+                                </div> for key in list(string_demos.keys())
+                            ]}
                         </div>
                     </div>
                     # Walker-based test
@@ -521,7 +502,7 @@ def:pub FeaturesTest -> JsxElement {
                             />
                         </div>
                         {stringResult
-                        and <ResultDisplay data={stringResult} label="Walker Result" />}
+                        and <ResultDisplay data={stringResult} label="Walker Result"/>}
                     </div>
                 </div>
             </TestCard>
@@ -531,9 +512,7 @@ def:pub FeaturesTest -> JsxElement {
                     <p style={{"color": "#4b5563", "marginBottom": "10px"}}>
                         Process arrays/lists using walker operations.
                     </p>
-                    <div
-                        style={{"display": "flex", "gap": "10px", "marginTop": "10px"}}
-                    >
+                    <div style={{"display": "flex", "gap": "10px", "marginTop": "10px"}}>
                         <input
                             type="text"
                             value={numberList}
@@ -560,19 +539,30 @@ def:pub FeaturesTest -> JsxElement {
                     />}
                 </div>
             </TestCard>
-            # # Section 4: TypeScript Component Integration
-            # <TestCard title="4. TypeScript Component (PieChart.tsx)" color="#ccfbf1">
-            #     <div>
-            #         <p style={{"color": "#4b5563", "marginBottom": "10px"}}>
-            #             Imported TypeScript React component with data from JAC.
-            #         </p>
-            #         # <PieChart data={chart_data} title="Feature Test Distribution" />
-            #         <p style={{"marginTop": "10px", "color": "#6b7280", "fontSize": "14px"}}>
-            #             Total tests: {total_tests} (calculated using JS helper: sumBy)
-            #         </p>
-            #     </div>
-            # </TestCard>
-
+            # # Section 4: TypeScript Component Integration #
+            <TestCard title="4. TypeScript Component (PieChart.tsx)" color="#ccfbf1">
+                #
+                <div>
+                    #
+                    <p style={{"color": "#4b5563", "marginBottom": "10px"}}>
+                        #             Imported TypeScript React component with data from JAC. #
+                    </p>
+                    #         #
+                    <PieChart data={chart_data} title="Feature Test Distribution"/>
+                    #
+                    <p
+                        style={{
+                            "marginTop": "10px",
+                            "color": "#6b7280",
+                            "fontSize": "14px"
+                        }}
+                    >
+                        #             Total tests:{total_tests}(calculated using JS helper: sumBy) #
+                    </p>
+                    #
+                </div>
+                #
+            </TestCard>
             # # Section 5: Import Demonstrations
             <TestCard title="5. Import Demonstrations" color="#fed7aa">
                 <div>
@@ -592,7 +582,13 @@ def:pub FeaturesTest -> JsxElement {
                             </strong>
                             Hooks (useState, useEffect)
                         </li>
-                        # <li><strong>TypeScript:</strong> PieChart component from .tsx file</li>
+                        #
+                        <li>
+                            <strong>
+                                TypeScript:
+                            </strong>
+                            PieChart component from .tsx file
+                        </li>
                         <li>
                             <strong>
                                 JavaScript:
@@ -603,8 +599,7 @@ def:pub FeaturesTest -> JsxElement {
                             <strong>
                                 JAC Files:
                             </strong>
-                            for
-                            matCurrency from utils/formatters.jac
+                            for matCurrency from utils/formatters.jac
                         </li>
                     </ul>
                     <div
@@ -626,20 +621,128 @@ def:pub FeaturesTest -> JsxElement {
                             }}
                         >
                             <div>
-                                Generated ID: {generateId()}
+                                Generated ID:{generateId()}
                             </div>
                             <div>
-                                Formatted Currency: {formatCurrency(1234.56)}
+                                Formatted Currency:{formatCurrency(1234.56)}
                             </div>
                             <div>
-                                Percentage Calc: {calculatePercentage(75, 100)}%
+                                Percentage Calc:{calculatePercentage(75, 100)}%
                             </div>
                         </div>
                     </div>
                 </div>
             </TestCard>
-            # # Section 6: Complex Data Processing
-            <TestCard title="6. Complex Data Processing" color="#e0e7ff">
+            # Section 6: Environment Variables Demo
+            <TestCard title="6. Environment Variables" color="#fef9c3">
+                <div>
+                    <p style={{"color": "#4b5563", "marginBottom": "15px"}}>
+                        Demonstrates two ways to access configuration values in Jac client code.
+                    </p>
+                    # Method 1: import.meta.env (from .env file)
+                    <div style={{"marginBottom": "20px"}}>
+                        <strong style={{"color": "#374151"}}>
+                            Method 1: Vite Environment Variables (import.meta.env)
+                        </strong>
+                        <div
+                            style={{
+                                "backgroundColor": "#fef3c7",
+                                "padding": "15px",
+                                "borderRadius": "6px",
+                                "marginTop": "8px",
+                                "fontFamily": "monospace",
+                                "fontSize": "13px"
+                            }}
+                        >
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#92400e"}}>
+                                    VITE_APP_NAME:
+                                </span>
+                                {import.meta.env.VITE_APP_NAME or "(not set)"}
+                            </div>
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#92400e"}}>
+                                    VITE_APP_VERSION:
+                                </span>
+                                {import.meta.env.VITE_APP_VERSION or "(not set)"}
+                            </div>
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#92400e"}}>
+                                    VITE_API_ENDPOINT:
+                                </span>
+                                {import.meta.env.VITE_API_ENDPOINT or "(not set)"}
+                            </div>
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#92400e"}}>
+                                    MODE:
+                                </span>
+                                {import.meta.env.MODE or "(not set)"}
+                            </div>
+                            <div>
+                                <span style={{"color": "#92400e"}}>
+                                    DEV:
+                                </span>
+                                {"true" if import.meta.env.DEV else "false"}
+                            </div>
+                        </div>
+                        <p
+                            style={{
+                                "fontSize": "12px",
+                                "color": "#6b7280",
+                                "marginTop": "8px"
+                            }}
+                        >
+                            Source: .env file in project root (requires VITE_ prefix)
+                        </p>
+                    </div>
+                    # Method 2: globalThis (from jac.toml define)
+                    <div>
+                        <strong style={{"color": "#374151"}}>
+                            Method 2: Build-time Constants (globalThis)
+                        </strong>
+                        <div
+                            style={{
+                                "backgroundColor": "#d1fae5",
+                                "padding": "15px",
+                                "borderRadius": "6px",
+                                "marginTop": "8px",
+                                "fontFamily": "monospace",
+                                "fontSize": "13px"
+                            }}
+                        >
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#065f46"}}>
+                                    APP_BUILD_TIME:
+                                </span>
+                                {globalThis.APP_BUILD_TIME or "(not set)"}
+                            </div>
+                            <div style={{"marginBottom": "5px"}}>
+                                <span style={{"color": "#065f46"}}>
+                                    FEATURE_ENABLED:
+                                </span>
+                                {"true" if globalThis.FEATURE_ENABLED else "false"}
+                            </div>
+                            <div>
+                                <span style={{"color": "#065f46"}}>
+                                    __JAC_API_BASE_URL__:
+                                </span>
+                                {globalThis.__JAC_API_BASE_URL__ or "(same-origin)"}
+                            </div>
+                        </div>
+                        <p
+                            style={{
+                                "fontSize": "12px",
+                                "color": "#6b7280",
+                                "marginTop": "8px"
+                            }}
+                        >
+                            Source: [plugins.client.vite.define] in jac.toml
+                        </p>
+                    </div>
+                </div>
+            </TestCard>
+            # Section 7: Complex Data Processing
+            <TestCard title="7. Complex Data Processing" color="#e0e7ff">
                 <div>
                     <p style={{"color": "#4b5563", "marginBottom": "10px"}}>
                         Process complex nested data structures with walkers.
@@ -668,7 +771,7 @@ def:pub FeaturesTest -> JsxElement {
                 }}
             >
                 <p style={{"margin": "0"}}>
-                    ✅ All features tested: Props, Exports, CL Files, TypeScript, JavaScript, JAC Imports, String Methods, Walker Spawning
+                    All features tested: Props, Exports, CL Files, TypeScript, JavaScript, JAC Imports, String Methods, Walker Spawning, Environment Variables
                 </p>
             </div>
         </div>;

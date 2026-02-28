@@ -17,6 +17,9 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
         if type_name == "None" {
             return ir.VoidType();
         }
+        if type_name == "any" {
+            return self.jacval_type;
+        }
     }
     # Handle BuiltinType nodes
     if uni?.BuiltinType and isinstance(type_expr, uni.BuiltinType) {
@@ -36,6 +39,9 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
         }
         if type_name == "None" {
             return ir.VoidType();
+        }
+        if type_name == "any" {
+            return self.jacval_type;
         }
     }
     # Handle union types: T | None → resolve T (BinaryExpr with BW_OR op)
@@ -108,20 +114,28 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
                     key_type = self._resolve_jac_type(key_node);
                     val_type = self._resolve_jac_type(val_node);
                     key_type_name = "i64";
+                    key_size = 0;
                     if isinstance(key_type, ir.DoubleType) {
                         key_type_name = "f64";
                     } elif isinstance(key_type, ir.PointerType) {
                         key_type_name = "ptr";
+                        # Check if key is a tuple (pointer to LiteralStructType)
+                        if isinstance(key_type.pointee, ir.LiteralStructType) {
+                            key_size = self._get_struct_size(key_type.pointee);
+                            key_type_name = f"tuple{key_size}";
+                        }
                     }
                     val_type_name = "i64";
                     if isinstance(val_type, ir.DoubleType) {
                         val_type_name = "f64";
                     } elif isinstance(val_type, ir.PointerType) {
                         val_type_name = "ptr";
+                    } elif self?.jacval_type and val_type == self.jacval_type {
+                        val_type_name = "jacval";
                     }
                     dict_key = f"{key_type_name}:{val_type_name}";
                     self._emit_dict_helpers(
-                        key_type_name, val_type_name, key_type, val_type
+                        key_type_name, val_type_name, key_type, val_type, key_size
                     );
                     return self.dict_types[dict_key].as_pointer();
                 }
@@ -194,19 +208,42 @@ impl NaIRGenPass._resolve_jac_type(type_expr: (uni.UniNode | None)) -> ir.Type {
     return ir.IntType(64);
 }
 
+"""Resolve a type for C library declarations -- clib structs use value types, not pointers."""
+impl NaIRGenPass._resolve_clib_type(type_expr: (uni.UniNode | None)) -> ir.Type {
+    if type_expr is None {
+        return ir.IntType(64);
+    }
+    # Check if this is a clib struct name -- return VALUE type (not pointer)
+    type_name: (str | None) = None;
+    if isinstance(type_expr, uni.Name) {
+        type_name = type_expr.value;
+    } elif type_expr?.value and isinstance(getattr(type_expr, "value", None), str) {
+        type_name = type_expr.value;
+    }
+    if type_name is not None and type_name in self.clib_struct_names {
+        # Use ABI-coerced integer type for small structs (matches C calling convention)
+        if type_name in self.clib_struct_abi_types {
+            return self.clib_struct_abi_types[type_name];
+        }
+        return self.struct_types[type_name];
+    }
+    # For all other types, delegate to normal resolution
+    return self._resolve_jac_type(type_expr);
+}
+
 """Extract name string from a Name or similar node."""
-impl NaIRGenPass._get_name(node: (uni.UniNode | None)) -> (str | None) {
-    if node is None {
+impl NaIRGenPass._get_name(nd: (uni.UniNode | None)) -> (str | None) {
+    if nd is None {
         return None;
     }
-    if isinstance(node, uni.Name) {
-        return node.value;
+    if isinstance(nd, uni.Name) {
+        return nd.value;
     }
-    if node?.sym_name {
-        return node.sym_name;
+    if nd?.sym_name {
+        return nd.sym_name;
     }
-    if node?.value and isinstance(getattr(node, "value"), str) {
-        return node.value;
+    if nd?.value and isinstance(getattr(nd, "value"), str) {
+        return nd.value;
     }
     return None;
 }
@@ -244,6 +281,10 @@ impl NaIRGenPass._to_bool(val: ir.Value) -> ir.Value {
             "!=", val, ir.Constant(val.type, 0.0), name="tobool"
         );
     }
+    if isinstance(val.type, ir.PointerType) {
+        null_ptr = ir.Constant(val.type, None);
+        return self.builder.icmp_unsigned("!=", val, null_ptr, name="tobool");
+    }
     return val;
 }
 
@@ -252,15 +293,96 @@ impl NaIRGenPass._coerce_type(val: ir.Value, target_type: ir.Type) -> ir.Value {
     if val.type == target_type {
         return val;
     }
+    # Int → Double (f64)
     if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.DoubleType) {
         return self.builder.sitofp(val, target_type, name="cast");
     }
+    # Int → Float (f32)
+    if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.FloatType) {
+        return self.builder.sitofp(val, target_type, name="cast.f32");
+    }
+    # Double (f64) → Int
     if isinstance(val.type, ir.DoubleType) and isinstance(target_type, ir.IntType) {
         return self.builder.fptosi(val, target_type, name="cast");
     }
+    # Float (f32) → Int
+    if isinstance(val.type, ir.FloatType) and isinstance(target_type, ir.IntType) {
+        return self.builder.fptosi(val, target_type, name="cast.i");
+    }
+    # Double (f64) → Float (f32)
+    if isinstance(val.type, ir.DoubleType) and isinstance(target_type, ir.FloatType) {
+        return self.builder.fptrunc(val, target_type, name="fptrunc");
+    }
+    # Float (f32) → Double (f64)
+    if isinstance(val.type, ir.FloatType) and isinstance(target_type, ir.DoubleType) {
+        return self.builder.fpext(val, target_type, name="fpext");
+    }
     # Pointer-to-pointer bitcast (e.g., different struct pointer types)
-    if isinstance(val.type, ir.PointerType) and isinstance(target_type, ir.PointerType) {
+    if isinstance(val.type, ir.PointerType)
+    and isinstance(target_type, ir.PointerType) {
         return self.builder.bitcast(val, target_type, name="ptrcast");
+    }
+    # Struct pointer → struct value (Jac pointer → C value at call boundary)
+    if isinstance(val.type, ir.PointerType)
+    and not isinstance(target_type, ir.PointerType) {
+        if val.type?.pointee and val.type.pointee == target_type {
+            return self.builder.load(val, name="struct.unbox");
+        }
+        # Struct pointer → ABI integer (e.g., %Color* → i32 for small C structs)
+        if isinstance(target_type, ir.IntType) and val.type?.pointee {
+            for (sname, abi_type) in self.clib_struct_abi_types.items() {
+                if val.type.pointee == self.struct_types.get(sname)
+                and abi_type == target_type {
+                    int_ptr = self.builder.bitcast(
+                        val, target_type.as_pointer(), name="struct.abi.cast"
+                    );
+                    return self.builder.load(int_ptr, name="struct.abi.unbox");
+                }
+            }
+        }
+    }
+    # Struct value → struct pointer (C value → Jac pointer at call boundary)
+    if not isinstance(val.type, ir.PointerType)
+    and isinstance(target_type, ir.PointerType) {
+        if target_type?.pointee and target_type.pointee == val.type {
+            null_ptr = ir.Constant(target_type, None);
+            size_gep = self.builder.gep(
+                null_ptr, [ir.Constant(ir.IntType(32), 1)], name="clib.sizeof.gep"
+            );
+            size = self.builder.ptrtoint(size_gep, ir.IntType(64), name="clib.sizeof");
+            raw_ptr = self.builder.call(self.rc_alloc_fn, [size], name="clib.box.raw");
+            typed_ptr = self.builder.bitcast(raw_ptr, target_type, name="clib.box.ptr");
+            self.builder.store(val, typed_ptr);
+            return typed_ptr;
+        }
+        # ABI integer → struct pointer (e.g., i32 → %Color* for small C struct returns)
+        if isinstance(val.type, ir.IntType) and target_type?.pointee {
+            for (sname, abi_type) in self.clib_struct_abi_types.items() {
+                if target_type.pointee == self.struct_types.get(sname)
+                and abi_type == val.type {
+                    null_ptr = ir.Constant(target_type, None);
+                    size_gep = self.builder.gep(
+                        null_ptr,
+                        [ir.Constant(ir.IntType(32), 1)],
+                        name="clib.sizeof.gep"
+                    );
+                    size = self.builder.ptrtoint(
+                        size_gep, ir.IntType(64), name="clib.sizeof"
+                    );
+                    raw_ptr = self.builder.call(
+                        self.rc_alloc_fn, [size], name="clib.box.raw"
+                    );
+                    int_ptr = self.builder.bitcast(
+                        raw_ptr, val.type.as_pointer(), name="clib.abi.cast"
+                    );
+                    self.builder.store(val, int_ptr);
+                    typed_ptr = self.builder.bitcast(
+                        raw_ptr, target_type, name="clib.box.ptr"
+                    );
+                    return typed_ptr;
+                }
+            }
+        }
     }
     # Int width coercion (i1 to i64, etc.)
     if isinstance(val.type, ir.IntType) and isinstance(target_type, ir.IntType) {
@@ -291,14 +413,10 @@ impl NaIRGenPass._emit_binary_op(
     op: str, left: ir.Value, right: ir.Value
 ) -> (ir.Value | None) {
     # String concatenation (i8* + i8*) — check before numeric dispatch
-    if op == Tok.PLUS
-    and isinstance(left.type, ir.PointerType)
-    and isinstance(right.type, ir.PointerType) {
+    i8p_type = ir.IntType(8).as_pointer();
+    if op == Tok.PLUS and left.type == i8p_type and right.type == i8p_type {
         strlen_fn = self._get_or_declare_extern(
             "strlen", ir.IntType(64), [ir.IntType(8).as_pointer()]
-        );
-        gc_malloc = self._get_or_declare_extern(
-            "GC_malloc", ir.IntType(8).as_pointer(), [ir.IntType(64)]
         );
         strcpy_fn = self._get_or_declare_extern(
             "strcpy",
@@ -316,10 +434,109 @@ impl NaIRGenPass._emit_binary_op(
         buf_size = self.builder.add(
             total, ir.Constant(ir.IntType(64), 1), name="buf_size"
         );
-        buf = self.builder.call(gc_malloc, [buf_size], name="concat.buf");
+        buf = self.builder.call(self.rc_alloc_fn, [buf_size], name="concat.buf");
         self.builder.call(strcpy_fn, [buf, left]);
         self.builder.call(strcat_fn, [buf, right]);
         return buf;
+    }
+    # String repeat (i8* * i64 or i64 * i8*): allocate n*len buffer, loop-copy
+    if op == Tok.STAR_MUL {
+        str_val: (ir.Value | None) = None;
+        int_val: (ir.Value | None) = None;
+        if left.type == i8p_type and isinstance(right.type, ir.IntType) {
+            str_val = left;
+            int_val = right;
+        } elif right.type == i8p_type and isinstance(left.type, ir.IntType) {
+            str_val = right;
+            int_val = left;
+        }
+        if str_val is not None and int_val is not None {
+            i8 = ir.IntType(8);
+            i8p = i8.as_pointer();
+            i64 = ir.IntType(64);
+            strlen_fn = self._get_or_declare_extern("strlen", i64, [i8p]);
+            memcpy_fn = self._get_or_declare_extern("memcpy", i8p, [i8p, i8p, i64]);
+            slen = self.builder.call(strlen_fn, [str_val], name="rep.slen");
+            total = self.builder.mul(slen, int_val, name="rep.total");
+            alloc = self.builder.add(total, ir.Constant(i64, 1), name="rep.alloc");
+            buf = self.builder.call(self.rc_alloc_fn, [alloc], name="rep.buf");
+            func = self.builder.basic_block.function;
+            entry_bb = self.builder.basic_block;
+            loop_bb = func.append_basic_block(name="rep.loop");
+            body_bb = func.append_basic_block(name="rep.body");
+            done_bb = func.append_basic_block(name="rep.done");
+            self.builder.branch(loop_bb);
+            self.builder.position_at_start(loop_bb);
+            offset = self.builder.phi(i64, name="rep.off");
+            count = self.builder.phi(i64, name="rep.cnt");
+            offset.add_incoming(ir.Constant(i64, 0), entry_bb);
+            count.add_incoming(ir.Constant(i64, 0), entry_bb);
+            at_end = self.builder.icmp_unsigned(">=", count, int_val, name="rep.atend");
+            self.builder.cbranch(at_end, done_bb, body_bb);
+            self.builder.position_at_start(body_bb);
+            dst = self.builder.gep(buf, [offset], name="rep.dst");
+            self.builder.call(memcpy_fn, [dst, str_val, slen]);
+            new_off = self.builder.add(offset, slen, name="rep.newoff");
+            new_cnt = self.builder.add(count, ir.Constant(i64, 1), name="rep.newcnt");
+            offset.add_incoming(new_off, body_bb);
+            count.add_incoming(new_cnt, body_bb);
+            self.builder.branch(loop_bb);
+            self.builder.position_at_start(done_bb);
+            null_ptr = self.builder.gep(buf, [total], name="rep.null");
+            self.builder.store(ir.Constant(i8, 0), null_ptr);
+            return buf;
+        }
+    }
+    # List concatenation (list_ptr + list_ptr): create new list, append all
+    if op == Tok.PLUS {
+        for (list_key, helpers) in self.list_helpers.items() {
+            list_type = self.list_types.get(list_key);
+            if list_type is not None
+            and left.type == list_type.as_pointer()
+            and right.type == list_type.as_pointer() {
+                i64 = ir.IntType(64);
+                new_list = self.builder.call(helpers["new"], [], name="lcat.new");
+                # Append all from left
+                left_len = self.builder.call(helpers["len"], [left], name="lcat.llen");
+                func = self.builder.basic_block.function;
+                entry_bb = self.builder.basic_block;
+                loop1_bb = func.append_basic_block(name="lcat.l1");
+                body1_bb = func.append_basic_block(name="lcat.b1");
+                mid_bb = func.append_basic_block(name="lcat.mid");
+                loop2_bb = func.append_basic_block(name="lcat.l2");
+                body2_bb = func.append_basic_block(name="lcat.b2");
+                done_bb = func.append_basic_block(name="lcat.done");
+                self.builder.branch(loop1_bb);
+                self.builder.position_at_start(loop1_bb);
+                i1 = self.builder.phi(i64, name="lcat.i1");
+                i1.add_incoming(ir.Constant(i64, 0), entry_bb);
+                end1 = self.builder.icmp_unsigned(">=", i1, left_len, name="lcat.end1");
+                self.builder.cbranch(end1, mid_bb, body1_bb);
+                self.builder.position_at_start(body1_bb);
+                e1 = self.builder.call(helpers["get"], [left, i1], name="lcat.e1");
+                self.builder.call(helpers["append"], [new_list, e1]);
+                n1 = self.builder.add(i1, ir.Constant(i64, 1), name="lcat.n1");
+                i1.add_incoming(n1, body1_bb);
+                self.builder.branch(loop1_bb);
+                # Append all from right
+                self.builder.position_at_start(mid_bb);
+                right_len = self.builder.call(helpers["len"], [right], name="lcat.rlen");
+                self.builder.branch(loop2_bb);
+                self.builder.position_at_start(loop2_bb);
+                i2 = self.builder.phi(i64, name="lcat.i2");
+                i2.add_incoming(ir.Constant(i64, 0), mid_bb);
+                end2 = self.builder.icmp_unsigned(">=", i2, right_len, name="lcat.end2");
+                self.builder.cbranch(end2, done_bb, body2_bb);
+                self.builder.position_at_start(body2_bb);
+                e2 = self.builder.call(helpers["get"], [right, i2], name="lcat.e2");
+                self.builder.call(helpers["append"], [new_list, e2]);
+                n2 = self.builder.add(i2, ir.Constant(i64, 1), name="lcat.n2");
+                i2.add_incoming(n2, body2_bb);
+                self.builder.branch(loop2_bb);
+                self.builder.position_at_start(done_bb);
+                return new_list;
+            }
+        }
     }
     is_float = isinstance(left.type, ir.DoubleType)
     or isinstance(right.type, ir.DoubleType);
@@ -353,6 +570,20 @@ impl NaIRGenPass._emit_binary_op(
                 is_zero, "ZeroDivisionError", "float modulo by zero"
             );
             return self.builder.frem(left, right, name="fmod");
+        } elif op == Tok.FLOOR_DIV {
+            # Float floor division: fdiv then floor
+            fzero = ir.Constant(ir.DoubleType(), 0.0);
+            is_zero = self.builder.fcmp_ordered(
+                "==", right, fzero, name="ffloordiv.zero.chk"
+            );
+            self._emit_runtime_raise(
+                is_zero, "ZeroDivisionError", "float floor division by zero"
+            );
+            raw = self.builder.fdiv(left, right, name="ffloordiv.raw");
+            floor_fn = self._get_or_declare_extern(
+                "floor", ir.DoubleType(), [ir.DoubleType()]
+            );
+            return self.builder.call(floor_fn, [raw], name="ffloordiv");
         }
     } else {
         i64 = ir.IntType(64);
@@ -461,7 +692,8 @@ impl NaIRGenPass._emit_comparison(
     op: str, left: ir.Value, right: ir.Value, is_float: bool
 ) -> (ir.Value | None) {
     # Pointer comparisons
-    if isinstance(left.type, ir.PointerType) and isinstance(right.type, ir.PointerType) {
+    if isinstance(left.type, ir.PointerType)
+    and isinstance(right.type, ir.PointerType) {
         i8_ptr = ir.IntType(8).as_pointer();
         # String comparison: both operands must be i8* (char pointers)
         if left.type == i8_ptr and right.type == i8_ptr {
@@ -474,6 +706,14 @@ impl NaIRGenPass._emit_comparison(
                 return self.builder.icmp_signed("==", cmp_result, zero, name="streq");
             } elif op == Tok.NE {
                 return self.builder.icmp_signed("!=", cmp_result, zero, name="strne");
+            } elif op == Tok.LT {
+                return self.builder.icmp_signed("<", cmp_result, zero, name="strlt");
+            } elif op == Tok.GT {
+                return self.builder.icmp_signed(">", cmp_result, zero, name="strgt");
+            } elif op == Tok.LTE {
+                return self.builder.icmp_signed("<=", cmp_result, zero, name="strle");
+            } elif op == Tok.GTE {
+                return self.builder.icmp_signed(">=", cmp_result, zero, name="strge");
             }
             return None;
         }
@@ -591,6 +831,97 @@ impl NaIRGenPass._get_list_elem_from_type_node(
 ) -> (str | None) {
     (inner, inner_type, elem_name) = self._peel_list_type(type_node);
     return elem_name;
+}
+
+"""Infer the struct type name of a comprehension loop variable from its collection.
+For `for m in piece.raw_moves(self)`, returns 'Move' by looking up the method's
+return type in method_ast_sigs and peeling the list type."""
+impl NaIRGenPass._infer_compr_elem_struct(compr: object) -> (str | None) {
+    collection = compr.collection;
+    # Determine target and method name from the collection expression.
+    # Two AST shapes for method calls:
+    #   1. FuncCall(target=AtomTrailer(target=obj, right=method, is_attr=True), params=[...])
+    #   2. AtomTrailer(target=obj, right=FuncCall(target=method, ...), is_attr=False)
+    target_name: (str | None) = None;
+    method_name: (str | None) = None;
+    if isinstance(collection, uni.FuncCall) {
+        if isinstance(collection.target, uni.AtomTrailer)
+        and collection.target.is_attr {
+            target_name = self._get_name(collection.target.target);
+            method_name = self._get_name(collection.target.right);
+        }
+    } elif isinstance(collection, uni.AtomTrailer) and not collection.is_attr {
+        target_name = self._get_name(collection.target);
+        if isinstance(collection.right, uni.FuncCall) {
+            method_name = self._get_name(collection.right.target);
+        } else {
+            method_name = self._get_name(collection.right);
+        }
+    }
+    if target_name is None or method_name is None {
+        # Fallback: if collection is a simple variable (Name node), try to
+        # resolve its list element type from the variable's type annotation
+        coll_name = self._get_name(collection);
+        if coll_name is not None {
+            # Check var_type_node for type annotation like list[Move]
+            type_node = self.var_type_node.get(coll_name);
+            if type_node is not None {
+                (inner, _, _) = self._peel_list_type(type_node);
+                if inner is not None {
+                    inner_name = self._get_name(inner);
+                    if inner_name is not None and inner_name in self.struct_types {
+                        return inner_name;
+                    }
+                }
+            }
+            # Check var_list_elem_type for computed element type name
+            elem_type = self.var_list_elem_type.get(coll_name);
+            if elem_type is not None and elem_type in self.struct_types {
+                return elem_type;
+            }
+        }
+        return None;
+    }
+    # Look up the struct type for target variable
+    type_name = self.type_var_map.get(target_name);
+    if type_name is None {
+        if target_name in self.local_vars {
+            lv = self.local_vars[target_name];
+            if isinstance(lv.type, ir.PointerType) {
+                pointee = lv.type.pointee;
+                for (sname, stype) in self.struct_types.items() {
+                    if pointee == stype.as_pointer() {
+                        type_name = sname;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if type_name is None {
+        return None;
+    }
+    # Walk hierarchy to find method signature and extract return element type
+    check = type_name;
+    while check is not None {
+        full = f"{check}.{method_name}";
+        if full in self.method_ast_sigs {
+            sig = self.method_ast_sigs[full];
+            ret_type = getattr(sig, 'return_type', None);
+            if ret_type is not None {
+                (inner, _, _) = self._peel_list_type(ret_type);
+                if inner is not None {
+                    inner_name = self._get_name(inner);
+                    if inner_name is not None and inner_name in self.struct_types {
+                        return inner_name;
+                    }
+                }
+            }
+            break;
+        }
+        check = self.class_hierarchy.get(check);
+    }
+    return None;
 }
 
 """Resolve the LLVM type of elements in a ptr list for a for-loop variable.

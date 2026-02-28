@@ -4,8 +4,8 @@ Provides type evaluation logic for unary, binary, augmented assignment and terna
 PyrightReference: packages/pyright-internal/src/analyzer/operations.ts
 """
 import from typing { TYPE_CHECKING }
-import jaclang.pycore.unitree as uni;
-import from jaclang.pycore.constant { Tokens as Tok }
+import jaclang.jac0core.unitree as uni;
+import from jaclang.jac0core.constant { Tokens as Tok }
 import from . { types as jtypes }
 
 with entry {
@@ -16,8 +16,7 @@ with entry {
 
 # FIX: py2jac bug - module-level constants must be declared with glob outside with entry block
 # Otherwise they become Field descriptors when accessed from functions
-glob BINARY_OPERATOR_MAP:
-         dict[str, tuple[str, str]] = {
+glob BINARY_OPERATOR_MAP: dict[str, tuple[str, str]] = {
          Tok.PLUS: ('__add__', '__radd__'),
          Tok.MINUS: ('__sub__', '__rsub__'),
          Tok.STAR_MUL: ('__mul__', '__rmul__'),
@@ -92,6 +91,9 @@ def get_type_of_binary_operation(
 ) -> jtypes.TypeBase {
     left_type = evaluator.get_type_of_expression(expr.left);
     right_type = evaluator.get_type_of_expression(expr.right);
+    if left_type.is_any_type() or right_type.is_any_type() {
+        return jtypes.UnknownType();
+    }
     # Boolean operations
     if (
         (expr.op in (Tok.KW_IS, Tok.KW_ISN, Tok.KW_IN, Tok.KW_NIN))

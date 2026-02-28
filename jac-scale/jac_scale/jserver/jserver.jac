@@ -25,10 +25,10 @@ class ParameterType(StrEnum) {
 
 obj APIParameter {
     has name: str,
-        <>type: ParameterType = ParameterType.QUERY,
+        `type: ParameterType = ParameterType.QUERY,
         data_type: str = 'str',
         required: bool = True,
-        <>default: Any = None,
+        `default: Any = None,
         description: str = '';
 }
 
@@ -97,5 +97,7 @@ class JServer(ABC, Generic[T]) {
 
     """Run the server on the specified host and port."""
     @abstractmethod
-    def run_server(self: JServer, host: str = 'localhost', port: int = 8000) -> None { }
+    def run_server(
+        self: JServer, host: str = 'localhost', port: int = 8000
+    ) -> None { }
 }

@@ -4,7 +4,7 @@ Create a Jac project with frontend and backend in one codebase.
 
 > **Prerequisites**
 >
-> - Completed: [Hello World](../../quick-guide/hello-world.md)
+> - Completed: [Installation](../../quick-guide/install.md)
 > - Familiar with: HTML/CSS basics, React concepts helpful
 > - Install: `pip install jaseci`
 > - Time: ~15 minutes
@@ -55,7 +55,7 @@ walker:pub get_todos {
 
 # Frontend code (inside cl block)
 cl {
-    def:pub app() -> any {
+    def:pub app() -> JsxElement {
         has message: str = "Hello from Jac!";
 
         return <div>
@@ -131,7 +131,7 @@ walker api_endpoint {
 
 # This is frontend code (runs in browser)
 cl {
-    def:pub MyComponent() -> any {
+    def:pub MyComponent() -> JsxElement {
         return <div>I run in the browser</div>;
     }
 }
@@ -160,7 +160,7 @@ walker get_user {
 
 # Frontend
 cl {
-    def:pub app() -> any {
+    def:pub app() -> JsxElement {
         return <div>App</div>;
     }
 }
@@ -205,7 +205,7 @@ walker get_user {
 cl {
     import from "./components/Header.cl.jac" { Header }
 
-    def:pub app() -> any {
+    def:pub app() -> JsxElement {
         return <div>
             <Header />
             <main>Content</main>
@@ -243,9 +243,9 @@ Then use in frontend:
 cl {
     import lodash;
 
-    def:pub app() -> any {
+    def:pub app() -> JsxElement {
         items = lodash.sortBy(["c", "a", "b"]);
-        return <ul>{items.map(lambda i: any -> any { return <li>{i}</li>; })}</ul>;
+        return <ul>{[<li>{i}</li> for i in items]}</ul>;
     }
 }
 ```
@@ -286,7 +286,7 @@ Create this minimal `main.jac`:
 
 ```jac
 cl {
-    def:pub app() -> any {
+    def:pub app() -> JsxElement {
         has count: int = 0;
 
         return <div style={{"textAlign": "center", "marginTop": "50px"}}>
@@ -311,4 +311,4 @@ Click the button - the count should increase!
 - [Components](components.md) - Build reusable UI components
 - [State Management](state.md) - Reactive state with hooks
 - [Backend Integration](backend.md) - Connect to walkers
-- [Build a Todo App](todo-app.md) - Complete full-stack example with AI
+- [Build an AI Day Planner](../first-app/build-ai-day-planner.md) - Complete full-stack example with AI

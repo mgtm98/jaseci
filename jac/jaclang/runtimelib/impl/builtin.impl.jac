@@ -3,16 +3,16 @@
 impl _jac_graph_json(file: (str | None) = None) -> str {
     import from jaclang.runtimelib.utils { collect_node_connections }
     jac = _get_jac();
-    visited_nodes: set = <>set();
-    connections: set = <>set();
-    edge_ids: set = <>set();
+    visited_nodes: set = set();
+    connections: set = set();
+    edge_ids: set = set();
     nodes: list[dict] = [];
     edges: list[dict] = [];
-    <>root = jac.root();
-    collect_node_connections(<>root, visited_nodes, connections, edge_ids);
-    nodes.append({'id': id(<>root), 'label': 'root'});
+    `root = jac.root();
+    collect_node_connections(`root, visited_nodes, connections, edge_ids);
+    nodes.append({'id': id(`root), 'label': 'root'});
     for node_arch in visited_nodes {
-        if (node_arch != <>root) {
+        if (node_arch != `root) {
             nodes.append({'id': id(node_arch), 'label': repr(node_arch)});
         }
     }
@@ -34,7 +34,7 @@ impl _jac_graph_json(file: (str | None) = None) -> str {
 
 """Print the graph in different formats."""
 impl printgraph(
-    <>node: (NodeArchetype | None) = None,
+    nd: (NodeArchetype | None) = None,
     depth: int = -1,
     traverse: bool = False,
     edge_type: (list[str] | None) = None,
@@ -51,7 +51,7 @@ impl printgraph(
     }
     return jac.printgraph(
         edge_type=edge_type,
-        <>node=(<>node or jac.root()),
+        nd=(nd or jac.root()),
         depth=depth,
         traverse=traverse,
         bfs=bfs,
@@ -88,6 +88,8 @@ impl __getattr__(name: str) -> object {
         return _get_commit();
     } elif (name == 'store') {
         return _get_store();
+    } elif (name == 'llm') {
+        return _get_llm();
     }
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}") ;
 }
@@ -100,6 +102,11 @@ impl _get_commit -> Callable[..., Any] {
 """Get storage backend lazily."""
 impl _get_store -> Callable[..., Any] {
     return _get_jac().store;
+}
+
+"""Get default LLM model instance lazily."""
+impl _get_llm -> object {
+    return _get_jac().default_llm();
 }
 
 """Get save lazily."""
@@ -134,7 +141,7 @@ impl _get_jid -> Callable[..., Any] {
 
 """Lazily get AccessLevel enum."""
 impl _get_access_level -> type[AccessLevel] {
-    import from jaclang.pycore.constructs { AccessLevel }
+    import from jaclang.jac0core.constructs { AccessLevel }
     return AccessLevel;
 }
 
@@ -151,6 +158,25 @@ impl restspec(**specs: Any) -> Callable {
     def decorator(cls: type) -> type {
         cls.restspec = SpecsCls(**specs);
         return cls;
+    }
+    return decorator;
+}
+
+"""Schedule decorator factory — attaches ScheduleSpec to a walker or function."""
+impl schedule(**kwargs: Any) -> Callable {
+    import from jaclang.runtimelib.scheduler { ScheduleSpec }
+    import from jaclang.runtimelib.builtin { ScheduleTrigger }
+    trigger = kwargs.pop("trigger", ScheduleTrigger.STATIC);
+    if isinstance(trigger, str) {
+        trigger = ScheduleTrigger(trigger);
+    }
+    if trigger == ScheduleTrigger.DYNAMIC {
+        raise NotImplementedError("Dynamic scheduling requires jac-scale.") ;
+    }
+    spec = ScheduleSpec(trigger=trigger, **kwargs);
+    def decorator(target: type) -> type {
+        target.schedule_spec = spec;
+        return target;
     }
     return decorator;
 }
