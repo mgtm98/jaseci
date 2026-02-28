@@ -1638,6 +1638,8 @@ test "dicts empty glob dict set and get" {
     entry_fn();
     f = get_func(eng, "empty_glob_dict_set_get", ctypes.c_int64);
     assert f() == 7;
+}
+
 test "default params omitted trailing defaults" {
     (eng, _) = compile_native("default_params.na.jac");
     method_f = get_func(eng, "test_method_default_omitted", ctypes.c_int64);
