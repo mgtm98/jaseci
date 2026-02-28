@@ -1642,7 +1642,7 @@ test "dicts items iteration sum" {
     (eng, _) = compile_native("dicts_sets.na.jac");
     f = get_func(eng, "dict_items_iter_sum", ctypes.c_int64);
     assert f() == 60;
-} 
+}
 
 # --- TestNativeEmptyGlobDict (regression: empty-dict-glob-var-init-null-ptr) ---
 test "dicts empty glob dict set and get" {
