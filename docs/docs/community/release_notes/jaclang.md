@@ -23,6 +23,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **`jac nacompile` accepts `.jac` files**: `jac nacompile` now auto-promotes compatible `.jac` files to native compilation, with a clear error message when a file uses unsupported constructs.
 - **Fix: Native Global Empty Dict/List Init Null Pointer**: Declaring a module-level global with an empty dict or list literal (`glob x: dict[str, int] = {}`) no longer leaves the global as a null pointer. Any subsequent dict/list operation would previously segfault; the compiler now falls back to `helpers["new"]()` to produce an initialised empty container.
 - **Fix: Native Codegen Crash on Omitted Default Parameters**: Calling a method or free function while omitting trailing default-valued parameters (e.g., `obj.method(x)` where `method` declares `param: int = 0`) no longer crashes the compiler with `list index out of range` in `builder.call`. Missing arguments are now filled from the AST default expressions before the call is emitted.
+- **Fix: Native `str.replace(old, new, count)` Count Argument Ignored**: The third `count` parameter to `str.replace` is now respected. A `remaining` count phi is threaded through the replacement loop and decrements on each substitution; when it reaches zero the rest of the string is copied unchanged. Omitting the argument (or passing a negative value) retains the replace-all behaviour.
 
 ## jaclang 0.11.2 (Latest Release)
 
