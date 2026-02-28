@@ -189,6 +189,19 @@ def global_set_len() -> int {
 # ===================== Entry Point =====================
 glob _init_done: int = 0;
 
+# dict .items() iteration: sum all values
+def dict_items_iter_sum() -> int {
+    d: dict[int, int] = {};
+    d[1] = 10;
+    d[2] = 20;
+    d[3] = 30;
+    total: int = 0;
+    for (k, v) in d.items() {
+        total = total + v;
+    }
+    return total;
+}
+
 with entry {
     _init_done = 1;
 }

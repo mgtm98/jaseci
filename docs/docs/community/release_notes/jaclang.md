@@ -15,6 +15,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: Bug Fix**: Stop appending lint warnings to `py2jac` converted files.
 - **Structured GitHub Issue Forms**: Replaced blank markdown issue templates with guided YAML forms, making it easier to submit well-structured bug reports, feature requests, and docs issues.
 - **Native Codegen: Split-File Chess Engine & Major IR Gen Fixes**: Enabled complex multi-file native applications (declaration `.na.jac` + implementation `.impl.jac`) by fixing 10+ IR generation bugs.
+- **Fix: Native `for (k, v) in d.items()` Iteration**: Dict `.items()` iteration in native codegen was silently elided. Fixed by adding a `__dict_get_val` index helper (mirroring the existing `__dict_get_key`) and a dedicated items-loop path in `_codegen_for` that detects the `d.items()` method-call pattern, binds both loop variables, and emits a standard index-based loop.
 
 ## jaclang 0.11.2 (Latest Release)
 
