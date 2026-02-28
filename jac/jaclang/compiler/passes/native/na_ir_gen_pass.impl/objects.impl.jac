@@ -590,6 +590,24 @@ impl NaIRGenPass._codegen_method_call(nd: uni.FuncCall) -> (ir.Value | None) {
     if method_name is None {
         return None;
     }
+    # --- Native stdlib module method calls: sys.exit() ---
+    if (
+        target_name == "sys"
+        and self?._native_stdlib_modules
+        and "sys" in self._native_stdlib_modules
+    ) {
+        if method_name == "exit" {
+            params = nd.params or [];
+            arg_vals: list[ir.Value] = [];
+            for param in params {
+                v = self._codegen_expr(param);
+                if v is not None {
+                    arg_vals.append(v);
+                }
+            }
+            return self._emit_sys_exit(arg_vals);
+        }
+    }
     # --- Primitive emitter dispatch (list, set, str methods) ---
     # Evaluate target and args, dispatch through emitter layer.
     # List methods (simple name target)

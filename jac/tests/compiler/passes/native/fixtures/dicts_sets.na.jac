@@ -241,6 +241,19 @@ def dict_field_iter_sum_fixture() -> int {
     return total;
 }
 
+# dict .items() iteration: sum all values
+def dict_items_iter_sum() -> int {
+    d: dict[int, int] = {};
+    d[1] = 10;
+    d[2] = 20;
+    d[3] = 30;
+    total: int = 0;
+    for (k, v) in d.items() {
+        total = total + v;
+    }
+    return total;
+}
+
 with entry {
     _init_done = 1;
 }

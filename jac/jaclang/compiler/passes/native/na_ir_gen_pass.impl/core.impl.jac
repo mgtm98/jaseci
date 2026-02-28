@@ -199,7 +199,28 @@ impl NaIRGenPass._process_clib_imports(module: uni.Module) -> None {
         }
     }
     for stmt in imports {
+        # Recognize `import sys;` for native sys module support
         if not stmt.clib_decls {
+            if stmt.items {
+                for item in stmt.items {
+                    mod_name = None;
+                    if isinstance(item, uni.ModulePath) and item.path {
+                        parts = [];
+                        for p in item.path {
+                            parts.append(
+                                p.value if isinstance(p, uni.Name) else str(p)
+                            );
+                        }
+                        mod_name = ".".join(parts);
+                    }
+                    if mod_name == "sys" {
+                        if not self?._native_stdlib_modules {
+                            self._native_stdlib_modules: set[str] = set();
+                        }
+                        self._native_stdlib_modules.add("sys");
+                    }
+                }
+            }
             continue;
         }
         # Extract library path from from_loc

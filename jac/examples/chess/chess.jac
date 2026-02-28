@@ -202,11 +202,21 @@ obj Game {
 }
 
 # ────────────────────── Entry ──────────────────────
-# Set _benchmark_mode > 0 to run that many automated games.
-glob _benchmark_mode: int = 0,
-     game = Game();
+import sys;
+
+glob game = Game(),
+     _benchmark_mode: int = 0,
+     _args = sys.argv;
 
 with entry {
+    for i in range(1, len(_args)) {
+        arg = _args[i];
+        if arg == "--benchmark" or arg == "-b" {
+            _benchmark_mode = 10;
+        } elif arg == "--benchmark" {
+            _benchmark_mode = 10;
+        }
+    }
     if _benchmark_mode > 0 {
         game.benchmark(_benchmark_mode);
     } else {

@@ -256,6 +256,20 @@ test "strings str replace count arg respected" {
     assert f(b"banana") == b"bXnana";
 }
 
+test "strings for-in-str join" {
+    (eng, _) = compile_native("strings.na.jac");
+    f = get_func(eng, "str_for_in_join", ctypes.c_char_p, ctypes.c_char_p);
+    assert f(b"Hello") == b"Hello";
+    assert f(b"") == b"";
+}
+
+test "strings for-in-str count" {
+    (eng, _) = compile_native("strings.na.jac");
+    f = get_func(eng, "str_for_in_count", ctypes.c_int64, ctypes.c_char_p);
+    assert f(b"Hello") == 5;
+    assert f(b"") == 0;
+}
+
 # --- TestNativePrintMultiArgs ---
 test "print multi args compiles" {
     (eng, _) = compile_native("print_multi_args.na.jac");
@@ -1638,6 +1652,12 @@ test "rc stress large dict" {
     assert f(1000) == 1000;
 }
 
+test "dicts items iteration sum" {
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    f = get_func(eng, "dict_items_iter_sum", ctypes.c_int64);
+    assert f() == 60;
+}
+
 # --- TestNativeEmptyGlobDict (regression: empty-dict-glob-var-init-null-ptr) ---
 test "dicts empty glob dict set and get" {
     # glob x: dict[K,V] = {} previously left the global as null -> segfault on first access.
@@ -1741,4 +1761,97 @@ test "auto promote chess.jac runs via cli" {
     assert "executed natively" in combined , (
         f"Expected native execution message.\n" f"output tail: {combined[-500:]}"
     );
+}
+
+# --- Native sys Module Tests ---
+test "sys argv via jac run autonative" {
+    # Test that sys.argv works when running via `jac run --autonative`
+    fixture = str(os.path.join(FIXTURES, "sys_argv.jac"));
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "jaclang",
+            "run",
+            "--autonative",
+            fixture,
+            "hello",
+            "--test-flag",
+            "world"
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30
+    );
+    assert result.returncode == 0 , (
+        f"sys_argv fixture crashed: exit={result.returncode}\n"
+        f"stderr: {result.stderr[-500:] if result.stderr else '(empty)'}"
+    );
+    out = result.stdout;
+    # Should report correct argc (fixture path + 3 args = 4)
+    assert "argc: 4" in out , (f"Expected 'argc: 4' in output.\nstdout: {out}");
+    # Should find the --test-flag
+    assert "FLAG_FOUND" in out , (f"Expected 'FLAG_FOUND' in output.\nstdout: {out}");
+    # Should print each argument
+    assert "arg: hello" in out , (f"Expected 'arg: hello' in output.\nstdout: {out}");
+    assert "arg: world" in out , (f"Expected 'arg: world' in output.\nstdout: {out}");
+    assert "DONE" in out , (f"Expected 'DONE' in output.\nstdout: {out}");
+}
+
+test "sys argv via nacompile" {
+    # Test that sys.argv works when compiled to a standalone binary via nacompile
+    import tempfile;
+    fixture = str(os.path.join(FIXTURES, "sys_argv.jac"));
+    with tempfile.TemporaryDirectory() as tmpdir {
+        out_bin = os.path.join(tmpdir, "sys_argv_bin");
+        # Step 1: Compile to native binary
+        comp = subprocess.run(
+            [sys.executable, "-m", "jaclang", "nacompile", fixture, "-o", out_bin],
+            capture_output=True,
+            text=True,
+            timeout=120
+        );
+        assert comp.returncode == 0 , (
+            f"nacompile failed: exit={comp.returncode}\n"
+            f"stderr: {comp.stderr[-500:] if comp.stderr else '(empty)'}"
+        );
+        assert os.path.exists(out_bin) , f"Binary not created at {out_bin}";
+        # Step 2: Run the binary with arguments
+        result = subprocess.run(
+            [out_bin, "hello", "--test-flag", "world"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        );
+        assert result.returncode == 0 , (
+            f"Native binary crashed: exit={result.returncode}\n"
+            f"stderr: {result.stderr[-500:] if result.stderr else '(empty)'}"
+        );
+        out = result.stdout;
+        # Should report correct argc (binary path + 3 args = 4)
+        assert "argc: 4" in out , (f"Expected 'argc: 4' in output.\nstdout: {out}");
+        # Should find the --test-flag
+        assert "FLAG_FOUND" in out , (
+            f"Expected 'FLAG_FOUND' in output.\nstdout: {out}"
+        );
+        # Should print each argument
+        assert "arg: hello" in out , (
+            f"Expected 'arg: hello' in output.\nstdout: {out}"
+        );
+        assert "arg: world" in out , (
+            f"Expected 'arg: world' in output.\nstdout: {out}"
+        );
+        assert "DONE" in out , (f"Expected 'DONE' in output.\nstdout: {out}");
+        # Step 3: Run with --exit-code flag to test sys.exit()
+        exit_result = subprocess.run(
+            [out_bin, "--exit-code", "1"], capture_output=True, text=True, timeout=10
+        );
+        assert exit_result.returncode == 1 , (
+            f"Expected exit code 1, got {exit_result.returncode}"
+        );
+        # DONE should NOT appear (sys.exit called before it)
+        assert "DONE" not in exit_result.stdout , (
+            f"DONE should not appear after sys.exit()\nstdout: {exit_result.stdout}"
+        );
+    }
 }
