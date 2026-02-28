@@ -1,8 +1,6 @@
 # Custom hook for localStorage persistence
 # Demonstrates: custom hooks, try/except error handling, useEffect
-cl import from react {
-    useEffect
-}
+cl import from react { useEffect }
 
 cl {
     # Custom hook for syncing state with localStorage
@@ -17,7 +15,7 @@ cl {
                     return initialValue;
                 }
             } except Exception as e {
-                console.log("Error reading from localStorage");
+                print("Error reading from localStorage");
                 return initialValue;
             }}
         );
@@ -27,7 +25,7 @@ cl {
             lambda -> None { try {
                 window.localStorage.setItem(key, JSON.stringify(storedValue));
             } except Exception as e {
-                console.log("Error saving to localStorage");
+                print("Error saving to localStorage");
             }},
             [key, storedValue]
         );

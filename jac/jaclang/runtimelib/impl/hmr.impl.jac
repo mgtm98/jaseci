@@ -10,7 +10,8 @@ import time;
 import shutil;
 import from pathlib { Path }
 import from typing { Any }
-import from jaclang.pycore.constant { CodeContext }
+import from jaclang.jac0core.constant { CodeContext }
+import from jaclang.jac0core.bccache { discover_base_file }
 import from jaclang.cli.console { console }
 
 glob logger = logging.getLogger(__name__);
@@ -60,31 +61,33 @@ impl HotReloader._process_change(file_path: str) -> None {
         self._copy_frontend_files(file_path);
         return;
     }
+    # Resolve annex files (.impl.jac) to their base file
+    target_path = file_path;
+    if file_path.endswith('.impl.jac') {
+        base = discover_base_file(file_path);
+        if base {
+            target_path = base;
+        }
+    }
     # Check if file has client and/or server declarations
-    (has_client, has_server) = self._classify_declarations(file_path);
+    (has_client, has_server) = self._classify_declarations(target_path);
     # Handle server declarations - reload in sys.modules
     if has_server {
-        self._reload_server_module(file_path);
+        self._reload_server_module(target_path);
     }
     # Handle client declarations - recompile to JS (Phase 2)
     if has_client {
-        self._recompile_client_code(file_path);
+        self._recompile_client_code(target_path);
     }
 }
 
 """Reload server-side module in sys.modules."""
 impl HotReloader._reload_server_module(file_path: str) -> None {
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
-    # Get module name from file path
-    module_name = self._path_to_module(file_path);
-    # Remove from sys.modules to force reimport
-    modules_to_remove = [
-        name
-        for name in sys.modules.keys()
-        if name == module_name or name.startswith(f"{module_name}.")
-    ];
-    for mod_name in modules_to_remove {
-        del sys.modules[mod_name];
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
+    # Remove all project modules from sys.modules to refresh the full import chain
+    sys.modules.pop(self.module_name, None);
+    for key in list(Jac.program.mod.hub.keys()) {
+        sys.modules.pop(self._path_to_module(key), None);
     }
     # Also remove from the program's module hub
     try {
@@ -102,7 +105,7 @@ impl HotReloader._reload_server_module(file_path: str) -> None {
     # Re-import with force reload
     try {
         Jac.jac_import(
-            target=module_name, base_path=self.base_path, reload_module=True
+            target=self.module_name, base_path=self.base_path, reload_module=True
         );
         console.print(f"[HMR] Reloaded: {file_path}");
     } except SyntaxError as e {
@@ -126,7 +129,7 @@ impl HotReloader._reload_server_module(file_path: str) -> None {
 
 """Recompile client declarations to JavaScript."""
 impl HotReloader._recompile_client_code(file_path: str) -> None {
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     try {
         source_path = Path(file_path).resolve();
         source_key = str(source_path);
@@ -191,12 +194,6 @@ impl HotReloader._recompile_client_code(file_path: str) -> None {
         js_filename = self._get_js_filename(file_path);
         output_path = output_dir / js_filename;
 
-        # Handle exports: extract from manifest and add comprehensive export statement
-        client_manifest = mod.gen.client_manifest if mod else None;
-        if client_manifest {
-            js_code = self._create_export_statement(js_code, client_manifest);
-        }
-
         # Write the JS code
         output_path.write_text(js_code, encoding='utf-8');
 
@@ -227,7 +224,7 @@ impl HotReloader._get_js_filename(file_path: str) -> str {
 Returns (has_client_decls, has_server_decls).
 """
 impl HotReloader._classify_declarations(file_path: str) -> tuple[bool, bool] {
-    import from jaclang.pycore.program { JacProgram }
+    import from jaclang.jac0core.program { JacProgram }
     has_client = False;
     has_server = False;
     try {
@@ -236,9 +233,9 @@ impl HotReloader._classify_declarations(file_path: str) -> tuple[bool, bool] {
         mod = prog.compile(file_path, no_cgen=True);
 
         # Check top-level declarations in module body for code_context
-        for node in mod.body {
-            if node?.code_context {
-                if node.code_context == CodeContext.CLIENT {
+        for nd in mod.body {
+            if nd?.code_context {
+                if nd.code_context == CodeContext.CLIENT {
                     has_client = True;
                 } else {
                     has_server = True;
@@ -271,7 +268,7 @@ impl HotReloader._classify_declarations(file_path: str) -> tuple[bool, bool] {
 impl HotReloader._path_to_module(file_path: str) -> str {
     # Get relative path from base_path
     path = Path(file_path);
-    base = Path(self.base_path);
+    base = Path(self.base_path).resolve();
     try {
         rel_path = path.relative_to(base);
     } except ValueError {
@@ -281,12 +278,14 @@ impl HotReloader._path_to_module(file_path: str) -> str {
     # Remove .jac extension and convert path separators to dots
     module_parts = [];
     for part in rel_path.parts {
-        if part.endswith(".jac") {
-            module_parts.append(part[:-4]);
-        } elif part.endswith(".impl.jac") {
+        if part.endswith(".impl.jac") {
             module_parts.append(part[:-9]);
         } elif part.endswith(".cl.jac") {
             module_parts.append(part[:-7]);
+        } elif part.endswith(".sv.jac") {
+            module_parts.append(part[:-7]);
+        } elif part.endswith(".jac") {
+            module_parts.append(part[:-4]);
         } else {
             module_parts.append(part);
         }
@@ -345,11 +344,6 @@ impl HotReloader._copy_frontend_files(file_path: str) -> None {
     } except Exception as e {
         console.print(f"[HMR] Error copying frontend file {file_path}: {e}");
     }
-}
-
-"""Create export statement for recompiled JS code."""
-impl HotReloader._create_export_statement(js_code: str, client_manifest: Any) -> str {
-    return js_code;
 }
 
 """Update the entry point to reflect changes in modules."""

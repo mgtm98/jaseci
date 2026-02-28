@@ -7,7 +7,9 @@ impl ClientBundleBuilder.postinit -> None {
 }
 
 """Build (or reuse) a client bundle for the supplied module."""
-impl ClientBundleBuilder.build(module: ModuleType, force: bool = False) -> ClientBundle {
+impl ClientBundleBuilder.build(
+    module: ModuleType, force: bool = False
+) -> ClientBundle {
     if not module?.__file__ {
         raise ClientBundleError(
             f"Module '{module.__name__}' has no __file__ attribute"
@@ -51,7 +53,7 @@ impl ClientBundleBuilder._process_imports(
     manifest: (ClientManifest | None), module_path: Path
 ) -> ProcessedImports {
     import_pieces: list[str] = [];
-    bundled_module_names: set[str] = <>set();
+    bundled_module_names: set[str] = set();
     if (manifest and manifest.imports) {
         for (import_name, import_path) in manifest.imports.items() {
             import_path_obj = Path(import_path);
@@ -99,7 +101,7 @@ impl ClientBundleBuilder._process_imports(
             } elif (import_path_obj.suffix == '.jac') {
                 try {
                     (compiled_js, imported_mod) = self._compile_to_js(import_path_obj);
-                    transitive_imports: set[str] = <>set();
+                    transitive_imports: set[str] = set();
                     if (imported_mod and imported_mod.gen.client_manifest) {
                         for (sub_import_name, sub_import_path) in imported_mod.gen.client_manifest.imports.items() {
                             bundled_module_names.add(sub_import_name);
@@ -152,7 +154,7 @@ Sorted list of client export names
 impl ClientBundleBuilder._extract_client_exports(
     manifest: (ClientManifest | None)
 ) -> list[str] {
-    return sorted(<>dict.fromkeys(manifest.exports)) if manifest else [];
+    return sorted(dict.fromkeys(manifest.exports)) if manifest else [];
 }
 
 """Extract client globals from manifest and module.
@@ -190,9 +192,7 @@ impl ClientBundleBuilder._compile_bundle(
     # First compile to ensure module is in hub and get JS code + manifest
     (module_js, compiled_mod) = self._compile_to_js(module_path);
     manifest = compiled_mod.gen.client_manifest if compiled_mod else None;
-    (import_pieces, bundled_module_names) = self._process_imports(
-        manifest, module_path
-    );
+    (import_pieces, bundled_module_names) = self._process_imports(manifest, module_path);
     module_js = self._strip_import_statements(module_js, bundled_module_names);
     client_exports = self._extract_client_exports(manifest);
     client_globals_map = self._extract_client_globals(manifest, module);
@@ -216,7 +216,7 @@ impl ClientBundleBuilder._compile_bundle(
         module_name=module.__name__,
         code=bundle_code,
         client_functions=client_exports,
-        client_globals=<>list(client_globals_map.keys()),
+        client_globals=list(client_globals_map.keys()),
         hash=bundle_hash
     );
 }
@@ -308,9 +308,9 @@ impl ClientBundleBuilder._generate_registration_js(
         globals_entries.append(f"{identifier}: {value_literal}");
     }
     globals_literal = '{ ' + ', '.join(globals_entries) + ' }'
-    if globals_entries
-    else '{}';
-    functions_literal = json.dumps(<>list(client_functions));
+        if globals_entries
+        else '{}';
+    functions_literal = json.dumps(list(client_functions));
     module_literal = json.dumps(module_name);
     return f"__jacRegisterClientModule({module_literal}, {functions_literal}, {globals_literal});";
 }

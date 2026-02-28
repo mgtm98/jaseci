@@ -2,11 +2,11 @@
 cl import from .styles { default as styles }
 
 cl {
-    def:pub app -> any {
+    def:pub app -> JsxElement {
         has count: int = 0;
 
         can with count entry {
-            console.log("Count changed: ", count);
+            print("Count changed: ", count);
         }
 
         handleIncrement = lambda e: any  -> None { count = count + 1;};
@@ -16,10 +16,12 @@ cl {
         handleReset = lambda e: any  -> None { count = 0;};
 
         countStyle = styles.countDisplayZero
-        if count == 0
-        else (
-            styles.countDisplayPositive if count > 0 else styles.countDisplayNegative
-        );
+            if count == 0
+            else (
+                styles.countDisplayPositive
+                    if count > 0
+                    else styles.countDisplayNegative
+            );
 
         return
             <div style={styles.container}>
@@ -38,10 +40,7 @@ cl {
                     </div>
                     <div style={styles.divider}></div>
                     <div style={styles.buttonGroup}>
-                        <button
-                            style={styles.buttonDecrement}
-                            onClick={handleDecrement}
-                        >
+                        <button style={styles.buttonDecrement} onClick={handleDecrement}>
                             -
                         </button>
                         <button style={styles.buttonReset} onClick={handleReset}>

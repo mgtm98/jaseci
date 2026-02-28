@@ -20,11 +20,11 @@ impl NaIRGenPass._register_globals(module: uni.Module) -> None {
 }
 
 """Codegen global variable declarations."""
-impl NaIRGenPass._codegen_global_vars(node: uni.GlobalVars) -> None {
-    for assign in node.assignments {
+impl NaIRGenPass._codegen_global_vars(nd: uni.GlobalVars) -> None {
+    for assign in nd.assignments {
         targets = assign.target
-        if isinstance(assign.target, (<>list, <>tuple))
-        else [(assign.target)];
+            if isinstance(assign.target, (list, tuple))
+            else [(assign.target)];
         for target in targets {
             var_name = self._get_name(target);
             if var_name is None {
@@ -34,6 +34,12 @@ impl NaIRGenPass._codegen_global_vars(node: uni.GlobalVars) -> None {
             var_type: ir.Type = ir.IntType(64);  # Default to i64
             if assign.type_tag and assign.type_tag.tag {
                 var_type = self._resolve_jac_type(assign.type_tag.tag);
+            } elif assign.value is not None {
+                # Infer type from initializer (e.g., glob game = Game())
+                inferred = self._infer_global_init_type(assign.value);
+                if inferred is not None {
+                    var_type = inferred;
+                }
             }
             # Create LLVM global variable
             global_var = ir.GlobalVariable(self.llvm_module, var_type, name=var_name);
@@ -63,30 +69,49 @@ impl NaIRGenPass._codegen_global_vars(node: uni.GlobalVars) -> None {
     }
 }
 
-"""Evaluate a constant expression for global variable initialization."""
-impl NaIRGenPass._codegen_const_expr(
-    node: uni.UniNode, target_type: ir.Type
-) -> (ir.Constant | None) {
-    if isinstance(node, uni.Int) {
-        tok_name = node?.name;
-        if tok_name == Tok.HEX {
-            return ir.Constant(target_type, int(node.value, 16));
-        } elif tok_name == Tok.OCT {
-            return ir.Constant(target_type, int(node.value, 8));
-        } elif tok_name == Tok.BIN {
-            return ir.Constant(target_type, int(node.value, 2));
-        } else {
-            return ir.Constant(target_type, int(node.value));
+"""Infer the LLVM type from an initializer AST node (e.g., Game() → Game*)."""
+impl NaIRGenPass._infer_global_init_type(value_node: uni.UniNode) -> (ir.Type | None) {
+    # FuncCall whose target is a known archetype name → constructor
+    if isinstance(value_node, uni.FuncCall) {
+        call_name = self._get_name(value_node.target);
+        if call_name is not None and call_name in self.struct_types {
+            return self.struct_types[call_name].as_pointer();
         }
     }
-    if isinstance(node, uni.Float) {
-        return ir.Constant(target_type, float(node.value));
+    # AtomTrailer that wraps a function call (e.g., Module.Type())
+    if isinstance(value_node, uni.AtomTrailer) {
+        target_name = self._get_name(value_node.target);
+        if target_name is not None and target_name in self.struct_types {
+            return self.struct_types[target_name].as_pointer();
+        }
     }
-    if isinstance(node, uni.Bool) {
-        val = 1 if node.value.lower() in ("true", "1") else 0;
+    return None;
+}
+
+"""Evaluate a constant expression for global variable initialization."""
+impl NaIRGenPass._codegen_const_expr(
+    nd: uni.UniNode, target_type: ir.Type
+) -> (ir.Constant | None) {
+    if isinstance(nd, uni.Int) {
+        tok_name = nd?.name;
+        if tok_name == Tok.HEX {
+            return ir.Constant(target_type, int(nd.value, 16));
+        } elif tok_name == Tok.OCT {
+            return ir.Constant(target_type, int(nd.value, 8));
+        } elif tok_name == Tok.BIN {
+            return ir.Constant(target_type, int(nd.value, 2));
+        } else {
+            return ir.Constant(target_type, int(nd.value));
+        }
+    }
+    if isinstance(nd, uni.Float) {
+        return ir.Constant(target_type, float(nd.value));
+    }
+    if isinstance(nd, uni.Bool) {
+        val = 1 if nd.value.lower() in ("true", "1") else 0;
         return ir.Constant(target_type, val);
     }
-    if isinstance(node, uni.String) or isinstance(node, uni.MultiString) {
+    if isinstance(nd, uni.String) or isinstance(nd, uni.MultiString) {
         # String constants - create global string
         return None;  # Complex initialization handled at runtime
 

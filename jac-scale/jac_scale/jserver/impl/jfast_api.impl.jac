@@ -166,9 +166,9 @@ impl JFastApiServer._get_python_type(
         'number': float,
         'bool': bool,
         'boolean': bool,
-        'list': <>list,
-        'dict': <>dict,
-        'object': <>dict
+        'list': `list,
+        'dict': `dict,
+        'object': `dict
     };
     return type_mapping.get(type_string.lower(), str);
 }
@@ -189,7 +189,9 @@ impl QueryParameterHandler.generate_param_string(param: APIParameter) -> str {
     } elif (param.default is None) {
         return f"{param.name}: Optional[{type_name}] = Query(description='{description}')";
     } else {
-        return f"{param.name}: Optional[{type_name}] = Query({repr(param.default)}, description='{description}')";
+        return f"{param.name}: Optional[{type_name}] = Query({repr(
+            param.default
+        )}, description='{description}')";
     }
 }
 
@@ -202,7 +204,9 @@ impl HeaderParameterHandler.generate_param_string(param: APIParameter) -> str {
     } elif (param.default is None) {
         return f"{param.name}: Optional[{type_name}] = Header(default=None, description='{description}')";
     } else {
-        return f"{param.name}: Optional[{type_name}] = Header({repr(param.default)}, description='{description}')";
+        return f"{param.name}: Optional[{type_name}] = Header({repr(
+            param.default
+        )}, description='{description}')";
     }
 }
 
@@ -282,20 +286,31 @@ impl JFastApiServer._create_endpoint_function(
     dependencies: list[Any]
 ) -> Callable[..., Any] {
     sig = inspect.signature(callback);
-    accepts_kwargs = <>any(
+    accepts_kwargs = any(
         (p.kind == inspect.Parameter.VAR_KEYWORD) for p in sig.parameters.values()
     );
+    needs_request_no_params = 'request' in sig.parameters;
     if not parameters {
         if accepts_kwargs {
             if inspect.iscoroutinefunction(callback) {
-                async def async_endpoint_wrapper(request: Request) -> EndpointResponse {
+                async def async_endpoint_wrapper(
+                    __jac_request__: Request
+                ) -> EndpointResponse {
                     import from jaclang.runtimelib.transport { TransportResponse }
                     try {
-                        query_params = <>dict(request.query_params);
-                        result = await callback(**query_params);
+                        query_params = dict(__jac_request__.query_params);
+                        if needs_request_no_params {
+                            result = await callback(
+                                **{'request': __jac_request__, ** query_params}
+                            );
+                        } else {
+                            result = await callback(**query_params);
+                        }
                         # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
                         if isinstance(result, TransportResponse) {
-                            return _convert_transport_response_to_json_response(result);
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
                         }
                         return result;
                     } except Exception as e {
@@ -304,14 +319,22 @@ impl JFastApiServer._create_endpoint_function(
                 }
                 return async_endpoint_wrapper;
             } else {
-                def sync_endpoint_wrapper(request: Request) -> EndpointResponse {
+                def sync_endpoint_wrapper(__jac_request__: Request) -> EndpointResponse {
                     import from jaclang.runtimelib.transport { TransportResponse }
                     try {
-                        query_params = <>dict(request.query_params);
-                        result = callback(**query_params);
+                        query_params = dict(__jac_request__.query_params);
+                        if needs_request_no_params {
+                            result = callback(
+                                **{'request': __jac_request__, ** query_params}
+                            );
+                        } else {
+                            result = callback(**query_params);
+                        }
                         # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
                         if isinstance(result, TransportResponse) {
-                            return _convert_transport_response_to_json_response(result);
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
                         }
                         return result;
                     } except Exception as e {
@@ -321,32 +344,76 @@ impl JFastApiServer._create_endpoint_function(
                 return sync_endpoint_wrapper;
             }
         } elif inspect.iscoroutinefunction(callback) {
-            async def async_endpoint_wrapper__1 -> EndpointResponse {
-                import from jaclang.runtimelib.transport { TransportResponse }
-                try {
-                    result = await callback();
-                    # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
-                    if isinstance(result, TransportResponse) {
-                        return _convert_transport_response_to_json_response(result);
+            if needs_request_no_params {
+                async def async_endpoint_wrapper__1(
+                    __jac_request__: Request
+                ) -> EndpointResponse {
+                    import from jaclang.runtimelib.transport { TransportResponse }
+                    try {
+                        result = await callback(**{'request': __jac_request__});
+                        # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
+                        if isinstance(result, TransportResponse) {
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
+                        }
+                        return result;
+                    } except Exception as e {
+                        raise e from HTTPException(status_code=500, detail=str(e)) ;
                     }
-                    return result;
-                } except Exception as e {
-                    raise e from HTTPException(status_code=500, detail=str(e)) ;
+                }
+            } else {
+                async def async_endpoint_wrapper__1 -> EndpointResponse {
+                    import from jaclang.runtimelib.transport { TransportResponse }
+                    try {
+                        result = await callback();
+                        # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
+                        if isinstance(result, TransportResponse) {
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
+                        }
+                        return result;
+                    } except Exception as e {
+                        raise e from HTTPException(status_code=500, detail=str(e)) ;
+                    }
                 }
             }
             return async_endpoint_wrapper__1;
         } else {
-            def sync_endpoint_wrapper__1 -> EndpointResponse {
-                import from jaclang.runtimelib.transport { TransportResponse }
-                try {
-                    result = callback();
-                    # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
-                    if isinstance(result, TransportResponse) {
-                        return _convert_transport_response_to_json_response(result);
+            if needs_request_no_params {
+                def sync_endpoint_wrapper__1(
+                    __jac_request__: Request
+                ) -> EndpointResponse {
+                    import from jaclang.runtimelib.transport { TransportResponse }
+                    try {
+                        result = callback(**{'request': __jac_request__});
+                        # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
+                        if isinstance(result, TransportResponse) {
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
+                        }
+                        return result;
+                    } except Exception as e {
+                        raise e from HTTPException(status_code=500, detail=str(e)) ;
                     }
-                    return result;
-                } except Exception as e {
-                    raise e from HTTPException(status_code=500, detail=str(e)) ;
+                }
+            } else {
+                def sync_endpoint_wrapper__1 -> EndpointResponse {
+                    import from jaclang.runtimelib.transport { TransportResponse }
+                    try {
+                        result = callback();
+                        # Automatically convert TransportResponse to JSONResponse (like HTTPTransport.send)
+                        if isinstance(result, TransportResponse) {
+                            return _convert_transport_response_to_json_response(
+                                result
+                            );
+                        }
+                        return result;
+                    } except Exception as e {
+                        raise e from HTTPException(status_code=500, detail=str(e)) ;
+                    }
                 }
             }
             return sync_endpoint_wrapper__1;
@@ -377,15 +444,15 @@ impl JFastApiServer._create_endpoint_function(
     param_mapping: dict[(str, str)] = {};
     needs_request = 'request' in sig.parameters;
     if accepts_kwargs {
-        param_strs.append('request: Request');
-        param_mapping['__request__'] = 'request';
+        param_strs.append('__jac_request__: Request');
+        param_mapping['__request__'] = '__jac_request__';
         # If the callback also explicitly accepts a request parameter, map it
         if needs_request {
-            param_mapping['request'] = 'request';
+            param_mapping['request'] = '__jac_request__';
         }
     } elif needs_request {
-        param_strs.append('request: Request');
-        param_mapping['request'] = 'request';
+        param_strs.append('__jac_request__: Request');
+        param_mapping['request'] = '__jac_request__';
     }
     # Create handler map
     has_file_params = len(file_params) > 0;
@@ -452,12 +519,14 @@ impl JFastApiServer._create_endpoint_function(
         }
         for name in param_mapping {
             if (name not in ('body_data', '__request__')) {
-                callback_args_lines.append(f"        callback_args['{name}'] = {name}");
+                callback_args_lines.append(
+                    f"        callback_args['{name}'] = {param_mapping[name]}"
+                );
             }
         }
     } else {
         callback_args_lines = [
-            f"        callback_args['{name}'] = {name}"
+            f"        callback_args['{name}'] = {param_mapping[name]}"
             for name in param_mapping
             if (name != '__request__')
         ];
@@ -474,7 +543,7 @@ impl JFastApiServer._create_endpoint_function(
         extra_query_params_code = f"""
         # Extract additional query parameters not explicitly declared
         declared_params = set({declared_params_str})
-        for key, value in request.query_params.items():
+        for key, value in __jac_request__.query_params.items():
             if key not in declared_params:
                 callback_args[key] = value
 """;
@@ -522,15 +591,15 @@ def endpoint_wrapper({params}):
         'Optional': Optional,
         'Field': Field,
         'create_model': create_model,
-        'Dict': <>dict,
-        'List': <>list,
+        'Dict': `dict,
+        'List': `list,
         'Any': Any,
         'int': int,
         'str': str,
         'float': float,
         'bool': bool,
-        'list': <>list,
-        'dict': <>dict,
+        'list': `list,
+        'dict': `dict,
         'TransportResponse': TransportResponse,
         '_convert_transport_response_to_json_response': _convert_transport_response_to_json_response,
         'isinstance': isinstance
@@ -574,8 +643,8 @@ impl JFastApiServer._create_fastapi_route(
         'summary': (endpoint.summary or f"{method.value} {endpoint.path}"),
         'description': (
             endpoint.description or endpoint.callback.__doc__
-            if endpoint.callback.__doc__
-            else ''
+                if endpoint.callback.__doc__
+                else ''
         ),
         'tags': (endpoint.tags or [])
     };
@@ -584,7 +653,7 @@ impl JFastApiServer._create_fastapi_route(
         return_type = hints.get('return');
         if (
             return_type
-            and isinstance(return_type, <>type)
+            and isinstance(return_type, type)
             and issubclass(return_type, Response)
         ) {
             route_kwargs['response_class'] = return_type;
@@ -692,7 +761,9 @@ endpoint (JEndPoint): The PUT endpoint to execute
 Returns:
 JFastApiServer: Self for method chaining
 """
-impl JFastApiServer._put(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
+impl JFastApiServer._put(
+    self: JFastApiServer, endpoint: JEndPoint
+) -> 'JFastApiServer' {
     self._create_fastapi_route(HTTPMethod.PUT, endpoint);
     return self;
 }
@@ -718,7 +789,9 @@ endpoint (JEndPoint): The GET endpoint to execute
 Returns:
 JFastApiServer: Self for method chaining
 """
-impl JFastApiServer._get(self: JFastApiServer, endpoint: JEndPoint) -> 'JFastApiServer' {
+impl JFastApiServer._get(
+    self: JFastApiServer, endpoint: JEndPoint
+) -> 'JFastApiServer' {
     self._create_fastapi_route(HTTPMethod.GET, endpoint);
     return self;
 }

@@ -2,11 +2,11 @@
 cl import ".global.css";
 
 cl {
-    def:pub app -> any {
+    def:pub app -> JsxElement {
         has count: int = 0;
 
         can with count entry {
-            console.log("Count changed: ", count);
+            print("Count changed: ", count);
         }
 
         handleIncrement = lambda e: any  -> None { count = count + 1;};
@@ -16,8 +16,8 @@ cl {
         handleReset = lambda e: any  -> None { count = 0;};
 
         countColorClass = "text-gray-800"
-        if count == 0
-        else ("text-green-600" if count > 0 else "text-red-600");
+            if count == 0
+            else ("text-green-600" if count > 0 else "text-red-600");
 
         return
             <div

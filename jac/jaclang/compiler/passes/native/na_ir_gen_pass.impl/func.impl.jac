@@ -18,15 +18,15 @@ impl NaIRGenPass._forward_declare_functions(module: uni.Module) -> None {
 }
 
 """Forward-declare a single ability if it's a function."""
-impl NaIRGenPass._maybe_declare_ability(node: uni.ElementStmt) -> None {
-    if not isinstance(node, uni.Ability) {
+impl NaIRGenPass._maybe_declare_ability(nd: uni.ElementStmt) -> None {
+    if not isinstance(nd, uni.Ability) {
         return;
     }
-    if node.signature is None or not isinstance(node.signature, uni.FuncSignature) {
+    if nd.signature is None or not isinstance(nd.signature, uni.FuncSignature) {
         return;
     }
-    name = node.name_ref.sym_name if node.name_ref else "unnamed";
-    sig = node.signature;
+    name = nd.name_ref.sym_name if nd.name_ref else "unnamed";
+    sig = nd.signature;
     # Build parameter types
     param_types: list[ir.Type] = [];
     for p in sig.get_parameters() {
@@ -46,15 +46,54 @@ impl NaIRGenPass._maybe_declare_ability(node: uni.ElementStmt) -> None {
         func.args[i].name = p.name.value if p.name else f"arg{i}";
     }
     self.func_symtab[name] = func;
+    # Store AST signature for return type propagation in for-loops
+    self.method_ast_sigs[name] = sig;
+    self.has_native_code = True;
+}
+
+"""Forward-declare a C library extern function with value types for clib structs."""
+impl NaIRGenPass._declare_clib_ability(nd: uni.Ability) -> None {
+    if not isinstance(nd, uni.Ability) {
+        return;
+    }
+    if nd.signature is None or not isinstance(nd.signature, uni.FuncSignature) {
+        return;
+    }
+    name = nd.name_ref.sym_name if nd.name_ref else "unnamed";
+    sig = nd.signature;
+    # Build parameter types -- value types for clib structs
+    param_types: list[ir.Type] = [];
+    for p in sig.get_parameters() {
+        if p.type_tag and p.type_tag.tag {
+            param_types.append(self._resolve_clib_type(p.type_tag.tag));
+        } else {
+            param_types.append(ir.IntType(64));
+        }
+    }
+    # Return type -- value type for clib structs
+    ret_type = self._resolve_clib_type(sig.return_type);
+    # Create function
+    fnty = ir.FunctionType(ret_type, param_types);
+    func = ir.Function(self.llvm_module, fnty, name=name);
+    # Name the parameters
+    for (i, p) in enumerate(sig.get_parameters()) {
+        func.args[i].name = p.name.value if p.name else f"arg{i}";
+    }
+    self.func_symtab[name] = func;
     self.has_native_code = True;
 }
 
 # ─── Ability (Function Definition) — Manual Codegen ──────────
 """Generate LLVM IR for a complete function definition."""
-impl NaIRGenPass._codegen_ability(<>node: uni.Ability) -> None {
-    name = (<>node).name_ref.sym_name if (<>node).name_ref else "unnamed";
+impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
+    name = (nd).name_ref.sym_name if (nd).name_ref else "unnamed";
     func = self.func_symtab.get(name);
     if func is None {
+        return;
+    }
+    # C library externs: keep as LLVM 'declare' (no body).
+    # MCJIT resolves them from loaded shared libraries.
+    if name in self.clib_extern_names {
         return;
     }
     # Create entry block
@@ -64,7 +103,7 @@ impl NaIRGenPass._codegen_ability(<>node: uni.Ability) -> None {
     self.var_dict_type = {};
     self.var_set_elem_type = {};
     # Store parameters as local variables (alloca + store pattern)
-    sig = (<>node).signature;
+    sig = (nd).signature;
     for (i, p) in enumerate(sig.get_parameters()) {
         param_name = p.name.value if p.name else f"arg{i}";
         arg_val = func.args[i];
@@ -94,9 +133,12 @@ impl NaIRGenPass._codegen_ability(<>node: uni.Ability) -> None {
             }
         }
     }
-    # Generate body via manual tree-walking
-    if isinstance((<>node).body, (<>list, <>tuple)) {
-        self._codegen_body((<>node).body);
+    # Generate body via manual tree-walking (handle ImplDef wrapper from DeclImplMatchPass)
+    body = (nd).body;
+    if isinstance(body, (list, tuple)) {
+        self._codegen_body(body);
+    } elif body is not None and body?.body and isinstance(body.body, (list, tuple)) {
+        self._codegen_body(body.body);
     }
     # Ensure function has a terminator
     if not self.builder.block.is_terminated {
@@ -109,13 +151,13 @@ impl NaIRGenPass._codegen_ability(<>node: uni.Ability) -> None {
             self.builder.ret(ir.Constant(ret_type, 0));
         }
     }
-    (<>node).gen.llvm_ir = func;
+    (nd).gen.llvm_ir = func;
     self.builder = None;
 }
 
 # ─── Body / Statement Codegen ─────────────────────────────────
 """Generate jac_entry() function for with entry { ... } blocks."""
-impl NaIRGenPass._codegen_entry(<>node: uni.ModuleCode) -> None {
+impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
     i64 = ir.IntType(64);
     # Create jac_entry function: void jac_entry()
     fnty = ir.FunctionType(ir.VoidType(), []);
@@ -144,11 +186,16 @@ impl NaIRGenPass._codegen_entry(<>node: uni.ModuleCode) -> None {
         }
     }
     # Generate body statements
-    if (<>node).body {
-        self._codegen_body((<>node).body);
+    if (nd).body {
+        self._codegen_body((nd).body);
     }
-    # Ensure function has a terminator
+    # Flush all stdio buffers before returning to caller
     if not self.builder.block.is_terminated {
+        i32 = ir.IntType(32);
+        i8p = ir.IntType(8).as_pointer();
+        fflush_fn = self._get_or_declare_extern("fflush", i32, [i8p]);
+        null_ptr = ir.Constant(i8p, None);
+        self.builder.call(fflush_fn, [null_ptr]);
         self.builder.ret_void();
     }
     self.has_native_code = True;

@@ -12,7 +12,7 @@ glob _runtime_initialized = False;
 def _ensure_jac_runtime -> None {
     global _runtime_initialized;
     if not _runtime_initialized {
-        import from jaclang.pycore.runtime { JacRuntime as Jac }
+        import from jaclang.jac0core.runtime { JacRuntime as Jac }
         Jac.setup();
         _runtime_initialized = True;
     }
@@ -20,7 +20,7 @@ def _ensure_jac_runtime -> None {
 
 """Create JacRuntime and return the base path, module name, and runtime state."""
 def _proc_file(filename: str) -> tuple {
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     (base, mod) = os.path.split(filename);
     base = base or './';
     if filename.endswith('.jac') {
@@ -29,7 +29,7 @@ def _proc_file(filename: str) -> tuple {
         mod = mod[:-3];
     } else {
         console.error('Not a valid file!\nOnly supports `.jac` and `.py`');
-        <>exit(1);
+        `exit(1);
     }
     # Only set base path if not already set (allows tests to override)
     if not Jac.base_path_dir {
@@ -75,7 +75,7 @@ impl dot(
     format: str = "dot"
 ) -> int {
     _ensure_jac_runtime();
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     import from jaclang.runtimelib.builtin { printgraph }
     (base, mod, jac_machine) = _proc_file(filename);
     if filename.endswith('.jac') {
@@ -83,9 +83,9 @@ impl dot(
         module = Jac.loaded_modules.get('__main__');
         mod_ns = vars(module) if module else {};
         try {
-            <>node = mod_ns.get(initial, eval(initial, mod_ns)) if initial else None;
+            nd = mod_ns.get(initial, eval(initial, mod_ns)) if initial else None;
             graph = printgraph(
-                <>node=<>node,
+                nd=nd,
                 depth=depth,
                 traverse=traverse,
                 edge_type=connection,
@@ -238,8 +238,8 @@ def _install_completion(shell: str, code: str) -> int {
         action = "Updated";
     } else {
         content = content.rstrip() + "\n\n" + new_block
-        if content.strip()
-        else new_block;
+            if content.strip()
+            else new_block;
         action = "Added";
     }
     try {

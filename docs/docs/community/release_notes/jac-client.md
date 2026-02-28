@@ -2,15 +2,68 @@
 
 This document provides a summary of new features, improvements, and bug fixes in each version of **Jac-Client**. For details on changes that might require updates to your existing code, please refer to the [Breaking Changes](../breaking-changes.md) page.
 
-## jac-client 0.2.16 (Unreleased)
+## jac-client 0.3.3 (Unreleased)
 
+## jac-client 0.3.2 (Latest Release)
+
+- **Chore: Codebase Reformatted**: All `.jac` files reformatted with improved `jac format` (better line-breaking, comment spacing, and ternary indentation).
+- 1 small refactor/change
+
+## jac-client 0.3.1
+
+- **Admin Portal UI Components**: Added reusable UI components for the jac-scale admin portal including buttons, modals, inputs, tables, and layout components built with jac-client.
+- **Custom Import Path Aliases via jac.toml**: Added support for configuring import path aliases in `[plugins.client.paths]`. Define aliases like `"@components/*" = "./components/*"` and they are automatically applied to the generated Vite `resolve.alias` and TypeScript `compilerOptions.paths` in tsconfig.json.
+- **NPM Scoped Registry & Auth Support via jac.toml**: Added support for configuring custom npm registries and authentication tokens directly in `jac.toml` under `[plugins.client.npm]`.
+
+## jac-client 0.3.0
+
+- **Idiomatic Comprehensions in Examples**: Replaced all `.map(lambda ...)` / `.filter(lambda ...)` calls with list comprehensions across all example apps (basic-full-stack, full-stack-with-auth, all-in-one, early-exit).
+- **Automatic Endpoint Caching**: The client runtime now automatically caches responses from reader endpoints (walkers and server functions) and invalidates caches when writer endpoints are called, using compiler-provided `endpoint_effects` metadata. Includes an LRU cache (500 entries, 60s TTL), request deduplication for concurrent identical calls, and automatic cache clearing on auth state changes. No manual `jacInvalidate()` or cache annotations needed.
+- **HMR Server-Side Reloading Refactor**: Improved HMR functionality with better handling of `.impl.jac` files and optimized caching to avoid unnecessary recompilations during development
+
+- 3 minor refactor/change.
+
+## jac-client 0.2.19
+
+- **Debug Mode Enabled by Default**: Debug mode is now `true` by default for a better development experience. Raw error output is displayed automatically without needing to configure `debug = true` in `jac.toml`. To disable, set `debug = false` in the `[plugins.client]` section. A warning is shown when running `jac start` in production mode (without `--dev`) with debug enabled, recommending to disable it for production deployments.
+
+- **Update client documetnation and enhance all in one example sith advance routings**
+- **Target System Refactoring**: Refactored the client target system for improved scalability and maintainability. Introduced `TargetFactory` singleton with lazy loading for non-web targets (Desktop, PWA), reducing startup overhead when only the default web target is used. Resolved circular import issues by deferring imports to function scope. Extracted magic numbers to named constants (`VITE_DEV_SERVER_PORT`, `DEFAULT_FUNCTION_NAME`) and decomposed `_generate_index_html` into focused helper functions. Added robust process termination with graceful shutdown fallback and safe attribute access chains for module introspection.
+- Internal: updated all-in-one jac.toml to enable metrics endpoint
+
+## jac-client 0.2.18
+
+- 2 Minor internal refactors
+- **Standardize Jac idioms in examples and runtime**: Replaced JS-style method calls with Jac-idiomatic equivalents across all examples, test fixtures, and the client runtime plugin (`.trim()` → `.strip()`, `.push()` → `.append()`, `.length` → `len()`, `.toUpperCase()/.toLowerCase()` → `.upper()/.lower()`, `console.log()` → `print()`, etc.). These are now translated to the correct JS equivalents at compile time via the primitive emitter infrastructure.
+
+## jac-client 0.2.17
+
+- **Structured Build Error Diagnostics**: Build errors now display formatted diagnostic output with error codes (JAC_CLIENT_XXX), source code snippets pointing to the error location, actionable hints, and quick fix commands. The diagnostic engine maps Vite/npm errors back to original `.jac` files, hiding internal JavaScript paths from developers. Detectors identify common issues: missing npm dependencies (JAC_CLIENT_001), syntax errors (JAC_CLIENT_003), and unresolved imports (JAC_CLIENT_004). Enable `debug = true` under `[plugins.client]` in `jac.toml` or set `JAC_DEBUG=1` to see raw error output alongside formatted diagnostics.
+
+- **Google OAuth Example**: Added a complete `google-auth` example demonstrating Google OAuth authentication with jac-scale's SSO support. Includes authentication provider, protected routes, login/callback pages, and comprehensive README with setup instructions for Google Cloud Console, environment variables, and frontend implementation patterns.
+- Various refactors
+- **Improved `jac start` Output Ordering**: Fixed misleading output timing where "Server ready" and localhost URLs appeared before compilation completed. The Vite dev server now captures its initial output and waits for the ready signal before displaying status messages, ensuring users see compilation progress first and server URLs only when the server is actually ready to accept connections.
+- **PWA Target Support**: Added a new `pwa` target for creating Progressive Web Apps. Run `jac setup pwa` to configure your project with PWA support-this copies default icons to `pwa_icons/` and adds the `[plugins.client.pwa]` config section to `jac.toml`. Then use `jac build --client pwa` to build or `jac start --client pwa` to build and serve. The build generates a web bundle with `manifest.json`, a service worker (`sw.js`) for offline caching, and automatic HTML injection. The service worker implements cache-first for static assets and network-first for API calls (`/api/*`). Configure `theme_color`, `background_color`, `cache_name`, and custom `manifest` overrides in `[plugins.client.pwa]`.
+- **Code refactors**: Backtick escape, etc.
+- **Environment Variable Support**: Fixed `.env` file loading by configuring Vite's `envDir` to point to the project root instead of the build directory. Variables prefixed with `VITE_` in `.env` files are now properly loaded and available via `import.meta.env` in client code. Added `.env.example` template to the all-in-one example demonstrating standard environment variable patterns.
+- **Build-time Constants via jac.toml**: Added support for custom build-time constants through the `[plugins.client.vite.define]` configuration section. Define global variables that are replaced at build time, useful for feature flags, build timestamps, or configuration values. Example: `"globalThis.FEATURE_ENABLED" = true` in `jac.toml` makes `globalThis.FEATURE_ENABLED` available in client code. String values are automatically JSON-escaped to handle special characters safely.
+- Updated all-in-one example `jac.toml` to include `[plugins.scale.secrets]` test config.
+- **Improved API Error Handling**: Walker and function API calls now check `response.ok` and throw descriptive exceptions on HTTP errors. The `Authorization` header is only sent when a token is present, avoiding empty `Bearer` headers.
+- **Better Error Diagnostics**: Silent `except Exception {}` blocks in `jacLogin` and `__jacCallFunction` now log warnings via `console.warn` for easier debugging.
+
+## jac-client 0.2.16
+
+ **Fix: ESM Script Loading**: Added `type="module"` to generated `<script>` tags in the client HTML output. The Vite bundler already produces ES module output, but the script tags were missing the module attribute, causing browsers to reject ESM syntax (e.g., `import`/`export`) from newer npm packages. Affects both the server-rendered page and the `jac build --target web` static output.
+
+- **KWESC_NAME syntax changed from `<>` to backtick**: Updated keyword-escaped names from `<>` prefix to backtick prefix to match the jaclang grammar change.
 - **Update syntax for TYPE_OP removal**: Replaced backtick type operator syntax (`` `root ``) with `Root` and filter syntax (`` (`?Type) ``) with `(?:Type)` across all examples, docs, tests, and templates.
 - **Support custom Vite Configurations to `dev` mode**: Added support for custom Vite configuration from `jac.toml`.
 - **Watchdog auto-install test**: Added test coverage for automatic watchdog installation in dev mode.
+- **Updated tests for CLI dependency command redesign**: New `jac add` behavior (errors on missing `jac.toml` instead of silently succeeding). Verify `jac add --npm` works in projects with both pypi and npm dependencies.
 
-## jac-client 0.2.14 (Latest Release)
+## jac-client 0.2.14
 
-## jac-client 0.2.15 (Latest Release)
+## jac-client 0.2.15
 
 ## jac-client 0.2.14
 

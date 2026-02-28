@@ -33,7 +33,9 @@ obj HotReloader {
     def stop -> None;
 
     """Callback for file change events from the watcher."""
-    def on_file_change(event: Any) -> None;  # FileChangeEvent - using Any to avoid circular import
+    def on_file_change(
+        event: Any
+    ) -> None;  # FileChangeEvent - using Any to avoid circular import
 
 
     """Process a file change by classifying declarations and taking action."""
@@ -59,9 +61,6 @@ obj HotReloader {
 
     """Copy frontend files to compiled directory."""
     def _copy_frontend_files(file_path: str) -> None;
-
-    """Create export statement for recompiled JS code."""
-    def _create_export_statement(js_code: str, client_manifest: Any) -> str;
 
     """Update the entry point to reflect changes in modules."""
     def _update_entry_point -> None;

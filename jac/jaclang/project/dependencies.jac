@@ -35,7 +35,9 @@ obj DependencyInstaller {
     def install_package(specs: list[str]) -> bool;
     def uninstall_package(name: str) -> bool;
     def is_installed(name: str) -> bool;
+    def get_installed_version(name: str) -> str | None;
     def list_installed -> list[str];
+    def get_installed_version(name: str) -> str | None;
 }
 
 """Resolves dependencies and their transitive dependencies."""

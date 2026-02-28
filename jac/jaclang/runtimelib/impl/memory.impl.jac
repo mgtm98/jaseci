@@ -11,7 +11,7 @@ import from pickle { dumps, loads }
 import from typing { cast }
 import from uuid { UUID }
 
-import from jaclang.pycore.archetype { Anchor, NodeAnchor, Root }
+import from jaclang.jac0core.archetype { Anchor, NodeAnchor, Root }
 
 glob logger = logging.getLogger(__name__);
 
@@ -53,7 +53,7 @@ impl VolatileMemory.close -> None {
 }
 
 """Check if an anchor is in memory."""
-impl VolatileMemory.has(id: UUID) -> bool {
+impl VolatileMemory.`has(id: UUID) -> bool {
     return id in self.__mem__;
 }
 
@@ -226,9 +226,21 @@ impl SqliteMemory.get(id: UUID) -> (Anchor | None) {
     return None;
 }
 
-"""Store an anchor. Writes to memory immediately, database on sync."""
+"""Store an anchor. Writes to memory and immediately persists to database."""
 impl SqliteMemory.put(anchor: Anchor) -> None {
     self.__mem__[anchor.id] = anchor;
+    if anchor.persistent {
+        self._ensure_connection();
+        try {
+            self.__conn__.execute(
+                "INSERT OR REPLACE INTO anchors (id, data) VALUES (?, ?)",
+                (str(anchor.id), dumps(anchor))
+            );
+            self.__conn__.commit();
+        } except Exception as e {
+            logger.warning(f"SqliteMemory.put immediate persist failed: {e}");
+        }
+    }
 }
 
 """Delete an anchor and track for garbage collection (only if persistent)."""
@@ -257,7 +269,7 @@ impl SqliteMemory.close -> None {
 }
 
 """Check if an anchor is in memory or database."""
-impl SqliteMemory.has(id: UUID) -> bool {
+impl SqliteMemory.`has(id: UUID) -> bool {
     if id in self.__mem__ {
         return True;
     }
@@ -345,6 +357,10 @@ impl SqliteMemory.sync -> None {
         if not anchor.persistent {
             continue;
         }
+        # Skip stubs - only sync fully populated anchors
+        if not anchor.is_populated() {
+            continue;
+        }
 
         key = str(id);
         try {
@@ -354,7 +370,8 @@ impl SqliteMemory.sync -> None {
             row = cursor.fetchone();
             stored = loads(row[0]) if row else None;
 
-            if stored {
+            if stored and stored.is_populated() {
+                changed = False;
                 # Handle edge updates (CONNECT access)
                 if (
                     isinstance(stored, NodeAnchor)
@@ -369,27 +386,40 @@ impl SqliteMemory.sync -> None {
                         continue;
                     }
                     stored.edges = anchor.edges;
+                    changed = True;
                 }
                 # Handle access/archetype updates (WRITE access)
-                if Jac.check_write_access(anchor) {
-                    if hash(dumps(stored.access)) != hash(dumps(anchor.access)) {
+                access_changed = hash(dumps(stored.access)) != hash(
+                    dumps(anchor.access)
+                );
+                archetype_changed = hash(dumps(stored.archetype)) != hash(
+                    dumps(anchor.archetype)
+                );
+                if (access_changed or archetype_changed)
+                and Jac.check_write_access(anchor) {
+                    if access_changed {
                         stored.access = anchor.access;
                     }
-                    if hash(dumps(stored.archetype)) != hash(dumps(anchor.archetype)) {
+                    if archetype_changed {
                         stored.archetype = anchor.archetype;
                     }
+                    changed = True;
                 }
-                self.__conn__.execute(
-                    "INSERT OR REPLACE INTO anchors (id, data) VALUES (?, ?)",
-                    (key, dumps(stored))
-                );
-            } elif not (
-                isinstance(anchor, NodeAnchor)
-                and not isinstance(anchor.archetype, Root)
-                and not anchor.edges
-            ) {
-                # New anchor - check write access before persisting
-                if Jac.check_write_access(anchor) {
+                # Only write to database if something actually changed
+                if changed {
+                    self.__conn__.execute(
+                        "INSERT OR REPLACE INTO anchors (id, data) VALUES (?, ?)",
+                        (key, dumps(stored))
+                    );
+                }
+            } else {
+                # No stored or stored is a stub - save anchor if valid
+                if not (
+                    isinstance(anchor, NodeAnchor)
+                    and not isinstance(anchor.archetype, Root)
+                    and not anchor.edges
+                )
+                and Jac.check_write_access(anchor) {
                     self.__conn__.execute(
                         "INSERT OR REPLACE INTO anchors (id, data) VALUES (?, ?)",
                         (key, dumps(anchor))
@@ -531,7 +561,7 @@ impl TieredMemory.close -> None {
 }
 
 """Check if anchor exists in any tier."""
-impl TieredMemory.has(id: UUID) -> bool {
+impl TieredMemory.`has(id: UUID) -> bool {
     # Check L1 first
     if id in self.__mem__ {
         return True;
@@ -541,7 +571,7 @@ impl TieredMemory.has(id: UUID) -> bool {
         return True;
     }
     # Check L3 persistence
-    if self.l3 and self.l3.has(id) {
+    if self.l3 and self.l3.`has(id) {
         return True;
     }
     return False;

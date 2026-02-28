@@ -1,6 +1,7 @@
 import os;
 import pathlib;
 import from jaclang.cli.console { console }
+import from kubernetes { client }
 
 impl parse_cpu_quantity(quantity: str) -> float {
     trimmed = quantity.strip();
@@ -104,9 +105,24 @@ impl sync_code_to_pvc(
     pod_body = {
         'apiVersion': 'v1',
         'kind': 'Pod',
-        'metadata': {'name': sync_pod_name},
+        'metadata': {'name': sync_pod_name, 'labels': {'managed': 'jac-scale'}},
         'spec': {
             'restartPolicy': 'Never',
+            'affinity': {
+                'podAffinity': {
+                    'preferredDuringSchedulingIgnoredDuringExecution': [
+                        {
+                            'weight': 100,
+                            'podAffinityTerm': {
+                                'labelSelector': {
+                                    'matchLabels': {'app': f"{app_name}-code-server"}
+                                },
+                                'topologyKey': 'kubernetes.io/hostname'
+                            }
+                        }
+                    ]
+                }
+            },
             'containers': [
                 {
                     'name': 'sync',
@@ -304,7 +320,7 @@ impl ensure_pvc_exists(
     pvc_body: dict[(str, Any)] = {
         'apiVersion': 'v1',
         'kind': 'PersistentVolumeClaim',
-        'metadata': {'name': pvc_name},
+        'metadata': {'name': pvc_name, 'labels': {'managed': 'jac-scale'}},
         'spec': {
             'accessModes': [access_mode],
             'resources': {'requests': {'storage': storage_size}}
@@ -322,25 +338,82 @@ Detect if the current connected cluster is AWS or local.
     Returns:
         'aws' for AWS EKS clusters, 'local' for local/other clusters.
 """
+impl check_node_ports_available(
+    node_port: int,
+    prometheus_node_port: int | None,
+    grafana_node_port: int | None,
+    current_namespace: str
+) -> None {
+    """Check that the requested NodePorts are not already bound by services
+    in other namespaces.
+
+    NodePorts are cluster-scoped, so two services in different namespaces
+    cannot share the same NodePort value.  Services inside current_namespace
+    are excluded because they will be replaced by this deployment.
+    Raises ValueError listing every conflicting port and the service that owns it.
+    """
+    v1 = client.CoreV1Api();
+    all_services = v1.list_service_for_all_namespaces();
+    # Build a map: port_number -> "namespace/service-name"
+    # Only include services from OTHER namespaces.
+    used_ports: dict[int, str] = {};
+    for svc in all_services.items {
+        if svc.metadata.namespace == current_namespace {
+            continue;
+        }
+        svc_id = f"{svc.metadata.namespace}/{svc.metadata.name}";
+        for port_obj in (svc.spec.ports or []) {
+            if port_obj.node_port is not None {
+                used_ports[port_obj.node_port] = svc_id;
+            }
+        }
+    }
+    requested: dict[str, int] = {'node_port': node_port};
+    if prometheus_node_port is not None {
+        requested['prometheus_node_port'] = prometheus_node_port;
+    }
+    if grafana_node_port is not None {
+        requested['grafana_node_port'] = grafana_node_port;
+    }
+    conflicts: list[str] = [];
+    for (param_name, port_val) in requested.items() {
+        if port_val in used_ports {
+            conflicts.append(
+                f"  {param_name}={port_val} is already in use by '{used_ports[
+                    port_val
+                ]}'"
+            );
+        }
+    }
+    if conflicts {
+        conflict_lines = '\n'.join(conflicts);
+        raise ValueError(
+            f"NodePort conflict detected on local cluster.\n"
+            f"The following requested ports are already bound:\n{conflict_lines}\n"
+            f"Please choose different port values in your KubernetesConfig "
+            f"(node_port, prometheus_node_port, grafana_node_port) and try again."
+        ) ;
+    }
+}
+
 impl cluster_type -> str {
     try {
-        import from kubernetes { client }
         v1 = client.CoreV1Api();
         nodes = v1.list_node();
         if not nodes.items {
             return 'local';
         }
-        for <>node in nodes.items {
-            provider_id = <>node.spec.provider_id or '';
+        for nd in nodes.items {
+            provider_id = nd.spec.provider_id or '';
             if provider_id.startswith('aws://') {
                 return 'aws';
             }
         }
-        for <>node in nodes.items {
-            labels = <>node.metadata.labels or {};
+        for nd in nodes.items {
+            labels = nd.metadata.labels or {};
             if (
                 ('topology.kubernetes.io/region' in labels)
-                and <>any(
+                and any(
                     (region in labels.get('topology.kubernetes.io/region', ''))
                     for region in ['us-', 'eu-', 'ap-', 'ca-', 'sa-']
                 )
@@ -361,6 +434,35 @@ impl cluster_type -> str {
     }
 }
 
+impl check_pods_restarted(namespace: str, app_name: str) -> bool {
+    try {
+        config.load_kube_config();
+    } except ConfigException {
+        config.load_incluster_config();
+    }
+    v1 = client.CoreV1Api();
+    pods = v1.list_namespaced_pod(
+        namespace=namespace, label_selector="app={}".format(app_name)
+    );
+    for pod in pods.items {
+        statuses = pod.status.container_statuses;
+        if not statuses {
+            continue;
+        }
+
+        for container in statuses {
+            if (container.restart_count > 0) {
+                console.print(
+                    f"Pod {pod.metadata.name} container "
+                    f"{container.name} restarted "
+                );
+                return True;
+            }
+        }
+    }
+    return False;
+}
+
 """
     Wait for a service to become available.
 
@@ -372,8 +474,10 @@ impl check_deployment_status(
     path: str = '/docs',
     interval: int = 15,
     max_retries: int = 30,
-    nlb_url: (str | None) = None
-) -> bool {
+    nlb_url: (str | None) = None,
+    namespace: str = "default",
+    app_name: str = "jaseci"
+) -> tuple[bool, str] {
     if nlb_url {
         url = f"{nlb_url.rstrip('/')}{path}";
     } else {
@@ -383,10 +487,13 @@ impl check_deployment_status(
         try {
             response = requests.get(url, timeout=10);
             if (response.status_code == 200) {
-                console.print(f"Service is available at: {url}");
-                return True;
+                return (True, "Successful");
             }
         } except RequestException as e {
+            if check_pods_restarted(namespace, app_name) {
+                return (False, "Containers restarted");
+            }
+
             if (attempt == max_retries) {
                 console.print(f"Failed to connect to {url}: {e}");
             }
@@ -395,14 +502,18 @@ impl check_deployment_status(
             time.sleep(interval);
         }
     }
-    return False;
+    return (False, "Timeout reached");
 }
 
 """Create or update ConfigMap with binary tar.gz using Kubernetes API."""
 impl create_or_update_configmap(
     namespace: str, configmap_name: str, tar_path: str
 ) -> None {
-    config.load_kube_config();
+    try {
+        config.load_kube_config();
+    } except ConfigException {
+        config.load_incluster_config();
+    }
     v1 = client.CoreV1Api();
     with open(tar_path, 'rb') as f {
         encoded_data = base64.b64encode(f.read()).decode('utf-8');
@@ -426,6 +537,16 @@ impl create_or_update_configmap(
     }
 }
 
+impl exclude_folders(tarinfo: tarfile.TarInfo) -> Optional[tarfile.TarInfo] {
+    if tarinfo.isdir() and tarinfo.name.endswith("/.jac") {
+        return None;
+    }
+    if "/.jac/" in tarinfo.name {
+        return None;
+    }
+    return tarinfo;
+}
+
 """
     Create a tar.gz file from the source directory using only os module.
 """
@@ -435,7 +556,30 @@ impl create_tarball(source_dir: str, tar_path: str) -> None {
     }
     os.makedirs((os.path.dirname(tar_path) or '.'), exist_ok=True);
     with tarfile.open(tar_path, 'w:gz') as tar {
-        tar.add(source_dir, arcname='.');
+        tar.add(source_dir, arcname='.', filter=exclude_folders);
+    }
+}
+
+"""Delete a namespace from the Kubernetes cluster if it exists and is not 'default'."""
+impl delete_namespace(namespace: str) -> None {
+    if (namespace == 'default') {
+        return;
+    }
+    try {
+        try {
+            config.load_kube_config();
+        } except ConfigException {
+            config.load_incluster_config();
+        }
+        core_v1 = client.CoreV1Api();
+        core_v1.delete_namespace(name=namespace);
+        console.print(f"Namespace '{namespace}' deleted successfully.");
+    } except ApiException as e {
+        if (e.status == 404) {
+            console.print(f"Namespace '{namespace}' not found, skipping deletion.");
+        } else {
+            raise ;
+        }
     }
 }
 
@@ -448,7 +592,11 @@ impl ensure_namespace_exists(namespace: str) -> None {
         return;
     }
     try {
-        config.load_kube_config();
+        try {
+            config.load_kube_config();
+        } except ConfigException {
+            config.load_incluster_config();
+        }
         core_v1 = client.CoreV1Api();
         core_v1.read_namespace(name=namespace);
         console.print(f"Namespace '{namespace}' already exists.");
@@ -518,6 +666,54 @@ impl load_env_variables(code_folder: str) -> list {
         }
     }
     return env_list;
+}
+
+"""Create a Kubernetes Secret from resolved secret data. Returns True if created."""
+impl create_k8s_secret(
+    core_v1: client.CoreV1Api,
+    namespace: str,
+    secret_name: str,
+    secret_data: dict[str, str]
+) -> bool {
+    if not secret_data {
+        return False;
+    }
+    secret_body = {
+        'apiVersion': 'v1',
+        'kind': 'Secret',
+        'metadata': {
+            'name': secret_name,
+            'namespace': namespace,
+            'labels': {'managed': 'jac-scale'}
+        },
+        'type': 'Opaque',
+        'stringData': secret_data
+    };
+    try {
+        core_v1.create_namespaced_secret(namespace=namespace, body=secret_body);
+    } except ApiException as e {
+        if e.status == 409 {
+            core_v1.replace_namespaced_secret(
+                name=secret_name, namespace=namespace, body=secret_body
+            );
+        } else {
+            raise ;
+        }
+    }
+    return True;
+}
+
+"""Delete a Kubernetes Secret if it exists."""
+impl delete_k8s_secret(
+    core_v1: client.CoreV1Api, namespace: str, secret_name: str
+) -> None {
+    try {
+        core_v1.delete_namespaced_secret(name=secret_name, namespace=namespace);
+    } except ApiException as e {
+        if e.status != 404 {
+            raise ;
+        }
+    }
 }
 
 """

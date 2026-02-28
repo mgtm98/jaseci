@@ -1,12 +1,13 @@
 [project]
 name = "jac-scale"
-version = "0.1.6"
+version = "0.2.2"
 description = ""
 authors = [{ name = "Jason Mars", email = "jason@mars.ninja" }]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "jaclang>=0.9.15",
+    "rich>=13.0.0",
+    "jaclang>=0.11.2",
     "python-dotenv>=1.2.1,<2.0.0",
     "docker>=7.1.0,<8.0.0",
     "kubernetes>=34.1.0,<35.0.0",
@@ -17,6 +18,7 @@ dependencies = [
     "pyjwt>=2.10.1,<2.11.0",
     "fastapi-sso>=0.18.0,<1.0.0",
     "python-multipart>=0.0.21,<1.0.0",
+    "prometheus-client>=0.21.0,<1.0.0",
 ]
 
 [project.entry-points."jac"]
@@ -28,6 +30,7 @@ include = ["jac_scale*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.jac", "*.impl/*.jac", "*.cl/*.jac"]
+jac_scale = ["_precompiled/**/*.jbc", "_precompiled/manifest.json"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

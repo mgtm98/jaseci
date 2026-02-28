@@ -16,13 +16,13 @@ glob _runtime_initialized = False;
 def _ensure_jac_runtime -> None {
     global _runtime_initialized;
     if not _runtime_initialized {
-        import from jaclang.pycore.runtime { JacRuntime as Jac }
+        import from jaclang.jac0core.runtime { JacRuntime as Jac }
         Jac.setup();
         _runtime_initialized = True;
     }
 }
 
-"""Re-discover jac.toml from the file's directory when an absolute/relative path is given.
+"""Discover jac.toml from the file's directory when an absolute/relative path is given.
 
 This ensures that when running `jac start /path/to/project/main.jac` from any directory,
 the jac.toml in /path/to/project/ is found and used for plugin configuration.
@@ -37,15 +37,17 @@ def _discover_config_from_file(filename: str) -> None {
     file_path = Path(filename).resolve();
     file_dir = file_path.parent;
 
-    # Capture active profile from current config before re-discovery
-    old_config = get_config();
-    active_profile = old_config.active_profile if old_config else "";
+    # Preserve the active profile from any previously loaded config so that
+    # re-discovery does not lose the --profile overlay applied by _apply_profile.
+    existing_config = get_config();
+    active_profile = existing_config.active_profile if existing_config else None;
 
-    # Re-discover config with profile applied in one step
+    # Use get_config with start_path to discover from the file's directory.
+    # This ensures we don't accidentally discover config from cwd first.
+    # If a config was already loaded, force_discover ensures we re-discover
+    # from the correct location.
     try {
-        config = JacConfig.discover(
-            start_path=file_dir, profile=active_profile or None
-        );
+        config = get_config(start_path=file_dir, force_discover=True);
     } except (OSError, KeyError, ValueError) as e {
         console.print(
             f"Warning: Failed to discover config from {file_dir}: {e}", style="warning"
@@ -53,7 +55,10 @@ def _discover_config_from_file(filename: str) -> None {
         return;
     }
     if config is not None {
-        set_config(config);
+        # Re-apply the profile overlay that was set before re-discovery.
+        if active_profile {
+            config.apply_profile_overlay(active_profile);
+        }
         add_venv_to_path(config);
     }
 }
@@ -64,7 +69,7 @@ This is the canonical function for setting up CLI execution context.
 It handles base_path setup, closing any existing context, and creating a new one.
 """
 def _proc_file(filename: str) -> tuple {
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     (base, mod) = os.path.split(filename);
     base = base or './';
     if filename.endswith('.na.jac') {
@@ -75,7 +80,7 @@ def _proc_file(filename: str) -> tuple {
         mod = mod[:-3];
     } else {
         console.error('Not a valid file!\nOnly supports `.jac` and `.py`');
-        <>exit(1);
+        `exit(1);
     }
     # Only set base path if not already set (allows tests to override)
     if not Jac.base_path_dir {
@@ -88,11 +93,20 @@ def _proc_file(filename: str) -> tuple {
 }
 
 """Run the specified .jac file."""
-impl run(filename: str, main: bool = True, cache: bool = True) -> int {
+impl run(
+    filename: str,
+    main: bool = True,
+    cache: bool = True,
+    autonative: bool = False,
+    args: list = []
+) -> int {
     _ensure_jac_runtime();
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     # Re-discover config from the file's directory (handles absolute paths)
     _discover_config_from_file(filename);
+    # Set sys.argv so the script can access arguments via sys.argv[1:]
+    original_argv = sys.argv;
+    sys.argv = [filename] + list(args);
     (base, mod, mach) = _proc_file(filename);
     lng = filename.split('.')[-1];
     try {
@@ -108,7 +122,8 @@ impl run(filename: str, main: bool = True, cache: bool = True) -> int {
                 if main {
                     addr = engine.get_function_address("jac_entry");
                     if addr != 0 {
-                        ctypes.CFUNCTYPE(None)(addr)();
+                        fn = ctypes.CFUNCTYPE(None)(addr);
+                        fn();
                     }
                 }
             } else {
@@ -116,7 +131,54 @@ impl run(filename: str, main: bool = True, cache: bool = True) -> int {
                 mach.close();
                 return 1;
             }
+        } elif filename.endswith('.jac') {
+            native_executed = False;
+            if autonative {
+                # Try auto-promotion to native using an isolated program instance
+                try {
+                    import from jaclang.jac0core.program { JacProgram }
+                    full_path = os.path.abspath(filename);
+                    na_program = JacProgram();
+                    na_program._auto_promote_native = True;
+                    na_program._auto_promote_target = full_path;
+                    ir_mod = na_program.compile(file_path=full_path);
+                    if (
+                        ir_mod
+                        and getattr(ir_mod.gen, '_auto_promoted_native', False)
+                        and ir_mod.gen.native_engine
+                    ) {
+                        # Auto-promoted native module: execute via JIT
+                        import ctypes;
+                        engine = ir_mod.gen.native_engine;
+                        if main {
+                            addr = engine.get_function_address("jac_entry");
+                            if addr != 0 {
+                                fn = ctypes.CFUNCTYPE(None)(addr);
+                                fn();
+                                native_executed = True;
+                                console.print(
+                                    f"[Module '{filename}' executed natively]",
+                                    style="dim"
+                                );
+                            }
+                        }
+                    }
+                } except Exception as _auto_err {
+                    # Auto-promotion failed, fall through to normal path
+                    _ = _auto_err;
+                }
+            }
+            if not native_executed {
+                # Normal Python/Jac path
+                Jac.jac_import(
+                    target=mod,
+                    base_path=base,
+                    override_name='__main__' if main else None,
+                    lng=lng
+                );
+            }
         } else {
+            # Python files and other formats
             Jac.jac_import(
                 target=mod,
                 base_path=base,
@@ -125,11 +187,19 @@ impl run(filename: str, main: bool = True, cache: bool = True) -> int {
             );
         }
     } except Exception as e {
-        import from jaclang.pycore.helpers { dump_traceback }
-        console.error(dump_traceback(e));
+        if Jac.program.errors_had {
+            for error in Jac.program.errors_had {
+                console.error(error.pretty_print(colors=True));
+            }
+        } else {
+            import from jaclang.jac0core.helpers { dump_traceback }
+            console.error(dump_traceback(e));
+        }
+        sys.argv = original_argv;
         mach.close();
         return 1;
     }
+    sys.argv = original_argv;
     mach.close();
     return 0;
 }
@@ -140,18 +210,18 @@ impl enter(
     entrypoint: str,
     args: list = [],
     main: bool = True,
-    <>root: str = '',
-    <>node: str = ''
+    `root: str = '',
+    nd: str = ''
 ) -> int {
     _ensure_jac_runtime();
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
-    import from jaclang.pycore.constructs { WalkerArchetype }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.constructs { WalkerArchetype }
     # Re-discover config from the file's directory (handles absolute paths)
     _discover_config_from_file(filename);
     (base, mod, mach) = _proc_file(filename);
     # Set user root if provided (for permission boundary)
-    if <>root {
-        mach.set_user_root(<>root);
+    if `root {
+        mach.set_user_root(`root);
     }
     if filename.endswith('.jac') {
         ret_module = Jac.jac_import(
@@ -170,7 +240,7 @@ impl enter(
             return 1;
         } else {
             archetype = getattr(loaded_mod, entrypoint)(*args);
-            mach.set_entry_node(<>node);
+            mach.set_entry_node(nd);
             if (
                 isinstance(archetype, WalkerArchetype)
                 and Jac.check_read_access(mach.entry_node)
@@ -194,13 +264,11 @@ impl start(
     no_client: bool = False
 ) -> int {
     _ensure_jac_runtime();
-    import from jaclang.pycore.runtime { JacRuntime as Jac }
+    import from jaclang.jac0core.runtime { JacRuntime as Jac }
     import from pathlib { Path }
     if not Path(filename).exists() {
         if filename == "main.jac" {
-            console.error(
-                f"Error: File 'main.jac' not found in the current directory."
-            );
+            console.error(f"Error: File 'main.jac' not found in the current directory.");
             console.error(f"  Current directory: {os.getcwd()}");
             console.error(
                 "  Please specify a file: jac start <filename.jac> or make sure main.jac exists in the current directory"
@@ -216,19 +284,26 @@ impl start(
     _discover_config_from_file(filename);
     (base, mod, mach) = _proc_file(filename);
     lng = filename.split('.')[-1];
+    # Load the Jac module (actual compilation/bundling happens in server.start())
     try {
         Jac.jac_import(target=mod, base_path=base, lng=lng);
         if Jac.program.errors_had {
             for error in Jac.program.errors_had {
-                console.error(f"Error: {error}");
+                console.error(error.pretty_print(colors=True));
             }
             mach.close();
             return 1;
         }
     } except Exception as e {
-        import from jaclang.pycore.helpers { dump_traceback }
-        console.error(f"Error loading {filename}: {e}");
-        console.error(dump_traceback(e));
+        if Jac.program.errors_had {
+            for error in Jac.program.errors_had {
+                console.error(error.pretty_print(colors=True));
+            }
+        } else {
+            import from jaclang.jac0core.helpers { dump_traceback }
+            console.error(f"Error loading {filename}: {e}");
+            console.error(dump_traceback(e));
+        }
         mach.close();
         return 1;
     }
@@ -248,7 +323,7 @@ impl start(
         try {
             server.print_endpoint_docs();
         } except Exception as e {
-            import from jaclang.pycore.helpers { dump_traceback }
+            import from jaclang.jac0core.helpers { dump_traceback }
             console.error(f"Error generating endpoint documentation: {e}");
             console.error(dump_traceback(e));
             mach.close();
@@ -276,9 +351,7 @@ impl start(
             import from jaclang.runtimelib.watcher { JacFileWatcher }
 
             watcher = JacFileWatcher(watch_paths=[base]);
-            hot_reloader = HotReloader(
-                base_path=base, module_name=mod, watcher=watcher
-            );
+            hot_reloader = HotReloader(base_path=base, module_name=mod, watcher=watcher);
             hot_reloader.start();
             # Connect the hot reloader to the server for HMR support
             if server?.enable_hmr {
@@ -307,10 +380,14 @@ impl start(
             vite_process = _start_vite_dev_server(base, vite_port, actual_api_port);
         }
     }
-    # Print startup message
-    _print_startup_message(dev, no_client, port, actual_api_port, base);
+    # Pass startup banner callback so it's printed AFTER compilation/bundling completes
     try {
-        server.start(dev=dev, no_client=no_client);
+        server.start(
+            dev=dev,
+            no_client=no_client,
+            on_ready=lambda :
+                _print_startup_message(dev, no_client, port, actual_api_port, base)
+        );
         return 0;
     } except KeyboardInterrupt {
         console.print('\nShutting down...');
@@ -324,7 +401,7 @@ impl start(
         mach.close();
         return 0;
     } except Exception as e {
-        import from jaclang.pycore.helpers { dump_traceback }
+        import from jaclang.jac0core.helpers { dump_traceback }
         console.error(f"Server error: {e}");
         console.error(dump_traceback(e));
         if hot_reloader {
@@ -512,8 +589,8 @@ def _start_vite_dev_server(base_path: str, vite_port: int, api_port: int) -> Any
             bundler.create_package_json();
         }
 
-        # Start the dev server
-        return bundler.start_dev_server(vite_port);
+        # Start the dev server (messages handled by bundler)
+        return bundler.start_dev_server(vite_port, suppress_initial_output=True);
     } except ImportError as e {
         console.error(
             f"[Vite] Warning: jac-client not installed, skipping Vite dev server: {e}"
@@ -527,8 +604,8 @@ def _start_vite_dev_server(base_path: str, vite_port: int, api_port: int) -> Any
 
 """Debug the specified .jac file."""
 impl debug(filename: str, main: bool = True, cache: bool = False) -> int {
-    import from jaclang.pycore.program { JacProgram }
-    import from jaclang.pycore.helpers { debugger as db }
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.helpers { debugger as db }
     (base, mod) = os.path.split(filename);
     base = base or './';
     mod = mod[:-4];
