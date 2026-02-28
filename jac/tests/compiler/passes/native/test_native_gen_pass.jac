@@ -248,6 +248,42 @@ test "strings fstring mixed" {
     assert f(b"Alice", 30) == b"name=Alice, age=30";
 }
 
+# --- TestNativePrintMultiArgs ---
+test "print multi args compiles" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    assert eng is not None;
+}
+
+test "print multi args multiple args" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_multiple_args", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args mixed types" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_mixed_types", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args variables" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_variables", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args single arg" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_single_arg", ctypes.c_int64);
+    assert f() == 0;
+}
+
+test "print multi args many args" {
+    (eng, _) = compile_native("print_multi_args.na.jac");
+    f = get_func(eng, "test_many_args", ctypes.c_int64);
+    assert f() == 0;
+}
+
 # --- TestNativeObjects ---
 test "objects make point" {
     (eng, _) = compile_native("objects.na.jac");
