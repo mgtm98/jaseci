@@ -159,7 +159,7 @@ impl MTRuntime.factory(mtir: MTIR) -> MTRuntime {
     return_type = get_type_hints(caller).get("return");
     is_streaming = bool(call_params.get("stream", False));
     if is_streaming and return_type is not str {
-        raise RuntimeError(
+        raise ConfigurationError(
             "Streaming responses are only supported for str return types."
         ) ;
     }
@@ -213,14 +213,17 @@ impl MTRuntime.parse_response(response: str) -> object {
         return response;
     }
     if self.resp_type {
-        resp_type = self.resp_type;
         try {
             json_dict = json.loads(response);
-            return json_to_instance(json_dict, resp_type);
-        } except Exception {
-            # LLM returned non-JSON (e.g. plain text instead of calling finish_tool).
-            # Return the raw string so the invoke loop can attempt recovery.
-            return response;
+            return json_to_instance(json_dict, self.resp_type);
+        } except OutputConversionError {
+            raise ;
+        } except Exception as e {
+            err = OutputConversionError(
+                f"Failed to convert LLM output to '{self.resp_type.__name__}': {e}"
+            );
+            err.raw_output = response;
+            raise err ;
         }
     }
     return response;
@@ -252,7 +255,9 @@ impl MTRuntime.get_output_schema -> dict | None {
 
         }
         # Use MTIR info if available, otherwise None (Python library mode)
-        return_type_info = self.mtir.ir_info.return_type if self.mtir.ir_info else None;
+        return_type_info = self.mtir.ir_info.return_type
+            if (self.mtir and self.mtir.ir_info)
+            else None;
         return type_to_schema(resp_type=self.resp_type, info=return_type_info);
     }
     # If the are tools, the final output will be sent to the finish_tool
