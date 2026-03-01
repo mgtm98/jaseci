@@ -8,6 +8,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Type System Improvement**: Fixed type narrowing not working correctly inside while loops, for loops with break/continue, and loop else blocks.
 - **Fix: Formatter Comment Injection for `na {}` Blocks**: Fixed a bug where `jac format` would orphan comments inside `na {}` (native) blocks, dumping them at the end of the file.
 - **Native Primitives: Set Algebra & Dict `setdefault`**: Implemented 6 new native LLVM emitters -- `set.symmetric_difference`, `set.update`, `set.intersection_update`, `set.difference_update`, `set.symmetric_difference_update`, and `dict.setdefault`. Native primitive coverage rises from 47% → 49% implemented (147/299) and 45% → 47% tested (140/299), with SetEmitter at 61% and DictEmitter at 81%.
+- **Fix: Native `for k in dict[K,V]` Loop Body Elided**: Fixed `for k in d` over a dict function parameter emitting no loop IR - the dict/set parameter type was never registered in `var_dict_type`, causing `_codegen_for` to silently skip the body.
 
 ## jaclang 0.11.3 (Latest Release)
 
@@ -35,7 +36,6 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Fix: Native `str.replace(old, new, count)` Count Argument Ignored**: The third `count` parameter to `str.replace` is now respected. A `remaining` count phi is threaded through the replacement loop and decrements on each substitution; when it reaches zero the rest of the string is copied unchanged. Omitting the argument (or passing a negative value) retains the replace-all behaviour.
 - **Fix: Native `for (k, v) in d.items()` Iteration**: Dict `.items()` iteration in native codegen was silently elided. Fixed by adding a `__dict_get_val` index helper (mirroring the existing `__dict_get_key`) and a dedicated items-loop path in `_codegen_for` that detects the `d.items()` method-call pattern, binds both loop variables, and emits a standard index-based loop.
 - **Fix: Native `for c in str` String Iteration**: `for c in str` in native codegen previously crashed with a type-mismatch error (`%"List.ptr"* != i8*`) because the string variable was misclassified as `list[ptr]` and routed through the list helpers. Fixed by adding a dedicated string-iteration branch in `_codegen_for` that detects `i8*` collections, calls `strlen` for the loop bound, and yields each character as an RC-managed single-char string via the existing `_codegen_string_index` helper.
-- **Fix: Native `for k in dict[K,V]` Loop Body Elided**: Fixed `for k in d` over a dict function parameter emitting no loop IR - the dict/set parameter type was never registered in `var_dict_type`, causing `_codegen_for` to silently skip the body.
 
 ## jaclang 0.11.2
 
