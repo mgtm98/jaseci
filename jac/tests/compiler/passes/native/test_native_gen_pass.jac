@@ -1668,6 +1668,19 @@ test "dicts empty glob dict set and get" {
     assert f() == 7;
 }
 
+# --- TestNativeDictDeleteRemove (regression: dict-delete-silently-dropped) ---
+test "dicts dict remove method" {
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    f = get_func(eng, "dict_remove_method", ctypes.c_int64);
+    assert f() == 1;  # key must be absent after .remove()
+}
+
+test "dicts dict delete keyword" {
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    f = get_func(eng, "dict_delete_keyword", ctypes.c_int64);
+    assert f() == 1;  # key must be absent after del d[k]
+}
+
 test "default params omitted trailing defaults" {
     (eng, _) = compile_native("default_params.na.jac");
     method_f = get_func(eng, "test_method_default_omitted", ctypes.c_int64);
