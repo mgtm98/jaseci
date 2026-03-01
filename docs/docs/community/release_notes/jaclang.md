@@ -4,6 +4,11 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.11.4 (Unreleased)
 
+- 3 small refactors/changes.
+- **Type System Improvement**: Fixed type narrowing not working correctly inside while loops, for loops with break/continue, and loop else blocks.
+- **Fix: Formatter Comment Injection for `na {}` Blocks**: Fixed a bug where `jac format` would orphan comments inside `na {}` (native) blocks, dumping them at the end of the file.
+- **Native Primitives: Set Algebra & Dict `setdefault`**: Implemented 6 new native LLVM emitters -- `set.symmetric_difference`, `set.update`, `set.intersection_update`, `set.difference_update`, `set.symmetric_difference_update`, and `dict.setdefault`. Native primitive coverage rises from 47% → 49% implemented (147/299) and 45% → 47% tested (140/299), with SetEmitter at 61% and DictEmitter at 81%.
+
 ## jaclang 0.11.3 (Latest Release)
 
 - **Static Analysis Pass: Unused Variables, Undefined Names, Unreachable Code**: Added a new `StaticAnalysisPass` to the type-check pipeline that detects three classes of issues: (1) variables defined but never referenced, (2) name references that fail to resolve, and (3) code following `return`/`raise`/`break`/`continue` statements. All diagnostics surface as warnings in both `jac check` output and LSP (IDE squiggles). The pass runs after `TypeCheckPass` and respects conventional skip patterns (`_`-prefixed names, `has` fields, imported symbols, abstract ability parameters, archetype/ability definitions).
