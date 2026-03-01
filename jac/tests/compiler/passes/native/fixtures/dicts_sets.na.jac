@@ -230,7 +230,7 @@ obj DictContainer {
 
 # for k in c.props: iterate dict stored in a struct field
 def dict_field_iter_sum_fixture() -> int {
-    c: DictContainer = DictContainer(props={});
+    c: DictContainer = DictContainer(props={0: 0});
     c.props[1] = 10;
     c.props[2] = 20;
     c.props[3] = 30;
