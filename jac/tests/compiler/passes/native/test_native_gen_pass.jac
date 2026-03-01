@@ -366,6 +366,13 @@ test "objects init side effects" {
     assert f() == 1;
 }
 
+test "objects empty dict in struct ctor" {
+    # Container(entries={}) used to store null → segfault on first dict access.
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_empty_dict_ctor_field", ctypes.c_int64);
+    assert f() == 30;
+}
+
 # --- TestNativeInheritance ---
 test "inheritance dog speak" {
     (eng, _) = compile_native("inheritance.na.jac");
