@@ -440,3 +440,18 @@ test "runtime: error with finally block" {
     f = get_func(eng, "test_runtime_finally_na", ctypes.c_int64);
     assert f() == 11;
 }
+
+# --- New primitive equivalence tests ---
+test "set advanced operations match across backends" {
+    py_result = run_py_fixture("prim_set_advanced", "set_advanced_py");
+    (eng, _) = compile_native("prim_set_advanced.jac");
+    na_result = run_native_function(eng, "set_advanced_na");
+    compare_results(py_result, na_result, "set_advanced");
+}
+
+test "dict setdefault matches across backends" {
+    py_result = run_py_fixture("prim_dict_setdefault", "dict_setdefault_py");
+    (eng, _) = compile_native("prim_dict_setdefault.jac");
+    na_result = run_native_function(eng, "dict_setdefault_na");
+    compare_results(py_result, na_result, "dict_setdefault");
+}
