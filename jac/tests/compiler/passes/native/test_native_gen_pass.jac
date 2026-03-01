@@ -366,6 +366,13 @@ test "objects init side effects" {
     assert f() == 1;
 }
 
+test "objects empty dict in struct ctor" {
+    # Container(entries={}) used to store null → segfault on first dict access.
+    (eng, _) = compile_native("objects.na.jac");
+    f = get_func(eng, "test_empty_dict_ctor_field", ctypes.c_int64);
+    assert f() == 30;
+}
+
 # --- TestNativeInheritance ---
 test "inheritance dog speak" {
     (eng, _) = compile_native("inheritance.na.jac");
@@ -1679,6 +1686,21 @@ test "dicts dict delete keyword" {
     (eng, _) = compile_native("dicts_sets.na.jac");
     f = get_func(eng, "dict_delete_keyword", ctypes.c_int64);
     assert f() == 1;  # key must be absent after del d[k]
+}
+
+test "dicts for-in-dict param iteration" {
+    # for k in d where d is a dict parameter was always elided (body never ran).
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    f = get_func(eng, "dict_param_iter_sum_fixture", ctypes.c_int64);
+    assert f() == 60;
+}
+
+test "dicts for-in-dict field access iteration" {
+    # for k in c.props where c is a struct with a dict field used to segfault
+    # because the AtomTrailer expression had no bare name to look up in var_dict_type.
+    (eng, _) = compile_native("dicts_sets.na.jac");
+    f = get_func(eng, "dict_field_iter_sum_fixture", ctypes.c_int64);
+    assert f() == 60;
 }
 
 test "default params omitted trailing defaults" {
