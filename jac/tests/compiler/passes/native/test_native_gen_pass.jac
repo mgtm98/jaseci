@@ -2384,3 +2384,51 @@ test "layout exports all expected functions" {
     expected = {"add","mul","negate","identity","make_all_fields","get_all_fields_x","get_all_fields_flag","make_maybe_point","get_maybe_x"};
     assert expected == set(layout.functions.keys());
 }
+
+# --- Jac-to-Jac function pointer tests (Callable[[...], ret] type annotation) ---
+test "fnptr apply2 with add" {
+    (eng, _) = compile_native("fnptr_jac.na.jac");
+    apply2 = get_func(
+        eng, "apply2", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64
+    );
+    add_addr = eng.get_function_address("add");
+    assert apply2(add_addr, 3, 4) == 7;
+    assert apply2(add_addr, 0, 0) == 0;
+    assert apply2(add_addr, -1, 1) == 0;
+}
+
+test "fnptr apply2 with mul" {
+    (eng, _) = compile_native("fnptr_jac.na.jac");
+    apply2 = get_func(
+        eng, "apply2", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64, ctypes.c_int64
+    );
+    mul_addr = eng.get_function_address("mul");
+    assert apply2(mul_addr, 3, 4) == 12;
+    assert apply2(mul_addr, 0, 99) == 0;
+    assert apply2(mul_addr, -2, 5) == -10;
+}
+
+test "fnptr apply1 with negate" {
+    (eng, _) = compile_native("fnptr_jac.na.jac");
+    apply1 = get_func(eng, "apply1", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64);
+    neg_addr = eng.get_function_address("negate");
+    assert apply1(neg_addr, 5) == -5;
+    assert apply1(neg_addr, 0) == 0;
+    assert apply1(neg_addr, -3) == 3;
+}
+
+test "fnptr call_via_local stores and calls pointer" {
+    (eng, _) = compile_native("fnptr_jac.na.jac");
+    call_via_local = get_func(
+        eng,
+        "call_via_local",
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64
+    );
+    add_addr = eng.get_function_address("add");
+    mul_addr = eng.get_function_address("mul");
+    assert call_via_local(add_addr, 6, 7) == 13;
+    assert call_via_local(mul_addr, 6, 7) == 42;
+}
