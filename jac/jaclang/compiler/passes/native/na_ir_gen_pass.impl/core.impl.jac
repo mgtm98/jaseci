@@ -564,6 +564,13 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         }
         # Walk the imported module for archetypes, enums, globals, functions
         self._walk_imported_module(imported_mod);
+        # Track path so _codegen_entry can emit __jac_glob_init_<safe_name>() calls
+        if not self?._imported_na_paths {
+            self._imported_na_paths: list = [];
+        }
+        if resolved_path not in self._imported_na_paths {
+            self._imported_na_paths.append(resolved_path);
+        }
     }
 }
 
