@@ -516,6 +516,35 @@ test "complex objects field append" {
     assert f() == 3;
 }
 
+# --- TestNativeCrossModuleMethods ---
+# Regression tests for: _register_imported_archetype must forward-declare all
+# archetype methods so that method_funcs["Type.method"] is populated for
+# imported types.  Before the fix every cross-module method call was silently
+# dropped from the IR (value stayed null/0).
+test "cross-module method call once" {
+    (eng, _) = compile_native("na_method_import.na.jac");
+    f = get_func(eng, "test_imported_method_once", ctypes.c_int64);
+    assert f() == 1;
+}
+
+test "cross-module method call five times" {
+    (eng, _) = compile_native("na_method_import.na.jac");
+    f = get_func(eng, "test_imported_method_five", ctypes.c_int64);
+    assert f() == 5;
+}
+
+test "cross-module method call with argument" {
+    (eng, _) = compile_native("na_method_import.na.jac");
+    f = get_func(eng, "test_imported_method_with_arg", ctypes.c_int64);
+    assert f() == 10;
+}
+
+test "cross-module chained method calls" {
+    (eng, _) = compile_native("na_method_import.na.jac");
+    f = get_func(eng, "test_imported_chained_methods", ctypes.c_int64);
+    assert f() == 12;
+}
+
 # --- TestNativeBuiltins ---
 test "builtins char at" {
     (eng, _) = compile_native("builtins.na.jac");

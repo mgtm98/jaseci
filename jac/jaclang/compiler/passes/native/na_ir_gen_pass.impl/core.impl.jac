@@ -619,6 +619,18 @@ impl NaIRGenPass._register_imported_archetype(arch: uni.Archetype) -> None {
     self.struct_types[aname] = struct_type;
     # Define struct body with full field layout
     self._codegen_archetype(arch);
+    # Forward-declare all methods of the imported archetype in method_funcs
+    # so that method calls like lx.next_token() can be resolved at codegen time.
+    if arch.body is not None {
+        for stmt in arch.body {
+            if isinstance(stmt, uni.Ability) {
+                if stmt.signature is not None
+                and isinstance(stmt.signature, uni.FuncSignature) {
+                    self._forward_declare_method(aname, stmt);
+                }
+            }
+        }
+    }
 }
 
 """Register imported global variables with external linkage (resolved at link time)."""

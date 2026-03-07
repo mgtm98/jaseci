@@ -5,6 +5,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.11.4 (Unreleased)
 
 - 20 small refactors/changes.
+- **Fix: Native Cross-Module Method Calls**: Calling a method on a struct type imported from another `.na.jac` module (e.g., `lx.next_token()`, `c.increment()`) was silently dropped, leaving the target variable as a null pointer and producing runtime crashes. Methods on imported struct types are now correctly resolved and emitted.
 - **Fix: Formatter Semicolon & Decorator Spacing**: Fixed spacing bugs in the formatter where `@` decorators produced `@ decorator` instead of `@decorator`, and statement semicolons produced `raise ;` instead of `raise;`.
 - **Fix: Type Checker Validates Args Against Parameterless `init`**: The type checker now correctly reports an error when arguments are passed to a constructor whose `init` takes no parameters. Named args raise `Named argument does not match any parameter` and extra positional args raise `Too many positional arguments`. Calling with no args (`MyObj()`) remains valid.
 - **Automatic Port Fallback for `jac start`**: When starting the built-in HTTP server, if the specified port is already in use, the server now automatically finds and uses the next available port instead of crashing with "Address already in use". A warning message displays when using an alternative port. The `on_ready` callback signature updated to `Callable[[int], None]` to pass the actual bound port.
