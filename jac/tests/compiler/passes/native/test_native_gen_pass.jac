@@ -2431,6 +2431,8 @@ test "fnptr call_via_local stores and calls pointer" {
     mul_addr = eng.get_function_address("mul");
     assert call_via_local(add_addr, 6, 7) == 13;
     assert call_via_local(mul_addr, 6, 7) == 42;
+}
+
 # --- TestCrossModuleGlobInit ---
 test "cross module glob init compiles without errors" {
     # Importing a module with a glob list initializer must compile cleanly.
