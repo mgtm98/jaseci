@@ -1521,6 +1521,64 @@ test "cross module struct execution" {
     assert result2 == 7 , f"Expected 7, got {result2}";
 }
 
+# --- TestCrossModuleGlobalLinkage ---
+# Regression tests for: global-internal-linkage-breaks-cross-module
+# Before fix: module globals were emitted with LLVM `internal` linkage. The
+# linker renamed the definition (e.g. @MAGIC -> @MAGIC.467) when another module
+# declared it as `external`, leaving the external reference permanently null.
+# Any read then caused a null-pointer segfault (exit 134).
+# After fix: globals use default (public) linkage; the symbol resolves correctly.
+test "cross module global linkage compile" {
+    # Importing a module that directly reads globals from another .na.jac module
+    # must compile and JIT without errors.
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "na_glob_import.na.jac")));
+    assert not prog.errors_had , f"Errors: {prog.errors_had}";
+    assert ir is not None;
+    assert ir.gen.native_engine is not None , "No native engine created";
+}
+
+test "cross module global direct read" {
+    # read_magic() directly accesses the imported MAGIC global.
+    # With internal linkage this segfaulted; with public linkage it must return 42.
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "na_glob_import.na.jac")));
+    assert not prog.errors_had , f"Errors: {prog.errors_had}";
+    eng = ir.gen.native_engine;
+    assert eng is not None;
+    read_magic = get_func(eng, "read_magic", ctypes.c_int64);
+    result = read_magic();
+    assert result == 42 , f"Expected MAGIC==42, got {result}";
+}
+
+test "cross module global via function" {
+    # read_magic_via_func() delegates to get_magic() from the exporting module.
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "na_glob_import.na.jac")));
+    assert not prog.errors_had;
+    eng = ir.gen.native_engine;
+    assert eng is not None;
+    read_via_func = get_func(eng, "read_magic_via_func", ctypes.c_int64);
+    result = read_via_func();
+    assert result == 42 , f"Expected 42 via get_magic(), got {result}";
+}
+
+test "cross module global arithmetic" {
+    # sum_globals() reads both MAGIC and BASE from the exporting module and adds
+    # them; read_base_plus(n) delegates to add_base(n).
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "na_glob_import.na.jac")));
+    assert not prog.errors_had;
+    eng = ir.gen.native_engine;
+    assert eng is not None;
+    sum_g = get_func(eng, "sum_globals", ctypes.c_int64);
+    result = sum_g();
+    assert result == 142 , f"Expected MAGIC+BASE==142, got {result}";
+    add_b = get_func(eng, "read_base_plus", ctypes.c_int64, ctypes.c_int64);
+    result2 = add_b(5);
+    assert result2 == 105 , f"Expected BASE+5==105, got {result2}";
+}
+
 # --- TestNativeCacheMarker ---
 test "cache marker non native file has no llvmir section in jir" {
     # Compiling a file without na blocks should NOT write SEC_LLVM_IR into the JIR cache.
