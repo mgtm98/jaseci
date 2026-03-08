@@ -187,6 +187,11 @@ impl NaIRGenPass.transform(ir_in: uni.Module) -> uni.Module {
     }
     # Store LLVM module on AST
     if self.has_native_code {
+        # Ensure __jac_glob_init is always defined, even for modules that have
+        # no `with entry` block.
+        if "__jac_glob_init" not in self.func_symtab {
+            self._emit_glob_init_func();
+        }
         self.ir_in.gen.llvm_ir = self.llvm_module;
         # Debug: dump IR to file
         import os;
