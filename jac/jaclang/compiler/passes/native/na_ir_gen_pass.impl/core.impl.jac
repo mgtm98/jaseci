@@ -187,6 +187,11 @@ impl NaIRGenPass.transform(ir_in: uni.Module) -> uni.Module {
     }
     # Store LLVM module on AST
     if self.has_native_code {
+        # Ensure __jac_glob_init is always defined, even for modules that have
+        # no `with entry` block.
+        if "__jac_glob_init" not in self.func_symtab {
+            self._emit_glob_init_func();
+        }
         self.ir_in.gen.llvm_ir = self.llvm_module;
         # Debug: dump IR to file
         import os;
@@ -531,6 +536,13 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         }
         # Walk the imported module for archetypes, enums, globals, functions
         self._walk_imported_module(imported_mod);
+        # Track path so _codegen_entry can emit __jac_glob_init_<safe_name>() calls
+        if not self?._imported_na_paths {
+            self._imported_na_paths: list = [];
+        }
+        if resolved_path not in self._imported_na_paths {
+            self._imported_na_paths.append(resolved_path);
+        }
     }
 }
 

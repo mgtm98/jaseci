@@ -360,4 +360,6 @@ obj NaIRGenPass(ModuleCodegenPass) {
     def _emit_scope_cleanup(skip_var: (str | None) = None) -> None;
     def _rc_strdup(ptr: ir.Value, name: str = "rc.str") -> ir.Value;
     def _emit_struct_release_fn(arch_name: str) -> None;
+    def _emit_glob_init_func -> None;
+    def post_transform -> None;
 }
