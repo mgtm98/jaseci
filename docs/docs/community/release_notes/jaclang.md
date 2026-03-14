@@ -5,6 +5,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 ## jaclang 0.12.3 (Unreleased)
 
 - **Client-Side Error Reporting**: Unhandled JavaScript errors and promise rejections in Jac client apps are now automatically captured and forwarded to the server via `POST /cl/__error__`, where they are logged through both the `jaclang.client_errors` logger and the dev console. Global error handlers (`window.onerror`, `unhandledrejection`) are installed at app initialization, and the `ErrorBoundary` fallback component also reports caught errors. Works with both the stdlib HTTP server and jac-scale (FastAPI).
+- **Centralized Source Mapping**: Added `source_mapping` module to `runtimelib` with VLQ encode/decode, source map generation/parsing, and two-layer resolution (bundle → compiled JS → .jac). Server error endpoints now resolve JS stack traces back to `.jac` file locations. The ES unparse pass tracks output-line → source-line mappings via `es_to_js_with_map()`.
 
 ## jaclang 0.12.2 (Latest Release)
 

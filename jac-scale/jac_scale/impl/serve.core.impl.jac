@@ -836,6 +836,14 @@ impl JacAPIServerCore._register_client_error_endpoint -> None {
         stack = data.get('stack', '');
         url = data.get('url', '');
         source = data.get('source', '');
+        # Resolve stack trace to .jac files via source maps
+        if stack and self.base_path {
+            try {
+                import from jaclang.runtimelib.source_mapping { SourceMapper }
+                mapper = SourceMapper.from_bundle(self.base_path);
+                stack = mapper.resolve_stack_trace(stack);
+            } except Exception { }
+        }
         log_parts = [f"[Client] {message}"];
         if stack {
             log_parts.append(f"  Stack: {stack}");

@@ -1611,6 +1611,16 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                     stack = data.get('stack', '');
                     url = data.get('url', '');
                     source = data.get('source', '');
+                    # Resolve stack trace to .jac files via source maps
+                    if stack and server.base_path {
+                        try {
+                            import from jaclang.runtimelib.source_mapping {
+                                SourceMapper
+                            }
+                            mapper = SourceMapper.from_bundle(server.base_path);
+                            stack = mapper.resolve_stack_trace(stack);
+                        } except Exception { }
+                    }
                     log_parts = [f"[Client] {message}"];
                     if stack {
                         log_parts.append(f"  Stack: {stack}");

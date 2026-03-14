@@ -5,6 +5,15 @@ impl es_to_js(nd: (es.Node | None), indent: str = '  ') -> str {
     return generator.generate(nd);
 }
 
+"""Convert ESTree node to JS code and return both the code and a source line map."""
+impl es_to_js_with_map(
+    nd: (es.Node | None), indent: str = '  '
+) -> tuple[str, list[tuple[int, int, int]]] {
+    generator = JSCodeGenerator(indent=indent);
+    code = generator.generate(nd);
+    return (code, generator.line_map);
+}
+
 """Generate export all declaration."""
 impl JSCodeGenerator.gen_export_all_declaration(nd: es.ExportAllDeclaration) -> str {
     source = self.generate(nd.source);
@@ -659,9 +668,27 @@ impl JSCodeGenerator.gen_expression_statement(nd: es.ExpressionStatement) -> str
     return f"{self.indent()}{self.generate(nd.expression)};";
 }
 
-"""Generate program."""
+"""Generate program, building a line map from output lines to source locations."""
 impl JSCodeGenerator.gen_program(nd: es.Program) -> str {
-    return '\n'.join(self.generate(stmt) for stmt in nd.body);
+    output_line = 1;
+    parts: list[str] = [];
+    for stmt in nd.body {
+        code = self.generate(stmt);
+        # Record source location for each output line from this statement
+        if stmt.loc and stmt.loc.start {
+            src_line = stmt.loc.start.line;
+            src_col = stmt.loc.start.column;
+            # Map every output line to this statement's source
+            for _ in code.split('\n') {
+                self.line_map.append((output_line, src_line, src_col));
+                output_line += 1;
+            }
+        } else {
+            output_line += code.count('\n') + 1;
+        }
+        parts.append(code);
+    }
+    return '\n'.join(parts);
 }
 
 """Generate JavaScript code for a node."""
@@ -688,4 +715,5 @@ impl JSCodeGenerator.indent -> str {
 impl JSCodeGenerator.init(indent: str = '  ') -> None {
     self.indent_str = indent;
     self.indent_level = 0;
+    self.line_map = [];
 }

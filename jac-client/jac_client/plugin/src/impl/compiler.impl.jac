@@ -286,6 +286,32 @@ impl ViteCompiler.compile_dependencies_recursively(
     output_path.parent.mkdir(parents=True, exist_ok=True);
     source_header = f"/* Source: {module_path} */\n";
     output_path.write_text(source_header + combined_js, encoding='utf-8');
+    # Generate source map for .jac → .js line mapping
+    try {
+        import from jaclang.runtimelib.source_mapping { generate_source_map_json }
+        import from jaclang.jac0core.runtime { JacRuntime as Jac }
+        hub_key = str(module_path);
+        hub_mod = Jac.program.mod.hub.get(hub_key);
+        if hub_mod and hub_mod.gen.es_ast {
+            import from jaclang.compiler.passes.ecmascript.es_unparse {
+                es_to_js_with_map
+            }
+            (_, line_map) = es_to_js_with_map(hub_mod.gen.es_ast);
+            if line_map {
+                map_json = generate_source_map_json(
+                    source_file=str(module_path),
+                    output_file=output_path.name,
+                    line_map=line_map
+                );
+                map_path = output_path.parent / f"{output_path.name}.map";
+                map_path.write_text(map_json, encoding='utf-8');
+                # Append sourceMappingURL so Vite chains through to .jac
+                with open(output_path, 'a', encoding='utf-8') as f {
+                    f.write(f"\n//# sourceMappingURL={output_path.name}.map\n");
+                }
+            }
+        }
+    } except Exception { }
     if (not manifest or not manifest.imports) {
         return;
     }
