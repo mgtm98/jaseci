@@ -30,6 +30,17 @@ import from jaclang.jac0core.constant { Constants as Con }
 import from jaclang.jac0core.constant { Tokens as Tok }
 import from jaclang.jac0core.passes.ast_gen { BaseAstGenPass }
 import from jaclang.jac0core.passes.ast_gen.jsx_processor { PyJsxProcessor }
+import from jaclang.jac0core.diagnostics {
+    E5001,
+    E5002,
+    E5003,
+    E5004,
+    E5005,
+    E5006,
+    E5007,
+    E5008
+}
+
 glob T = TypeVar('T', bound=ast3.AST),
      TOKEN_AST_MAP: dict[(Tok, type[ast3.AST])] = {
          Tok.KW_AND: ast3.And,
@@ -166,6 +177,13 @@ variables
         enum values etc.
         """
     def _get_sem_decorator(self: PyastGenPass, nd: uni.UniNode) -> (ast3.Call | None);
+
+    """Safe accessor for a node's generated py_ast.
+
+        Raises an ICE with source location instead of a bare IndexError
+        when py_ast is unexpectedly empty.
+        """
+    def py_ast_val(self: PyastGenPass, nd: uni.UniNode) -> ast3.AST;
 
     """Sync ast locations."""
     def sync(

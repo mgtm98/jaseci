@@ -25,21 +25,14 @@ import from jaclang.runtimelib.storage { Storage }
 def _scale_pre_hook(context: HookContext) -> None {
     scale = context.get_arg("scale", False);
     if scale {
-        # Handle deployment instead of local server
         filename = context.get_arg("filename");
-        build = context.get_arg("build", False);
-        experimental = context.get_arg("experimental", False);
         target = context.get_arg("target", "kubernetes");
-        registry = context.get_arg("registry", "dockerhub");
         if not os.path.exists(filename) {
             raise FileNotFoundError(f"File not found: '{filename}'");
         }
         code_folder = os.path.dirname(filename) or '.';
         dotenv_path = os.path.join(code_folder, '.env');
         load_dotenv(dotenv_path);
-        code_folder = os.path.relpath(code_folder);
-        code_folder = pathlib.Path(code_folder).as_posix();
-        base_file_path = os.path.basename(filename);
         # Get configuration
         scale_config = get_scale_config();
         # Create logger
@@ -48,18 +41,43 @@ def _scale_pre_hook(context: HookContext) -> None {
         if target == 'kubernetes' {
             target_config = scale_config.get_kubernetes_config();
         } else {
-            # For future targets, get from config
             target_config = scale_config.get_kubernetes_config();  # Default for now
         }
         # Create deployment target
         deployment_target = DeploymentTargetFactory.create(
             target, target_config, logger
         );
+
+        # Handle --enable-tls: patch TLS on the live deployment (no redeploy)
+        enable_tls = context.get_arg("enable_tls", False);
+        if enable_tls {
+            if not target_config.get('domain', '') {
+                raise ValueError(
+                    "No domain configured. Set 'domain' under [plugins.scale.kubernetes] in jac.toml before running --enable-tls."
+                );
+            }
+            if not target_config.get('cert_manager_email', '') {
+                raise ValueError(
+                    "No cert_manager_email configured. Set 'cert_manager_email' under [plugins.scale.kubernetes] in jac.toml before running --enable-tls."
+                );
+            }
+            app_name = target_config.get('app_name', 'jaseci');
+            deployment_target.enable_tls(app_name);
+            context.set_data("cancel_execution", True);
+            context.set_data("cancel_return_code", 0);
+            return;
+        }
+
+        build = context.get_arg("build", False);
+        experimental = context.get_arg("experimental", False);
+        registry = context.get_arg("registry", "dockerhub");
+        code_folder = os.path.relpath(code_folder);
+        code_folder = pathlib.Path(code_folder).as_posix();
+        base_file_path = os.path.basename(filename);
         # Resolve secrets from [plugins.scale.secrets] config
         deployment_target.secrets = scale_config.get_secrets_config();
         # Handle image registry if build is requested
         if build {
-            # Use target config for registry (it contains docker credentials)
             image_registry = ImageRegistryFactory.create(registry, target_config);
             deployment_target.image_registry = image_registry;
         }
@@ -209,6 +227,13 @@ class JacCmd {
                     default="dockerhub",
                     help="Image registry (dockerhub, ecr, gcr, etc.)",
                 ),
+                Arg.create(
+                    "enable-tls",
+                    typ=bool,
+                    default=False,
+                    help="Enable HTTPS via Let's Encrypt (run after pointing your domain CNAME to the NLB)",
+                    short=""
+                ),
 
             ],
             pre_hook=_scale_pre_hook,
@@ -228,17 +253,65 @@ class JacCmd {
                     default="kubernetes",
                     help="Deployment target (kubernetes, aws, gcp, etc.)",
                 ),
+                Arg.create(
+                    "component",
+                    typ=str,
+                    default="",
+                    help="Component to destroy (default: entire deployment). Choices: application, database, cache, monitoring, dashboard",
+                ),
 
             ],
-            examples=[("jac destroy app.jac", "Remove deployment for app"), ],
+            examples=[
+                ("jac destroy app.jac", "Remove entire deployment for app"),
+                (
+                    "jac destroy app.jac --component application",
+                    "Remove only the application"
+                ),
+                ("jac destroy app.jac --component database", "Remove only MongoDB"),
+                ("jac destroy app.jac --component cache", "Remove only Redis"),
+                (
+                    "jac destroy app.jac --component monitoring",
+                    "Remove only monitoring stack"
+                ),
+                (
+                    "jac destroy app.jac --component dashboard",
+                    "Remove only dashboards (Mongo Express + RedisInsight)"
+                ),
+
+            ],
             group="deployment",
             priority=CommandPriority.PLUGIN,
             source="jac-scale"
         )
-        def destroy(file_path: str, target: str = "kubernetes") -> int {
+        def destroy(
+            file_path: str, target: str = "kubernetes", component: str = ""
+        ) -> int {
             if not os.path.exists(file_path) {
                 raise FileNotFoundError(f"File not found: '{file_path}'");
             }
+
+            valid_components = [
+                "application",
+                "database",
+                "cache",
+                "monitoring",
+                "dashboard"
+            ];
+            if component and target != 'kubernetes' {
+                console.print(
+                    f"[bold red]ERROR:[/bold red] --component is only supported for the 'kubernetes' target."
+                );
+                return 1;
+            }
+            if component and component not in valid_components {
+                console.print(
+                    f"[bold red]ERROR:[/bold red] Invalid component '{component}'. Valid choices: {', '.join(
+                        valid_components
+                    )}"
+                );
+                return 1;
+            }
+
             code_folder = os.path.dirname(file_path) or '.';
             dotenv_path = os.path.join(code_folder, '.env');
             load_dotenv(dotenv_path);
@@ -261,9 +334,15 @@ class JacCmd {
             namespace = target_config.get('namespace', 'default');
 
             # Warn user and require confirmation before proceeding
-            console.print(
-                f"[bold red]WARNING:[/bold red] You are about to delete namespace '{namespace}' and all its associated resources."
-            );
+            if component {
+                console.print(
+                    f"[bold red]WARNING:[/bold red] You are about to delete component '{component}' from deployment '{app_name}'."
+                );
+            } else {
+                console.print(
+                    f"[bold red]WARNING:[/bold red] You are about to delete namespace '{namespace}' and all its associated resources."
+                );
+            }
             confirmation = input(
                 "Are you sure you want to proceed? (y/n): "
             ).strip().lower();
@@ -276,11 +355,17 @@ class JacCmd {
             deployment_target = DeploymentTargetFactory.create(
                 target, target_config, logger
             );
-            deployment_target.destroy(app_name);
+            deployment_target.destroy(app_name, component);
 
-            console.print(
-                f"Successfully destroyed deployment '{app_name}' from {target}"
-            );
+            if component {
+                console.print(
+                    f"Successfully destroyed component '{component}' from '{app_name}'"
+                );
+            } else {
+                console.print(
+                    f"Successfully destroyed deployment '{app_name}' from {target}"
+                );
+            }
             return 0;
         }
 

@@ -11,6 +11,8 @@ obj CompileOptions {
         symtab_ir_only: bool = False,
         no_cgen: bool = False,
         skip_native_engine: bool = False,
+        resolve_annex_parent: bool = False,
+        force_target_program: bool = False,
         cancel_token: Any = None;
 
     """Return a copy with skip_native_engine set."""

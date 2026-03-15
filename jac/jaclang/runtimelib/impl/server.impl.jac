@@ -1,6 +1,9 @@
+import logging;
 import from jaclang.cli.console { console }
 import from jaclang.cli.banners { JAC_DISCORD_URL }
 import from jaclang.runtimelib.serializer { Serializer }
+
+glob _client_error_logger = logging.getLogger("jaclang.client_errors");
 
 impl UserManager.postinit -> None {
     import sqlite3;
@@ -355,29 +358,10 @@ impl ModuleIntrospector._extract_access_levels -> None {
         return;
     }
     import jaclang.jac0core.unitree as uni;
-    import from jaclang.jac0core.constructs { WalkerArchetype }
-    import from jaclang.jac0core.constant { Tokens as Tok }
+    import from jaclang.jac0core.constant { Tokens as Tok, SymbolType }
     self._function_access = {};
     self._walker_access = {};
-    # Helper to check if an archetype AST node is explicitly public
-    def is_archetype_public(arch_ast: uni.Archetype) -> bool {
-        return arch_ast.access is not None and arch_ast.access.tag.name == Tok.KW_PUB;
-    }
-    # Helper to find walker access level from a module AST
-    def find_walker_access_in_ast(
-        mod_ast: uni.Module, walker_name: str
-    ) -> (bool | None) {
-        for item in mod_ast.body {
-            if isinstance(item, uni.Archetype) and item.name.sym_name == walker_name {
-                return not is_archetype_public(
-                    item
-                );  # True = auth required, False = public
 
-            }
-        }
-        return None;
-    }
-    # Helper to get AST for a module path
     def get_module_ast(mod_path: str) -> (uni.Module | None) {
         ast = Jac.program.mod.hub.get(mod_path);
         if not ast {
@@ -385,6 +369,48 @@ impl ModuleIntrospector._extract_access_levels -> None {
         }
         return ast;
     }
+
+    def is_public(ast_node: (uni.AstAccessNode | None)) -> bool {
+        return ast_node is not None
+        and ast_node.access is not None
+        and ast_node.access.tag.name == Tok.KW_PUB;
+    }
+
+    def _process_import(
+        item: uni.Import, func_access: dict[str, bool], walker_access: dict[str, bool]
+    ) {
+        imported_names: list[str] = [
+            imp_item.alias.sym_name if imp_item.alias else imp_item.name.value
+            for imp_item in item.items
+            if isinstance(imp_item, uni.ModuleItem)
+        ];
+        if not imported_names {
+            return;
+        }
+        try {
+            source_file = item.from_loc.resolve_relative_path();
+            if not source_file.endswith(('.jac', '.cl.jac')) {
+                return;
+            }
+        } except Exception {
+            return;
+        }
+        source_ast = get_module_ast(source_file);
+        for name in imported_names {
+            if name in func_access or name in walker_access {
+                continue;
+            }
+            sym = source_ast.lookup(name) if source_ast else None;
+            is_walker = sym is not None and sym.sym_type == SymbolType.WALKER_ARCH;
+            decl_node = sym.decl.find_parent_of_type(uni.AstAccessNode) if sym else None;
+            if is_walker {
+                walker_access[name] = not is_public(decl_node);
+            } else {
+                func_access[name] = not is_public(decl_node);
+            }
+        }
+    }
+
     # Get main module AST
     mod_path = getattr(self._module, '__file__', None);
     if not mod_path {
@@ -394,55 +420,20 @@ impl ModuleIntrospector._extract_access_levels -> None {
     if not mod_ast {
         return;
     }
-    # Process direct definitions in main module
+
+    # Single pass over module body: direct definitions + imports
     for item in mod_ast.body {
         if isinstance(item, uni.Ability) and item.name_ref is not None {
-            func_name = item.name_ref.sym_name;
-            is_explicitly_public = item.access and item.access.tag.name == Tok.KW_PUB;
-            self._function_access[func_name] = not is_explicitly_public;
-        } elif isinstance(item, uni.Archetype) {
-            arch_name = item.name.sym_name;
-            if hasattr(self._module, arch_name) {
-                cls = getattr(self._module, arch_name);
-                if isinstance(cls, type) and issubclass(cls, WalkerArchetype) {
-                    self._walker_access[arch_name] = not is_archetype_public(item);
-                }
-            }
-        }
-    }
-    # Process imported walkers - look up their source module's AST
-    for (name, cls) in inspect.getmembers(self._module) {
-        if (
-            isinstance(cls, type)
-            and issubclass(cls, WalkerArchetype)
-            and cls is not WalkerArchetype
-            and name not in self._walker_access  # Not already processed as direct definition
-        ) {
-            # Get the source file where this walker class is defined
-            try {
-                source_file = inspect.getfile(cls);
-            } except (TypeError, OSError) {
-                # Can't determine source file, default to requiring auth
-                self._walker_access[name] = True;
-                continue;
-            }
-            # Try to get the AST from the source module
-            source_ast = get_module_ast(source_file);
-            if source_ast {
-                access_level = find_walker_access_in_ast(source_ast, name);
-                if access_level is not None {
-                    self._walker_access[name] = access_level;
-                } else {
-                    # Walker not found in AST, default to requiring auth (secure by default)
-                    self._walker_access[name] = True;
-                }
-            } else {
-                # Can't get AST, default to requiring auth (secure by default)
-                self._walker_access[name] = True;
-            }
+            self._function_access[item.name_ref.sym_name] = not is_public(item);
+        } elif isinstance(item, uni.Archetype)
+        and item.sym_category == SymbolType.WALKER_ARCH {
+            self._walker_access[item.name.sym_name] = not is_public(item);
+        } elif isinstance(item, uni.Import) and item.is_jac and item.from_loc {
+            _process_import(item, self._function_access, self._walker_access);
         }
     }
 }
+
 
 """Analyze walker and function bodies to classify as reader or writer.
 
@@ -465,21 +456,21 @@ impl ModuleIntrospector._analyze_endpoint_effects -> None {
     import from jaclang.jac0core.constant { Tokens as Tok }
     endpoint_effects: dict = {};
     # Recursively check if an AST subtree contains write operations
-    def has_write_ops(node: Any) -> bool {
-        if isinstance(node, uni.DeleteStmt) {
+    def has_write_ops(`node: Any) -> bool {
+        if isinstance(`node, uni.DeleteStmt) {
             return True;
         }
-        if isinstance(node, uni.BinaryExpr) {
-            if isinstance(node.op, (uni.ConnectOp, uni.DisconnectOp)) {
+        if isinstance(`node, uni.BinaryExpr) {
+            if isinstance(`node.op, (uni.ConnectOp, uni.DisconnectOp)) {
                 return True;
             }
-            if node.op?.name and node.op.name == Tok.KW_SPAWN {
+            if `node.op?.name and `node.op.name == Tok.KW_SPAWN {
                 return True;
             }
         }
         # Recurse into children
-        if node?.kid and node.kid {
-            for child in node.kid {
+        if `node?.kid and `node.kid {
+            for child in `node.kid {
                 if has_write_ops(child) {
                     return True;
                 }
@@ -1271,7 +1262,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
         ) -> None {
             username = self._authenticate();
             if not username {
-                username = '__guest__';
+                username = Con.GUEST.value;
                 if not server.user_manager.user_exists(username) {
                     server.user_manager.create_user(username, '__no_password__');
                 }
@@ -1571,7 +1562,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 } else {
                     username = self._authenticate();
                     if not username {
-                        username = '__guest__';
+                        username = Con.GUEST.value;
                         if not server.user_manager.user_exists(username) {
                             server.user_manager.create_user(
                                 username, '__no_password__'
@@ -1597,7 +1588,7 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                 } else {
                     username = self._authenticate();
                     if not username {
-                        username = '__guest__';
+                        username = Con.GUEST.value;
                         if not server.user_manager.user_exists(username) {
                             server.user_manager.create_user(
                                 username, '__no_password__'
@@ -1610,6 +1601,48 @@ impl JacAPIServer.create_handler -> type[BaseHTTPRequestHandler] {
                     server.execution_handler.spawn_walker(name, fields, username)
                 );
                 self._send_response(response);
+            } elif (path == '/cl/__error__') {
+                message = data.get('message', '');
+                if not message {
+                    Jac.send_json(
+                        self, 400, {'error': 'Missing required field: message'}
+                    );
+                } else {
+                    # Rate limit and deduplicate
+                    import from jaclang.runtimelib.source_mapping {
+                        SourceMapper,
+                        _error_rate_limiter
+                    }
+                    if not _error_rate_limiter.should_log(message) {
+                        Jac.send_json(self, 200, {'ok': True, 'throttled': True});
+                    } else {
+                        stack = data.get('stack', '');
+                        url = data.get('url', '');
+                        source = data.get('source', '');
+                        # Resolve stack trace to .jac files via source maps
+                        if stack and server.base_path {
+                            try {
+                                mapper = SourceMapper.from_bundle(server.base_path);
+                                stack = mapper.resolve_stack_trace(stack);
+                            } except Exception { }
+                        }
+                        log_parts = [f"[Client] {message}"];
+                        if stack {
+                            log_parts.append(f"  Stack: {stack}");
+                        }
+                        if url {
+                            log_parts.append(f"  URL: {url}");
+                        }
+                        if source {
+                            log_parts.append(f"  Source: {source}");
+                        }
+                        import logging;
+                        logging.getLogger("jaclang.client_errors").error(
+                            '\n'.join(log_parts)
+                        );
+                        Jac.send_json(self, 200, {'ok': True});
+                    }
+                }
             } else {
                 Jac.send_json(self, 404, {'error': 'Not found'});
             }
@@ -1831,6 +1864,44 @@ impl JacAPIServer.start(
             self.scheduler.stop();
         }
     }
+}
+
+"""Handle a client-side error report posted to /cl/__error__.
+
+Logs the error via the client_errors logger and prints to console.
+Requires at least a 'message' field in the JSON payload.
+"""
+def _handle_client_error(handler: Any, data: dict[str, Any]) -> None {
+    message = data.get('message', '');
+    if not message {
+        Jac.send_json(handler, 400, {'error': 'Missing required field: message'});
+        return;
+    }
+    stack = data.get('stack', '');
+    url = data.get('url', '');
+    source = data.get('source', '');
+    timestamp = data.get('timestamp', '');
+    # Log to the client_errors logger
+    log_parts = [f"[Client] {message}"];
+    if stack {
+        log_parts.append(f"  Stack: {stack}");
+    }
+    if url {
+        log_parts.append(f"  URL: {url}");
+    }
+    if source {
+        log_parts.append(f"  Source: {source}");
+    }
+    log_message = '\n'.join(log_parts);
+    _client_error_logger.error(log_message);
+    # Also print to console for dev visibility
+    console.error(f"[Client] {message}");
+    if stack {
+        for line in stack.split('\n') {
+            console.print(f"    {line}");
+        }
+    }
+    Jac.send_json(handler, 200, {'ok': True});
 }
 
 """Print comprehensive documentation for all endpoints that would be generated."""

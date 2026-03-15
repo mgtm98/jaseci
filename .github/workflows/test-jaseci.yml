@@ -109,7 +109,7 @@ jobs:
       working-directory: docs
 
     - name: Run documentation validation tests
-      run: pytest -q -x docs/tests/test_validate_md_files.jac
+      run: pytest -q -x docs/tests/test_docs.jac
 
     - name: Install Playwright
       run: |
@@ -196,9 +196,21 @@ jobs:
       run: |
         pytest -x jac-scale/jac_scale/tests/test_admin.jac
 
+    - name: Run MongoDB user manager tests
+      run: |
+        pytest -x jac-scale/jac_scale/tests/test_mongo_user_manager.jac
+
     - name: Run Serializer tests
       run: |
         pytest -x -vv -s jac-scale/jac_scale/tests/test_serializer_social.jac
+
+    - name: Run Scheduling tests
+      run: |
+        pytest -x -vv -s jac-scale/jac_scale/tests/test_scheduling.jac
+
+    - name: Run RestSpec tests
+      run: |
+        pytest -x jac-scale/jac_scale/tests/test_restspec.jac
 
   test-scale-k8s:
     runs-on: ubuntu-latest
@@ -276,6 +288,13 @@ jobs:
 
     - name: Uninstall editable jaclang
       run: pip uninstall -y jaclang
+
+    - name: Clean egg-info to simulate fresh build (like publish-release)
+      run: |
+        rm -rf jac/jaclang.egg-info
+        rm -rf jac-client/*.egg-info
+        rm -rf jac-scale/*.egg-info
+        rm -rf jac-byllm/*.egg-info
 
     - name: Build and install packages
       run: |
