@@ -137,9 +137,19 @@ obj ModuleType(TypeBase) {
     def __str__ -> str;
 }
 
-"""Represents a type variable."""
+"""Represents a type variable.
+
+TypeVarType supports two mutually exclusive constraint modes:
+1. bound - TypeVar("T", bound=Foo) means T can be Foo or any subclass
+2. constraints - TypeVar("T", Foo, Bar) means T must be exactly Foo or Bar
+"""
 obj TypeVarType(TypeBase) {
-    has name: str = "";
+    has name: str = "",
+        is_covariant: bool = False,
+        is_contravariant: bool = False,
+        is_self: bool = False,
+        bound: (TypeBase | None) = None,
+        constraints: (list[TypeBase] | None) = None;
 
     with entry {
         CATEGORY: ClassVar[TypeCategory] = TypeCategory.TypeVar;
@@ -289,12 +299,7 @@ obj FunctionType(TypeBase) {
     def postinit -> None;
     def __str__ -> str;
     def specialize(class_type: ClassType) -> FunctionType;
-    def _index_of_type_param(class_type: ClassType, type_var: TypeVarType) -> int;
-    # --- Flag checking methods (following Pyright's pattern) ---
-    """Check if this is a gradual callable form (Callable[..., T])."""
     def is_gradual_callable_form -> bool;
-
-    """Check if this function type was created from a Callable annotation."""
     def is_from_callable_annotation -> bool;
 }
 

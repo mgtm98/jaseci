@@ -3,6 +3,8 @@
 """Before pass."""
 impl SymTabBuildPass.before_pass(self: SymTabBuildPass) -> None {
     self.cur_sym_tab: list[UniScopeNode] = [];
+    # Track version conditional if statements (don't create scope, only traverse matched branch)
+    self._version_cond_ifs: set[int] = set();
 }
 
 """Push scope."""
@@ -323,7 +325,14 @@ impl SymTabBuildPass.exit_atom_trailer(
     if (ability and ability.method_owner) {
         archetype = ability.method_owner;
         if isinstance(archetype, uni.Archetype) {
-            archetype.sym_tab.def_insert(chain[1], access_spec=archetype);
+            # Only allow dynamic self.attr for class archetypes (Python-style).
+            # obj/node/edge/walker have fixed schemas via 'has' declarations.
+            if (
+                archetype.arch_type.name == 'KW_CLASS'
+                or archetype.sym_tab.lookup(chain[1].sym_name, deep=False) is not None
+            ) {
+                archetype.sym_tab.def_insert(chain[1], access_spec=archetype);
+            }
         }
         return;
     }
@@ -337,7 +346,15 @@ impl SymTabBuildPass.exit_atom_trailer(
             lookup = impl_def.sym_tab.parent_scope.lookup(archetype_name, deep=True);
             if (lookup and isinstance(lookup.decl.name_of, uni.Archetype)) {
                 archetype = lookup.decl.name_of;
-                archetype.sym_tab.def_insert(chain[1], access_spec=archetype);
+                # Only allow dynamic self.attr for class archetypes.
+                if (
+                    archetype.arch_type.name == 'KW_CLASS'
+                    or archetype.sym_tab.lookup(
+                        chain[1].sym_name, deep=False
+                    ) is not None
+                ) {
+                    archetype.sym_tab.def_insert(chain[1], access_spec=archetype);
+                }
             }
         }
     }
@@ -390,27 +407,75 @@ impl SymTabBuildPass.exit_typed_ctx_block(
 }
 
 impl SymTabBuildPass.enter_if_stmt(self: SymTabBuildPass, nd: uni.IfStmt) -> None {
-    self.push_scope_and_link(nd);
+    # Pyright: evaluateStaticBoolLikeExpression for sys.version_info conditionals
+    eval_result = evaluate_version_condition(nd.condition);
+
+    if eval_result is None {
+        # Not a version conditional - normal processing with scope
+        self.push_scope_and_link(nd);
+        return;
+    }
+
+    # Version conditional: don't push scope, don't link
+    # sym_tab will skip unlinked scopes, so symbols go to parent
+    self._version_cond_ifs.add(id(nd));
+
+    if eval_result {
+        # Condition True - only process if body
+        for stmt in nd.body {
+            self.traverse(stmt);
+        }
+    } else {
+        # Condition False - only process else body
+        if nd.else_body {
+            self._version_cond_ifs.add(id(nd.else_body));
+            self.traverse(nd.else_body);
+        }
+    }
+    # Skip automatic child traversal
+    self.prune();
 }
 
 impl SymTabBuildPass.exit_if_stmt(self: SymTabBuildPass, nd: uni.IfStmt) -> None {
-    self.pop_scope();
+    if id(nd) not in self._version_cond_ifs {
+        self.pop_scope();
+    }
 }
 
 impl SymTabBuildPass.enter_else_if(self: SymTabBuildPass, nd: uni.ElseIf) -> None {
+    if id(nd) in self._version_cond_ifs {
+        # Part of version conditional - don't push scope
+        for stmt in nd.body {
+            self.traverse(stmt);
+        }
+        self.prune();
+        return;
+    }
     self.push_scope_and_link(nd);
 }
 
 impl SymTabBuildPass.exit_else_if(self: SymTabBuildPass, nd: uni.ElseIf) -> None {
-    self.pop_scope();
+    if id(nd) not in self._version_cond_ifs {
+        self.pop_scope();
+    }
 }
 
 impl SymTabBuildPass.enter_else_stmt(self: SymTabBuildPass, nd: uni.ElseStmt) -> None {
+    if id(nd) in self._version_cond_ifs {
+        # Part of version conditional - don't push scope
+        for stmt in nd.body {
+            self.traverse(stmt);
+        }
+        self.prune();
+        return;
+    }
     self.push_scope_and_link(nd);
 }
 
 impl SymTabBuildPass.exit_else_stmt(self: SymTabBuildPass, nd: uni.ElseStmt) -> None {
-    self.pop_scope();
+    if id(nd) not in self._version_cond_ifs {
+        self.pop_scope();
+    }
 }
 
 impl SymTabBuildPass.enter_try_stmt(self: SymTabBuildPass, nd: uni.TryStmt) -> None {

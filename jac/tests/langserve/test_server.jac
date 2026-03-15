@@ -180,14 +180,15 @@ test "test_go_to_definition" {
         );
 
         # Test go-to-definition for self-member assigned in impl file.
-        # t2.program (line 20) should go to self.program in impl file (line 4).
+        # t2.program (line 25) should go to 'has program' declaration (line 12).
         self_member_file = uris.from_fs_path(
             passes_main_fixture_abs_path("checker_impl/checker_impl_self_member.jac")
         );
         lsp.type_check_file(self_member_file);
-        assert "checker_impl_self_member.impl.jac:3" in str(
-            lsp.get_definition(self_member_file, lspt.Position(19, 14))
-        );
+        go_def_result = str(lsp.get_definition(self_member_file, lspt.Position(24, 14)));
+        # program field is declared via 'has' -- go-to-def points to the declaration
+        # (line 12, 1-indexed = line 11 in 0-indexed LSP format)
+        assert "checker_impl_self_member.jac:11" in go_def_result , f"Unexpected go-to-def result: {go_def_result}";
     } finally {
         teardown_test();
     }
@@ -547,6 +548,33 @@ test "test_go_to_definition_nested_impl_symbols" {
     }
 }
 
+test "test_go_to_definition_stub_param_compound_types" {
+    setup_test();
+    try {
+        lsp = create_server();
+        stub_file = uris.from_fs_path(fixture_path("stub_param_goto_def.jac"));
+        lsp.type_check_file(stub_file);
+
+        # (line, col, description) — 1-indexed; col points to `Module` in `uni.Module`
+        positions = [
+            (8, 47, "simple param: uni.Module"),
+            (10, 40, "list param: list[uni.Module]"),
+            (12, 38, "union param: uni.Module | None"),
+            (14, 45, "dict param: dict[str, uni.Module]"),
+            (16, 43, "Optional param: Optional[uni.Module]"),
+
+        ];
+
+        for (line, col, desc) in positions {
+            result = lsp.get_definition(stub_file, lspt.Position(line - 1, col - 1));
+            assert result is not None , f"go-to-def returned None for {desc}";
+            assert "unitree.jac" in str(result) , f"Expected unitree.jac for {desc}, got: {result}";
+        }
+    } finally {
+        teardown_test();
+    }
+}
+
 test "test_hover_narrowing_in_loop" {
     setup_test();
     try {
@@ -660,12 +688,12 @@ test "test_hover_types" {
         );
         lsp.type_check_file(overload_file);
         overload_cases = [
-            (4, 6, ["list"]),  # parts: list[str]
-            (5, 6, ["str"]),  # first: str (from list[str][0])
-            (6, 6, ["str"]),  # result: str (str + str)
-            (8, 6, ["list"]),  # parts2: list[str]
-            (9, 6, ["str"]),  # first3: str
-            (10, 6, ["str"]),  # result3: str
+            (4, 6, ["list"]),  # parts: list[str] or list[LiteralString]
+            (5, 6, ["str", "String"]),  # first: str or LiteralString
+            (6, 6, ["str", "String"]),  # result: str or LiteralString
+            (8, 6, ["list"]),  # parts2: list[str] or list[LiteralString]
+            (9, 6, ["str", "String"]),  # first3: str or LiteralString
+            (10, 6, ["str", "String"]),  # result3: str or LiteralString
 
         ];
         for (line, col, expected_list) in overload_cases {

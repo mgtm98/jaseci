@@ -40,8 +40,8 @@ def _assert_error_pretty_found(needle: str, haystack: str) -> None {
     }
 }
 
+"""Run jac check and return file count."""
 def _run_jac_check(test_dir: str, ignore_pattern: list = []) -> int {
-    """Run jac check and return file count."""
     captured_stdout = io.StringIO();
     captured_stderr = io.StringIO();
     old_stdout = sys.stdout;
@@ -65,8 +65,8 @@ def _run_jac_check(test_dir: str, ignore_pattern: list = []) -> int {
 }
 
 # Helper functions for clean command tests
+"""Create a minimal jac project structure for testing."""
 def _create_clean_project(tmpdir: str) -> str {
-    """Create a minimal jac project structure for testing."""
     project_path = os.path.join(tmpdir, "testproj");
     os.makedirs(project_path, exist_ok=True);
 
@@ -79,8 +79,8 @@ def _create_clean_project(tmpdir: str) -> str {
     return project_path;
 }
 
+"""Set up output capture and return (stdout_capture, stderr_capture, old_stdout, old_stderr)."""
 def _capture_output -> tuple {
-    """Set up output capture and return (stdout_capture, stderr_capture, old_stdout, old_stderr)."""
     captured_stdout = io.StringIO();
     captured_stderr = io.StringIO();
     old_stdout = sys.stdout;
@@ -90,20 +90,20 @@ def _capture_output -> tuple {
     return (captured_stdout, captured_stderr, old_stdout, old_stderr);
 }
 
+"""Restore original stdout/stderr."""
 def _restore_output(old_stdout: object, old_stderr: object) -> None {
-    """Restore original stdout/stderr."""
     sys.stdout = old_stdout;
     sys.stderr = old_stderr;
 }
 
+"""Reset the global config cache to force rediscovery."""
 def _reset_config -> None {
-    """Reset the global config cache to force rediscovery."""
     import from jaclang.project { config as config_module }
     config_module._config = None;
 }
 
+"""Ensure template registry is initialized once."""
 def _ensure_template_registry -> None {
-    """Ensure template registry is initialized once."""
     initialized = _template_state.get("initialized", False);
     if not initialized {
         import from jaclang.project.template_registry { initialize_template_registry }
@@ -227,7 +227,7 @@ test "jac cli error output has no raw ansi codes" {
     }
     output = captured_output.getvalue();
     # Ensure the error was actually reported
-    assert "The 'new' keyword is not supported in Jac" in output;
+    assert "'new' is not supported in Jac" in output;
     # Raw ANSI escape codes (\x1b[) must not appear in error output.
     # The console layer handles styling; pretty_print should not inject raw codes.
     assert "\x1b[" not in output , f"Raw ANSI escape codes found in error output:\n{repr(
@@ -376,7 +376,7 @@ test "cfg printgraph" {
     }
     stdout_value = captured.getvalue();
     correct_graph = (
-        "digraph G {\n" + '  0 [label="BB0\\n\\nprint ( \\"im still here\\" ) ;", shape=box];\n' + '  1 [label="BB1\\n\\"Hello World!\\" |> print ;", shape=box];\n' + "}\n\n"
+        "digraph G {\n" + '  0 [label="BB0\\ndef still_there\\nprint ( \\"im still here\\" ) ;", shape=box];\n' + '  1 [label="BB1\\n\\"Hello World!\\" |> print ;", shape=box];\n' + "}\n\n"
     );
     assert correct_graph == stdout_value;
 }
@@ -451,7 +451,7 @@ test "run specific test only" {
     old_stdout = sys.stdout;
     sys.stdout = captured;
     try {
-        analysis.test(fixture_path("jactest_main.jac"), test_name="from_2_to_10");
+        analysis.test(fixture_path("jactest_main.jac"), test_name="from 2 to 10");
         stdout = captured.getvalue();
         stderr = captured_stderr.getvalue();
     } finally {
@@ -913,8 +913,8 @@ test "jac create and run no root files" {
         assert result == 0 , "jac create failed";
 
         # Record files after create (before run)
+        # Get files/dirs in project root, excluding .jac directory.
         def get_root_files(path: Path) -> set {
-            """Get files/dirs in project root, excluding .jac directory."""
             items = set();
             for item in path.iterdir() {
                 if item.name != ".jac" {
@@ -1514,20 +1514,20 @@ test "syntax error pretty print" {
 
     program = JacProgram();
     program.compile(fixture_path("test_syntax_err.jac"));
-    assert len(program.errors_had) == 1 , (
-        f"Expected 1 error with improved error reporting, got {len(program.errors_had)}"
+    assert len(program.errors_had) == 3 , (
+        f"Expected 3 errors with improved error reporting, got {len(program.errors_had)}"
     );
     _assert_error_pretty_found(
         """
         2 |
         3 | walker w {
         4 |     can foo {
-          |             ^
-        5 |         print "Missing semicolon"
-        6 |     }
+          |
     """,
         program.errors_had[0].pretty_print()
     );
+    _assert_error_pretty_found("Missing ';'", program.errors_had[1].pretty_print());
+    _assert_error_pretty_found("Missing ';'", program.errors_had[2].pretty_print());
 }
 
 test "jac grammar" {
@@ -1567,8 +1567,8 @@ test "jac cli check ignore patterns" {
     assert result_count == 1;
 }
 
+"""Test --ignore with multiple wildcard patterns."""
 test "jac cli check ignore with wildcards" {
-    """Test --ignore with multiple wildcard patterns."""
     test_dir = fixture_path("deep");
     result_count = _run_jac_check(test_dir, ["one_lev*", "snd_*"]);
     assert result_count == 3;
@@ -1686,12 +1686,12 @@ test "bare lt in jsx content is treated as text" {
     assert result == 0 , f"should compile successfully, got errors: {stderr}";
 }
 
-test "jir_registry is up to date" {
-    """Verify jir_registry.jac matches what gen_jir_registry.jac would generate.
+"""Verify jir_registry.jac matches what gen_jir_registry.jac would generate.
 
-    Fails with a descriptive message if the registry is out of date, e.g. because
-    unitree node classes were added or changed without re-running `jac gen-jir-registry`.
-    """
+Fails with a descriptive message if the registry is out of date, e.g. because
+unitree node classes were added or changed without re-running `jac gen-jir-registry`.
+"""
+test "jir_registry is up to date" {
     captured = io.StringIO();
     old_stdout = sys.stdout;
     sys.stdout = captured;
@@ -1706,5 +1706,41 @@ test "jir_registry is up to date" {
     assert result == 0 , (
         "jir_registry.jac is out of date. "
         "Run `jac gen-jir-registry` to regenerate it."
+    );
+}
+
+test "jac check reports errors for files inside jaclang source tree" {
+    # Regression: _resolve_program routed jaclang-internal files to
+    # internal_program, so errors were invisible to the caller's JacProgram.
+    # force_target_program=True (set by jac check) fixes this.
+    internal_fixture = os.path.join(
+        JAC_ROOT, "jaclang", "compiler", "tests", "fixtures", "prim_float.jac"
+    );
+    captured_stdout = io.StringIO();
+    captured_stderr = io.StringIO();
+    old_stdout = sys.stdout;
+    old_stderr = sys.stderr;
+    sys.stdout = captured_stdout;
+    sys.stderr = captured_stderr;
+
+    try {
+        result = analysis.check([internal_fixture]);
+        stdout = captured_stdout.getvalue();
+        stderr = captured_stderr.getvalue();
+    } finally {
+        sys.stdout = old_stdout;
+        sys.stderr = old_stderr;
+    }
+
+    combined = stdout + stderr;
+
+    # prim_float.jac has type errors (unary + returns Unknown) — check must
+    # report them even though the file lives inside the jaclang package.
+    assert result == 1 , (
+        "jac check should report errors for jaclang-internal files, "
+        f"but returned exit code {result}. Output:\n{combined}"
+    );
+    assert "failed" in combined.lower() , (
+        "Expected failure output for jaclang-internal file with type errors"
     );
 }

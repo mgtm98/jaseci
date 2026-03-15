@@ -172,7 +172,7 @@ with entry {
     friends = [alice -->];  # [bob, carol]
 
     # Filter by type
-    only_people = [root -->](?:Person);
+    only_people = [root -->][?:Person];
 }
 ```
 
@@ -187,16 +187,16 @@ edge Knows {
     has since: int;
 }
 
-def query_examples(node: Person, alice: Person) {
+def query_examples(src: Person, alice: Person) {
     # Basic queries
-    [node -->];           # All forward connections
-    [node <--];           # All backward connections
-    [node <-->];          # Both directions
+    [src -->];           # All forward connections
+    [src <--];           # All backward connections
+    [src <-->];          # Both directions
 
     # Type filtering
-    [node -->](?:Person);           # Only Person nodes
-    [node ->:Knows:->];             # Only via Knows edges
-    [node ->:Knows:->](?:Person);   # Knows edges to Person nodes
+    [src -->][?:Person];           # Only Person nodes
+    [src ->:Knows:->];             # Only via Knows edges
+    [src ->:Knows:->][?:Person];   # Knows edges to Person nodes
 
     # Chained traversal
     [alice ->:Knows:-> ->:Knows:->];  # Friends of friends
@@ -553,7 +553,7 @@ walker add_todo {
 
 walker list_todos {
     can list with Root entry {
-        for todo in [-->](?:Todo) {
+        for todo in [-->][?:Todo] {
             report todo;
         }
     }

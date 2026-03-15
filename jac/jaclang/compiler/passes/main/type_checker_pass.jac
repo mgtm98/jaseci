@@ -10,14 +10,29 @@ Reference:
 """
 import jaclang.jac0core.unitree as uni;
 import from jaclang.jac0core.passes { UniPass }
+import from jaclang.jac0core.diagnostics {
+    E1001,
+    E1002,
+    E1003,
+    E1004,
+    E1010,
+    E1011,
+    E1020,
+    E1021,
+    E1022,
+    E1060,
+    E1061,
+    E1090,
+    E1091,
+    E1092,
+    E1093,
+    E1094,
+    E1095
+}
 
 """Type checker pass for JacLang."""
 class TypeCheckPass(UniPass) {
     def before_pass(self: TypeCheckPass) -> None;
-    def _add_diagnostic(
-        self: TypeCheckPass, nd: uni.UniNode, message: str, warning: bool
-    ) -> None;
-
     def _insert_builtin_symbols(self: TypeCheckPass) -> None;
     def enter_ability(self: TypeCheckPass, nd: uni.Ability) -> None;
     def exit_ability(self: TypeCheckPass, nd: uni.Ability) -> None;
@@ -43,6 +58,7 @@ class TypeCheckPass(UniPass) {
     def exit_has_var(self: TypeCheckPass, nd: uni.HasVar) -> None;
     def exit_in_for_stmt(self: TypeCheckPass, nd: uni.InForStmt) -> None;
     def exit_raise_stmt(self: TypeCheckPass, nd: uni.RaiseStmt) -> None;
+    def enter_with_stmt(self: TypeCheckPass, nd: uni.WithStmt) -> None;
     def exit_with_stmt(self: TypeCheckPass, nd: uni.WithStmt) -> None;
     def exit_while_stmt(self: TypeCheckPass, nd: uni.WhileStmt) -> None;
     def exit_assert_stmt(self: TypeCheckPass, nd: uni.AssertStmt) -> None;
@@ -50,6 +66,8 @@ class TypeCheckPass(UniPass) {
     def exit_delete_stmt(self: TypeCheckPass, nd: uni.DeleteStmt) -> None;
     def exit_visit_stmt(self: TypeCheckPass, nd: uni.VisitStmt) -> None;
     def exit_report_stmt(self: TypeCheckPass, nd: uni.ReportStmt) -> None;
+    def exit_impl_def(self: TypeCheckPass, nd: uni.ImplDef) -> None;
+    def exit_sub_tag(self: TypeCheckPass, nd: uni.SubTag[uni.T]) -> None;
     def _eval_unpacking_names(self: TypeCheckPass, container: uni.Expr) -> None;
     def _body_always_returns(
         self: TypeCheckPass, body: list[uni.CodeBlockStmt]

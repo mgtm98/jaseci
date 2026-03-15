@@ -31,6 +31,7 @@ import from jac_scale.providers.database.kubernetes_redis { KubernetesRedisProvi
 import from jac_scale.factories.database_factory { DatabaseProviderFactory }
 import from jac_scale.factories.registry_factory { ImageRegistryFactory }
 import from jac_scale.targets.kubernetes.monitoring { MonitoringDeployer }
+import from jac_scale.targets.kubernetes.ingress { IngressDeployer }
 import from jac_scale.targets.kubernetes.hpa.hpa { create_hpa }
 import time;
 import from kubernetes { client, config as k8s_cluster_config }
@@ -125,42 +126,31 @@ obj KubernetesTarget(DeploymentTarget) {
         return {'readiness': probe_config, 'liveness': liveness_probe};
     }
 
-    """Build Kubernetes service configuration."""
+    """Build Kubernetes service configuration.
+
+    Always ClusterIP — the app is reached exclusively through the NGINX Ingress
+    controller, so no direct NodePort or cloud LoadBalancer is needed.
+    """
     def _build_service_config(
         app_name: str, cluster_env: str, health_check_path: str
     ) -> dict[(str, Any)] {
-        service_type = 'LoadBalancer' if cluster_env == 'aws' else 'NodePort';
-        service_port = 80 if cluster_env == 'aws' else self.k8s_config.container_port;
-        port_config: dict[(str, Any)] = {
-            'protocol': 'TCP',
-            'port': service_port,
-            'targetPort': self.k8s_config.container_port
-        };
-        if cluster_env != 'aws' {
-            port_config['nodePort'] = self.k8s_config.node_port;
-        }
-
-        service_metadata: dict[(str, Any)] = {
-            'name': f"{app_name}-service",
-            'namespace': self.k8s_config.namespace,
-            'labels': {'app': app_name, 'managed': 'jac-scale'}
-        };
-
-        if cluster_env == 'aws' {
-            service_metadata['annotations'] = {
-                'service.beta.kubernetes.io/aws-load-balancer-type': 'nlb',
-                'service.beta.kubernetes.io/aws-load-balancer-scheme': 'internet-facing',
-                'service.beta.kubernetes.io/aws-load-balancer-healthcheck-path': health_check_path
-            };
-        }
-
         service = {
             'apiVersion': 'v1',
             'kind': 'Service',
-            'metadata': service_metadata,
+            'metadata': {
+                'name': f"{app_name}-service",
+                'namespace': self.k8s_config.namespace,
+                'labels': {'app': app_name, 'managed': 'jac-scale'}
+            },
             'spec': {
-                'type': service_type,
-                'ports': [port_config],
+                'type': 'ClusterIP',
+                'ports': [
+                    {
+                        'protocol': 'TCP',
+                        'port': self.k8s_config.container_port,
+                        'targetPort': self.k8s_config.container_port
+                    }
+                ],
                 'selector': {'app': app_name}
             }
         };
@@ -499,14 +489,14 @@ obj KubernetesTarget(DeploymentTarget) {
             }
             if self.k8s_config.mongodb_dashboard {
                 express_result = mongo_provider.deploy_dashboard(
-                    cluster_env=cluster_env,
-                    node_port=self.k8s_config.mongo_express_node_port,
                     username=self.k8s_config.mongo_express_username,
                     password=self.k8s_config.mongo_express_password
                 );
                 try {
-                    apps_v1.read_namespaced_deployment(
-                        name=express_result['deployment_name'], namespace=namespace
+                    apps_v1.patch_namespaced_deployment(
+                        name=express_result['deployment_name'],
+                        namespace=namespace,
+                        body=express_result['deployment']
                     );
                 } except ApiException as e {
                     if e.status == 404 {
@@ -518,8 +508,10 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 }
                 try {
-                    core_v1.read_namespaced_service(
-                        name=express_result['service_name'], namespace=namespace
+                    core_v1.patch_namespaced_service(
+                        name=express_result['service_name'],
+                        namespace=namespace,
+                        body=express_result['service']
                     );
                 } except ApiException as e {
                     if e.status == 404 {
@@ -531,15 +523,9 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 }
                 if self.logger {
-                    if cluster_env == 'aws' {
-                        self.logger.info(
-                            f"mongo-express dashboard deployed for '{app_name}' (LoadBalancer)"
-                        );
-                    } else {
-                        self.logger.info(
-                            f"mongo-express dashboard deployed for '{app_name}' at localhost:{self.k8s_config.mongo_express_node_port}"
-                        );
-                    }
+                    self.logger.info(
+                        f"mongo-express dashboard deployed for '{app_name}' (accessible via ingress at /db-dashboard)"
+                    );
                 }
             }
         }
@@ -701,46 +687,12 @@ obj KubernetesTarget(DeploymentTarget) {
                 }
             }
             if self.k8s_config.redis_dashboard {
-                insight_result = redis_provider.deploy_dashboard(
-                    cluster_env=cluster_env,
-                    node_port=self.k8s_config.redis_insight_node_port,
-                    username=self.k8s_config.redis_insight_username,
-                    password=self.k8s_config.redis_insight_password
-                );
-                if 'auth_configmap' in insight_result {
-                    try {
-                        core_v1.read_namespaced_config_map(
-                            name=insight_result['auth_configmap']['metadata']['name'],
-                            namespace=namespace
-                        );
-                    } except ApiException as e {
-                        if e.status == 404 {
-                            core_v1.create_namespaced_config_map(
-                                namespace=namespace,
-                                body=insight_result['auth_configmap']
-                            );
-                        } else {
-                            raise;
-                        }
-                    }
-                    try {
-                        core_v1.read_namespaced_secret(
-                            name=insight_result['auth_secret']['metadata']['name'],
-                            namespace=namespace
-                        );
-                    } except ApiException as e {
-                        if e.status == 404 {
-                            core_v1.create_namespaced_secret(
-                                namespace=namespace, body=insight_result['auth_secret']
-                            );
-                        } else {
-                            raise;
-                        }
-                    }
-                }
+                insight_result = redis_provider.deploy_dashboard();
                 try {
-                    apps_v1.read_namespaced_deployment(
-                        name=insight_result['deployment_name'], namespace=namespace
+                    apps_v1.patch_namespaced_deployment(
+                        name=insight_result['deployment_name'],
+                        namespace=namespace,
+                        body=insight_result['deployment']
                     );
                 } except ApiException as e {
                     if e.status == 404 {
@@ -752,8 +704,10 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 }
                 try {
-                    core_v1.read_namespaced_service(
-                        name=insight_result['service_name'], namespace=namespace
+                    core_v1.patch_namespaced_service(
+                        name=insight_result['service_name'],
+                        namespace=namespace,
+                        body=insight_result['service']
                     );
                 } except ApiException as e {
                     if e.status == 404 {
@@ -765,15 +719,9 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 }
                 if self.logger {
-                    if cluster_env == 'aws' {
-                        self.logger.info(
-                            f"RedisInsight dashboard deployed for '{app_name}' (LoadBalancer)"
-                        );
-                    } else {
-                        self.logger.info(
-                            f"RedisInsight dashboard deployed for '{app_name}' at localhost:{self.k8s_config.redis_insight_node_port}"
-                        );
-                    }
+                    self.logger.info(
+                        f"RedisInsight dashboard deployed for '{app_name}' (accessible via ingress at /cache-dashboard)"
+                    );
                 }
             }
         }
@@ -816,7 +764,7 @@ obj KubernetesTarget(DeploymentTarget) {
             }
             if (nlb_url) {
                 (deployment_status, deployment_details) = check_deployment_status(
-                    self.k8s_config.node_port,
+                    self.k8s_config.ingress_node_port,
                     path,
                     nlb_url=nlb_url,
                     namespace=namespace,
@@ -828,10 +776,13 @@ obj KubernetesTarget(DeploymentTarget) {
             }
         } else {
             (deployment_status, deployment_details) = check_deployment_status(
-                self.k8s_config.node_port, path, namespace=namespace, app_name=app_name
+                self.k8s_config.ingress_node_port,
+                path,
+                namespace=namespace,
+                app_name=app_name
             );
             if deployment_status is False {
-                raise Exception("Deployment failed: Application failed to deploy.");
+                raise Exception(f"Deployment failed: {deployment_details}");
             }
         }
         return deployment_details;
@@ -920,42 +871,14 @@ obj KubernetesTarget(DeploymentTarget) {
 
             # 4. Determine cluster type
             cluster_env = cluster_type();
-            service_type = 'LoadBalancer'
-                if cluster_env in ('aws', 'gcp', 'azure')
-                else 'NodePort';
-
             # 4b. On local clusters, verify that the requested NodePorts are not
             #     already bound by a service in another namespace.
             if cluster_env == 'local' {
+                # All services are ClusterIP behind ingress; only the ingress
+                # controller's NodePort needs a free port on the node.
                 check_node_ports_available(
-                    node_port=self.k8s_config.node_port,
-                    prometheus_node_port=(
-                        self.k8s_config.prometheus_node_port
-                            if self.k8s_config.monitoring_enabled
-                            else None
-                    ),
-                    grafana_node_port=(
-                        self.k8s_config.grafana_node_port
-                            if self.k8s_config.monitoring_enabled
-                            else None
-                    ),
-                    current_namespace=namespace,
-                    redis_insight_node_port=(
-                        self.k8s_config.redis_insight_node_port
-                            if (
-                                self.k8s_config.redis_enabled
-                                and self.k8s_config.redis_dashboard
-                            )
-                            else None
-                    ),
-                    mongo_express_node_port=(
-                        self.k8s_config.mongo_express_node_port
-                            if (
-                                self.k8s_config.mongodb_enabled
-                                and self.k8s_config.mongodb_dashboard
-                            )
-                            else None
-                    )
+                    node_port=self.k8s_config.ingress_node_port,
+                    current_namespace=namespace
                 );
             }
 
@@ -1043,6 +966,21 @@ obj KubernetesTarget(DeploymentTarget) {
             details["delete_previous_existing_resources"] = "Successful";
             time.sleep(self.k8s_config.resource_deletion_wait);
 
+            # 12b. Start NGINX Ingress controller early so it boots in parallel with
+            # databases, app, HPA, and monitoring — minimising the wait in finish_ingress().
+            rbac_v1 = client.RbacAuthorizationV1Api();
+            networking_v1 = client.NetworkingV1Api();
+            ingress_deployer = IngressDeployer(self.k8s_config, self.logger);
+            ingress_deployer.start_controller(
+                app_name,
+                namespace,
+                cluster_env,
+                apps_v1,
+                core_v1,
+                rbac_v1,
+                networking_v1
+            );
+
             # 13. Deploy databases
             self._deploy_databases(app_name, namespace, apps_v1, core_v1, cluster_env);
             details["deploy_databases"] = "Successful";
@@ -1080,12 +1018,50 @@ obj KubernetesTarget(DeploymentTarget) {
             monitoring.deploy(app_name, namespace, apps_v1, core_v1, cluster_env);
             details["deploy_monitoring"] = "Successful";
 
+            # 15b. Finish ingress: wait for NGINX controller readiness (started at step 12b)
+            # and deploy routing rules. The controller has been booting in parallel with
+            # databases, app, HPA, and monitoring so the wait is typically zero.
+            ingress_deployer.finish_ingress(
+                app_name,
+                namespace,
+                self.k8s_config.container_port,
+                self.k8s_config.monitoring_enabled,
+                self.k8s_config.redis_dashboard,
+                self.k8s_config.mongodb_dashboard,
+                apps_v1,
+                core_v1,
+                networking_v1
+            );
+            details["deploy_ingress"] = "Successful";
+
             # 16. Wait for deployment and get service URL
             deployment_details = self._wait_for_deployment(
                 app_name, namespace, health_check_path, cluster_env
             );
             details["health_check_of_deployment"] = deployment_details;
             service_url = self.get_service_url(app_name);
+
+            # Print DNS instructions when a custom domain is set
+            if self.k8s_config.domain {
+                lb_endpoint = self._get_lb_endpoint(app_name);
+                if lb_endpoint and self.logger {
+                    import re;
+                    is_ip = bool(re.match(r'^\d+\.\d+\.\d+\.\d+$', lb_endpoint));
+                    record_type = "A" if is_ip else "CNAME";
+                    self.logger.info(f"\n{'=' * 62}");
+                    self.logger.info(
+                        f"ACTION REQUIRED — add a {record_type} record in your DNS provider:"
+                    );
+                    self.logger.info(f"  Type   : {record_type}");
+                    self.logger.info(f"  Name   : {self.k8s_config.domain}");
+                    self.logger.info(f"  Value  : {lb_endpoint}");
+                    self.logger.info(
+                        f"\nAfter the record propagates, enable HTTPS with:"
+                    );
+                    self.logger.info(f"  jac start <your-app.jac> --scale --enable-tls");
+                    self.logger.info(f"{'=' * 62}\n");
+                }
+            }
 
             success_status = True;
             return DeploymentResult(
@@ -1271,7 +1247,13 @@ obj KubernetesTarget(DeploymentTarget) {
                         break;
                     }
                 }
-            } except Exception { }
+            } except Exception as e {
+                if self.logger {
+                    self.logger.warning(
+                        f"Failed to list PVCs while checking resources for '{app_name}': {e}"
+                    );
+                }
+            }
 
             # Check code sync pod
             try {
@@ -1489,6 +1471,14 @@ obj KubernetesTarget(DeploymentTarget) {
 
             self._destroy_application(app_name, namespace, apps_v1, core_v1);
 
+            # Delete NGINX Ingress controller + routing rules
+            rbac_v1 = client.RbacAuthorizationV1Api();
+            networking_v1 = client.NetworkingV1Api();
+            ingress_deployer = IngressDeployer(self.k8s_config, self.logger);
+            ingress_deployer.destroy(
+                app_name, namespace, apps_v1, core_v1, rbac_v1, networking_v1
+            );
+
             # Delete monitoring stack (Prometheus / Grafana)
             monitoring = MonitoringDeployer(self.k8s_config, self.logger);
             monitoring.destroy(app_name, namespace, apps_v1, core_v1);
@@ -1504,7 +1494,13 @@ obj KubernetesTarget(DeploymentTarget) {
                         core_v1.delete_namespaced_persistent_volume_claim(
                             name=pvc.metadata.name, namespace=namespace
                         );
-                    } except Exception { }
+                    } except Exception as e {
+                        if self.logger {
+                            self.logger.warning(
+                                f"Failed to delete PVC '{pvc.metadata.name}': {e}"
+                            );
+                        }
+                    }
                 }
             }
 
@@ -1638,7 +1634,8 @@ obj KubernetesTarget(DeploymentTarget) {
         }
     }
 
-    def get_service_url(app_name: str) -> (str | None) {
+    """Return the LoadBalancer hostname or IP for DNS instructions (any cloud env)."""
+    def _get_lb_endpoint(app_name: str) -> (str | None) {
         try {
             try {
                 k8s_cluster_config.load_kube_config();
@@ -1647,25 +1644,63 @@ obj KubernetesTarget(DeploymentTarget) {
             }
             core_v1 = client.CoreV1Api();
             namespace = self.k8s_config.namespace;
-            service_name = f"{app_name}-service";
-
-            service = core_v1.read_namespaced_service(
-                name=service_name, namespace=namespace
+            ingress_svc_name = f"{app_name}-ingress-nginx-service";
+            svc = core_v1.read_namespaced_service(
+                name=ingress_svc_name, namespace=namespace
             );
+            lb_ingress = svc.status.load_balancer.ingress;
+            if lb_ingress and len(lb_ingress) > 0 {
+                return lb_ingress[0].hostname or lb_ingress[0].ip;
+            }
+        } except Exception as e {
+            if self.logger {
+                self.logger.debug(
+                    f"Could not get LoadBalancer endpoint for '{app_name}': {e}"
+                );
+            }
+        }
+        return None;
+    }
 
+    def get_service_url(app_name: str) -> (str | None) {
+        try {
+            try {
+                k8s_cluster_config.load_kube_config();
+            } except ConfigException {
+                k8s_cluster_config.load_incluster_config();
+            }
+            namespace = self.k8s_config.namespace;
+
+            # If a custom domain is configured, return the domain-based URL.
+            # Check Ingress spec.tls to determine whether HTTPS is active.
+            if self.k8s_config.domain {
+                try {
+                    networking_v1 = client.NetworkingV1Api();
+                    ingress = networking_v1.read_namespaced_ingress(
+                        name=f"{app_name}-ingress", namespace=namespace
+                    );
+                    if ingress.spec.tls {
+                        return f"https://{self.k8s_config.domain}";
+                    }
+                } except Exception as e {
+                    if self.logger {
+                        self.logger.debug(f"Could not read ingress TLS status: {e}");
+                    }
+                }
+                return f"http://{self.k8s_config.domain}";
+            }
+
+            core_v1 = client.CoreV1Api();
             cluster_env = cluster_type();
 
             if cluster_env == 'aws' {
-                # AWS LoadBalancer
-                ingress = service.status.load_balancer.ingress;
-                if ingress and len(ingress) > 0 {
-                    endpoint = ingress[0].hostname or ingress[0].ip;
+                # Resolve the ingress controller's LoadBalancer endpoint
+                endpoint = self._get_lb_endpoint(app_name);
+                if endpoint {
                     return f"http://{endpoint}";
                 }
             } else {
-                # NodePort
-                node_port = self.k8s_config.node_port;
-                return f"http://localhost:{node_port}";
+                return f"http://localhost:{self.k8s_config.ingress_node_port}";
             }
         } except Exception as e {
             if self.logger {
@@ -1673,6 +1708,109 @@ obj KubernetesTarget(DeploymentTarget) {
             }
         }
         return None;
+    }
+
+    """Enable HTTPS for an already-deployed application.
+
+    Installs cert-manager, creates a Let's Encrypt Issuer, patches the live
+    Ingress with TLS annotations, and waits for the certificate to become Ready.
+    Does NOT redeploy the application.
+    """
+    def enable_tls(app_name: str) -> None {
+        if self.logger {
+            self.logger.info(f"Enabling TLS for '{app_name}'...");
+        }
+        try {
+            try {
+                k8s_cluster_config.load_kube_config();
+            } except ConfigException {
+                k8s_cluster_config.load_incluster_config();
+            }
+            namespace = self.k8s_config.namespace;
+            networking_v1 = client.NetworkingV1Api();
+            custom_api = client.CustomObjectsApi();
+            core_v1 = client.CoreV1Api();
+            apps_v1 = client.AppsV1Api();
+
+            ingress_deployer = IngressDeployer(self.k8s_config, self.logger);
+            ingress_deployer.enable_tls(
+                app_name, namespace, networking_v1, custom_api, core_v1, apps_v1
+            );
+
+            # Determine domain for output (config or ingress annotation)
+            domain = self.k8s_config.domain;
+            if not domain {
+                try {
+                    ingress = networking_v1.read_namespaced_ingress(
+                        name=f"{app_name}-ingress", namespace=namespace
+                    );
+                    ann = ingress.metadata.annotations or {};
+                    domain = ann.get('jac-scale/domain', '');
+                } except Exception as e {
+                    if self.logger {
+                        self.logger.debug(f"Could not read ingress annotations: {e}");
+                    }
+                }
+            }
+
+            # Update Grafana root URL to use HTTPS with the domain
+            if domain {
+                try {
+                    grafana_name = f"{app_name}-grafana";
+                    apps_v1.patch_namespaced_deployment(
+                        name=grafana_name,
+                        namespace=namespace,
+                        body={
+                            'spec': {
+                                'template': {
+                                    'spec': {
+                                        'containers': [
+                                            {
+                                                'name': 'grafana',
+                                                'env': [
+                                                    {
+                                                        'name': 'GF_SERVER_ROOT_URL',
+                                                        'value': f"https://{domain}/grafana"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    );
+                    if self.logger {
+                        self.logger.info(
+                            f"Updated Grafana GF_SERVER_ROOT_URL to https://{domain}/grafana"
+                        );
+                    }
+                } except Exception as e {
+                    if self.logger {
+                        self.logger.debug(f"Could not update Grafana deployment: {e}");
+                    }
+                }
+            }
+
+            if domain and self.logger {
+                self.logger.info(f"\nTLS enabled. App is now live at:");
+                self.logger.info(f"  App URL:        https://{domain}");
+                self.logger.info(f"  Grafana:        https://{domain}/grafana");
+                self.logger.info(f"  Mongo Express:  https://{domain}/db-dashboard");
+                self.logger.info(f"  RedisInsight:   https://{domain}/cache-dashboard");
+                self.logger.info(
+                    f"\nCertificate renewal is automatic (cert-manager renews ~30 days before expiry).\n"
+                );
+            }
+            if self.logger {
+                self.logger.info(f"TLS successfully enabled for '{app_name}'");
+            }
+        } except Exception as e {
+            if self.logger {
+                self.logger.error(f"Failed to enable TLS for '{app_name}': {e}");
+            }
+            raise;
+        }
     }
 
     """Get comprehensive status of all deployed components for this application.
@@ -1712,7 +1850,13 @@ obj KubernetesTarget(DeploymentTarget) {
             for d in apps_v1.list_namespaced_deployment(namespace=namespace).items {
                 dep_map[d.metadata.name] = d;
             }
-        } except Exception { }
+        } except Exception as e {
+            if self.logger {
+                self.logger.warning(
+                    f"Failed to list Deployments in '{namespace}': {e}"
+                );
+            }
+        }
 
         # 2. Bulk-fetch all StatefulSets
         sts_map = {};
@@ -1720,7 +1864,13 @@ obj KubernetesTarget(DeploymentTarget) {
             for s in apps_v1.list_namespaced_stateful_set(namespace=namespace).items {
                 sts_map[s.metadata.name] = s;
             }
-        } except Exception { }
+        } except Exception as e {
+            if self.logger {
+                self.logger.warning(
+                    f"Failed to list StatefulSets in '{namespace}': {e}"
+                );
+            }
+        }
 
         # 3. Bulk-fetch pods to detect crash-looping (restart_count > 0)
         #    Keyed by the pod's 'app' label → True if any container has restarts
@@ -1739,7 +1889,11 @@ obj KubernetesTarget(DeploymentTarget) {
                     }
                 }
             }
-        } except Exception { }
+        } except Exception as e {
+            if self.logger {
+                self.logger.warning(f"Failed to list Pods in '{namespace}': {e}");
+            }
+        }
 
         # Resolve status for each component from the cached maps.
         # Derived from COMPANION_DEFS — add new companions there, not here.
@@ -1802,73 +1956,33 @@ obj KubernetesTarget(DeploymentTarget) {
 
         # 4. Application service URL
         is_aws = cluster_type() == 'aws';
+        app_url = None;
         try {
-            svc = core_v1.read_namespaced_service(
-                name=f"{app_name}-service", namespace=namespace
-            );
-            if is_aws {
-                ingress = svc.status.load_balancer.ingress;
-                if ingress and len(ingress) > 0 {
-                    endpoint = ingress[0].hostname or ingress[0].ip;
-                    urls['app'] = f"http://{endpoint}";
-                }
-            } else {
-                urls['app'] = f"http://localhost:{self.k8s_config.node_port}";
+            app_url = self.get_service_url(app_name);
+            if app_url {
+                urls['app'] = app_url;
             }
-        } except Exception { }
+        } except Exception as e {
+            if self.logger {
+                self.logger.warning(
+                    f"Failed to resolve service URL for '{app_name}': {e}"
+                );
+            }
+        }
 
-        # Grafana URL (NodePort on local, LoadBalancer on AWS)
+        # All dashboard URLs are path-based through the ingress entry point
+        base_url = app_url or '';
+
         if grafana_running {
-            if is_aws {
-                try {
-                    svc = core_v1.read_namespaced_service(
-                        name=f"{app_name}-grafana-service", namespace=namespace
-                    );
-                    ingress = svc.status.load_balancer.ingress;
-                    if ingress and len(ingress) > 0 {
-                        endpoint = ingress[0].hostname or ingress[0].ip;
-                        urls['grafana'] = f"http://{endpoint}";
-                    }
-                } except Exception { }
-            } else {
-                urls['grafana'] = f"http://localhost:{self.k8s_config.grafana_node_port}";
-            }
+            urls['grafana'] = f"{base_url}/grafana";
         }
 
-        # RedisInsight URL
         if redis_insight_running {
-            if is_aws {
-                try {
-                    svc = core_v1.read_namespaced_service(
-                        name=f"{app_name}-redis-insight-service", namespace=namespace
-                    );
-                    ingress = svc.status.load_balancer.ingress;
-                    if ingress and len(ingress) > 0 {
-                        endpoint = ingress[0].hostname or ingress[0].ip;
-                        urls['redis_insight'] = f"http://{endpoint}";
-                    }
-                } except Exception { }
-            } else {
-                urls['redis_insight'] = f"http://localhost:{self.k8s_config.redis_insight_node_port}";
-            }
+            urls['redis_insight'] = f"{base_url}/cache-dashboard";
         }
 
-        # Mongo Express URL
         if mongo_express_running {
-            if is_aws {
-                try {
-                    svc = core_v1.read_namespaced_service(
-                        name=f"{app_name}-mongo-express-service", namespace=namespace
-                    );
-                    ingress = svc.status.load_balancer.ingress;
-                    if ingress and len(ingress) > 0 {
-                        endpoint = ingress[0].hostname or ingress[0].ip;
-                        urls['mongo_express'] = f"http://{endpoint}";
-                    }
-                } except Exception { }
-            } else {
-                urls['mongo_express'] = f"http://localhost:{self.k8s_config.mongo_express_node_port}";
-            }
+            urls['mongo_express'] = f"{base_url}/db-dashboard";
         }
 
         return {

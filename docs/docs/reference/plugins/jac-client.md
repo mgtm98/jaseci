@@ -136,7 +136,7 @@ Public walkers automatically become REST endpoints:
 ```jac
 walker:pub GetUsers {
     can get with Root entry {
-        users = [-->](?:User);
+        users = [-->][?:User];
         report users;
     }
 }
@@ -894,7 +894,7 @@ Each authenticated user gets an isolated root node:
 walker:pub GetMyData {
     can get with Root entry {
         # 'root' is user-specific
-        my_data = [-->](?:MyData);
+        my_data = [-->][?:MyData];
         report my_data;
     }
 }
@@ -1204,6 +1204,8 @@ npm dependencies can also be declared in `jac.toml`:
 lodash = "^4.17.21"
 axios = "^1.6.0"
 ```
+
+**Core Dependencies**: The `jac-client-node` and `@jac-client/dev-deps` packages are required for all jac-client projects. If missing or outdated in `jac.toml`, they are automatically added or updated when the config is loaded (e.g., during `jac start`).
 
 For private packages from custom registries, see [NPM Registry Configuration](#npm-registry-configuration) above.
 

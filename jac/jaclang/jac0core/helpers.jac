@@ -231,6 +231,13 @@ def pretty_print_source_location(
                 spaces += '\t' if (file_source[idx_pre] == '\t') else ' ';
             }
             err_token_len = pos_end - pos_start;
+            line_remaining = idx - pos_start;
+            if (line_remaining > 0 and err_token_len > line_remaining) {
+                err_token_len = line_remaining;
+            }
+            if (err_token_len < 1) {
+                err_token_len = 1;
+            }
             underline = '^' * err_token_len;
             if colors {
                 underline = f"{ANSIColors.RED}{underline}{ANSIColors.END}";
@@ -246,25 +253,47 @@ def pretty_print_source_location(
     return pretty_dump[:-1];
 }
 
+"""Format related diagnostic spans for display under the main error."""
+def format_related_spans(
+    related: list[tuple[str, object]], *, colors: bool = False
+) -> str {
+    result = '';
+    for (label, loc) in related {
+        mod_path = loc.mod_path;
+        first_line = loc.first_line;
+        col_start = loc.col_start;
+        if colors {
+            result += f"\n{ANSIColors.CYAN}note{ANSIColors.END}: {label}";
+        } else {
+            result += f"\nnote: {label}";
+        }
+        if (mod_path != '') {
+            result += f"\n  --> {mod_path}:{first_line}:{col_start}";
+            try {
+                source = loc.orig_src.code;
+                span_dump = pretty_print_source_location(
+                    mod_path,
+                    source,
+                    first_line,
+                    loc.pos_start,
+                    loc.pos_end,
+                    colors=colors
+                );
+                if (span_dump != '') {
+                    result += '\n' + span_dump;
+                }
+            } except Exception {
+                ;
+            }
+        }
+    }
+    return result;
+}
+
 """Jac debugger."""
 class Jdb(pdb.Pdb) {
-    """Initialize the Jac debugger."""
-    def init(self: Jdb, *args: Any, **kwargs: Any) -> None {
-        super.init(*args, **kwargs);
-        self.prompt = 'Jdb > ';
-    }
-
-    """Check for breakpoint."""
-    def has_breakpoint(self: Jdb, bytecode: bytes) -> bool {
-        code = marshal.loads(bytecode);
-        instructions = dis.get_instructions(code);
-        return `any(
-            (
-                (instruction.opname in ('LOAD_GLOBAL', 'LOAD_NAME', 'LOAD_FAST'))
-                and (instruction.argval == 'breakpoint')
-            ) for instruction in instructions
-        );
-    }
+    def init(self: Jdb, *args: Any, **kwargs: Any) -> None;
+    def has_breakpoint(self: Jdb, bytecode: bytes) -> bool;
 }
 
 glob debugger = Jdb();
@@ -382,17 +411,11 @@ def _describe_nodes_list(objects: Sequence) -> str {
 obj DistFacade {
     has _dist: (object | None);
 
-    """Get the distribution/package name."""
     @property
-    def project_name(self: DistFacade) -> str {
-        return self._dist.name if (self._dist and self._dist?.name) else 'unknown';
-    }
+    def project_name(self: DistFacade) -> str;
 
-    """Get the distribution version."""
     @property
-    def version(self: DistFacade) -> str {
-        return self._dist.version if (self._dist and self._dist?.version) else '0.0.0';
-    }
+    def version(self: DistFacade) -> str;
 }
 
 """Get list of disabled plugins from JAC_DISABLED_PLUGINS env var or jac.toml.
@@ -526,4 +549,88 @@ def load_plugins_with_disabling(
             ;
         }
     }
+}
+
+"""Check if expr is `sys.version_info` attribute access."""
+def _is_version_info_access(expr: 'uni.Expr') -> bool {
+    import jaclang.jac0core.unitree as uni;
+
+    if not isinstance(expr, uni.AtomTrailer) {
+        return False;
+    }
+    if not expr.is_attr {
+        return False;
+    }
+    return (
+        isinstance(expr.target, uni.Name)
+        and expr.target.value == "sys"
+        and isinstance(expr.right, uni.Name)
+        and expr.right.value == "version_info"
+    );
+}
+
+"""Extract (major, minor) tuple from a TupleVal node."""
+def _extract_version_tuple(expr: 'uni.Expr') -> tuple[int, int] | None {
+    import jaclang.jac0core.unitree as uni;
+
+    if not isinstance(expr, uni.TupleVal) {
+        return None;
+    }
+    if len(expr.values) < 2 {
+        return None;
+    }
+    (major, minor) = (expr.values[0], expr.values[1]);
+    if not isinstance(major, uni.Int) or not isinstance(minor, uni.Int) {
+        return None;
+    }
+    return (major.lit_value, minor.lit_value);
+}
+
+"""Evaluate a sys.version_info conditional expression.
+
+Handles `sys.version_info >= (3, 10)` style expressions.
+Returns True/False if recognized, None otherwise.
+"""
+def evaluate_version_condition(condition: 'uni.Expr') -> bool | None {
+    import sys;
+    import operator;
+    import jaclang.jac0core.unitree as uni;
+
+    cond = condition;
+    if isinstance(cond, uni.AtomUnit) {
+        cond = cond.value;
+    }
+    if not isinstance(cond, uni.CompareExpr) {
+        return None;
+    }
+    if not _is_version_info_access(cond.left) {
+        return None;
+    }
+    if len(cond.ops) != 1 or len(cond.rights) != 1 {
+        return None;
+    }
+
+    target = _extract_version_tuple(cond.rights[0]);
+    if target is None {
+        return None;
+    }
+
+    current = (sys.version_info.major, sys.version_info.minor);
+    op_map: dict = {
+        ">=": operator.ge,
+        "GtE": operator.ge,
+        ">": operator.gt,
+        "Gt": operator.gt,
+        "<=": operator.le,
+        "LtE": operator.le,
+        "<": operator.lt,
+        "Lt": operator.lt,
+        "==": operator.eq,
+        "Eq": operator.eq,
+        "!=": operator.ne,
+        "NotEq": operator.ne
+    };
+
+    op_str = cond.ops[0].value;
+    return op_map[op_str](current, target) if op_str in op_map else None;
 }

@@ -33,7 +33,7 @@ obj Arg {
     has name: str,  # Parameter name
         kind: ArgKind = ArgKind.OPTION,  # Argument kind
         typ: Any = str,  # Python type for conversion
-        default: Any = None,  # Default value
+        `default: Any = None,  # Default value
         help: str = "",  # Help text for this argument
         short: str | None = None,  # Short flag, e.g., "-s" for "--session"
         choices: list[Any] | None = None,  # Valid choices
@@ -42,12 +42,11 @@ obj Arg {
         metavar: str | None = None,  # Display name in help
         source: str = "jaclang";  # Source plugin that added this arg
 
-    """Create argument with auto-generated short flag."""
     static def create(
         name: str,
         kind: ArgKind = ArgKind.OPTION,
         typ: Any = str,
-        default: Any = None,
+        `default: Any = None,
         help: str = "",
         short: str | None = None,
         choices: list[Any] | None = None,
@@ -78,16 +77,9 @@ obj CommandSpec {
         pre_hooks: list[tuple[Callable, str]] = [],  # (hook, source) pairs
         post_hooks: list[tuple[Callable, str]] = [];  # (hook, source) pairs
 
-    """Get all arguments (base + plugin-extended)."""
     def get_all_args -> list[Arg];
-
-    """Add an extension argument from a plugin."""
     def add_extension_arg(arg: Arg, source: str) -> None;
-
-    """Add a pre-execution hook from a plugin."""
     def add_pre_hook(hook: Callable, source: str) -> None;
-
-    """Add a post-execution hook from a plugin."""
     def add_post_hook(hook: Callable, source: str) -> None;
 }
 
@@ -103,12 +95,7 @@ obj HookContext {
         args: dict[str, Any],  # Parsed command arguments
         data: dict[str, Any] = {};  # Mutable context for hook communication
 
-    """Get an argument value with optional default."""
-    def get_arg(name: str, default: Any = None) -> Any;
-
-    """Set a value in the hook data context."""
+    def get_arg(name: str, `default: Any = None) -> Any;
     def set_data(key: str, value: Any) -> None;
-
-    """Get a value from the hook data context."""
-    def get_data(key: str, default: Any = None) -> Any;
+    def get_data(key: str, `default: Any = None) -> Any;
 }
