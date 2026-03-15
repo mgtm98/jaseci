@@ -382,7 +382,12 @@ impl ClassType.__str__ -> str {
         }
         return f"Literal[{lit_val}]";
     }
-    return f"<class {self.shared.class_name}>";
+    # Include type_args in display for parameterized types (e.g., list[int], dict[str, bool])
+    if self.private and self.private.type_args {
+        args_str = ", ".join(str(arg) for arg in self.private.type_args);
+        return f"{self.shared.class_name}[{args_str}]";
+    }
+    return f"{self.shared.class_name}";
 }
 
 """Initialize the class type."""
