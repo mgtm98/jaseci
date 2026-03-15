@@ -655,6 +655,52 @@ class NativeListEmitter(ListEmitter[(ir.Value, NativeEmitCtx)]) {
         return ir.Constant(i64, 0);
     }
 
+    def emit_del_at(
+        self, ctx: NativeEmitCtx, target: ir.Value, args: list[ir.Value]
+    ) -> (ir.Value | None) {
+        # del list[idx]: shift elements from idx+1 leftward, then decrement length.
+        if not args {
+            return None;
+        }
+        p = ctx.pass_ref;
+        helpers = p.list_helpers.get(ctx.type_key);
+        if helpers is None {
+            return None;
+        }
+        b = p.builder;
+        i32 = ir.IntType(32);
+        i64 = ir.IntType(64);
+        del_idx = args[0];
+        len_ptr = b.gep(
+            target, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="delat.len.ptr"
+        );
+        cur_len = b.load(len_ptr, name="delat.len");
+        func = b.basic_block.function;
+        entry_bb = b.basic_block;
+        # shift_start = del_idx + 1, computed in entry_bb before branch
+        shift_start = b.add(del_idx, ir.Constant(i64, 1), name="delat.start");
+        loop_bb = func.append_basic_block(name="delat.loop");
+        body_bb = func.append_basic_block(name="delat.body");
+        done_bb = func.append_basic_block(name="delat.done");
+        b.branch(loop_bb);
+        b.position_at_start(loop_bb);
+        si = b.phi(i64, name="delat.si");
+        si.add_incoming(shift_start, entry_bb);
+        at_end = b.icmp_unsigned(">=", si, cur_len, name="delat.end");
+        b.cbranch(at_end, done_bb, body_bb);
+        b.position_at_start(body_bb);
+        val = b.call(helpers["get"], [target, si], name="delat.val");
+        prev = b.sub(si, ir.Constant(i64, 1), name="delat.prev");
+        b.call(helpers["set"], [target, prev, val]);
+        next_si = b.add(si, ir.Constant(i64, 1), name="delat.next");
+        si.add_incoming(next_si, body_bb);
+        b.branch(loop_bb);
+        b.position_at_start(done_bb);
+        new_len = b.sub(cur_len, ir.Constant(i64, 1), name="delat.newlen");
+        b.store(new_len, len_ptr);
+        return ir.Constant(i64, 0);
+    }
+
     def emit_clear(
         self, ctx: NativeEmitCtx, target: ir.Value, args: list[ir.Value]
     ) -> (ir.Value | None);

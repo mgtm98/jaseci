@@ -75,9 +75,7 @@ impl InteropAnalysisPass._resolve_native_module(
                 # Return a path relative to base_dir so that na_compile_pass
                 # can reconstruct the absolute path via:
                 #   os.path.join(base_dir, source_mod_path + ".jac")
-                rel = os.path.relpath(
-                    candidate[:-4],  # strip trailing .jac os.path.abspath(base_dir)
-                );
+                rel = os.path.relpath(candidate[:-4], os.path.abspath(base_dir));
                 return rel;
             }
             parent = os.path.dirname(search_dir);
