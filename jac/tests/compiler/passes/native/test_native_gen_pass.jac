@@ -2558,10 +2558,6 @@ test "cross module glob init: pushed values are readable" {
     assert get_second() == 99 , f"Expected 99, got {get_second()}";
 }
 
-# ─── FIX 1: Transitive native imports linked via DFS ─────────────────────────
-# Before the fix, the linker only walked direct imports. A → B → C would
-# compile B but leave C's symbols unresolved at JIT link time.
-# jac-bun/issues/transitive-native-import-not-linked/
 test "transitive import: compiles without errors" {
     # fix_transitive_entry imports fix_transitive_mid which imports fix_transitive_leaf.
     # All three modules must be linked for compilation to succeed.
@@ -2592,10 +2588,6 @@ test "transitive import: same result on repeated calls (no state corruption)" {
     assert run_fn() == 99 , f"Third call: expected 99, got {run_fn()}";
 }
 
-# ─── FIX 4: del list[i] shrinks the list ─────────────────────────────────────
-# Before the fix, `del container.field_list[i]` was silently dropped from
-# the IR — the element was never removed and the list length never changed.
-# jac-bun/issues/del-struct-field-list-no-shrink/
 test "del list item: length decrements after delete" {
     # Container starts with [10, 20, 30]; after del items[2] length must be 2.
     (eng, _) = compile_native("fix_del_list.na.jac");
@@ -2626,10 +2618,6 @@ test "del list item: deleting only element yields empty list" {
     assert result == 0 , f"Expected length 0 after del, got {result}";
 }
 
-# ─── FIX 3a: Imported archetype methods registered in method_funcs ────────────
-# Before the fix, _forward_declare_method was never called for methods on
-# imported archetypes, so calls like `c.increment()` were silently dropped.
-# jac-bun/issues/imported-archetype-methods-not-in-method-funcs/
 test "imported archetype method: single increment returns 1" {
     # Counter.increment() on an imported struct; expect 1 after one call.
     (eng, _) = compile_native("fix_method_entry.na.jac");
@@ -2671,10 +2659,6 @@ test "imported archetype method: independent instances do not share state" {
     assert result == 215 , f"Expected 215 (a=2, b=15), got {result}";
 }
 
-# ─── FIX 3b: Cross-module fn arg where param type is from a third module ──────
-# When calling an imported function whose parameter type is itself defined in
-# a third module, the compiler emitted i64(0) instead of the correct struct*.
-# jac-bun/issues/cross-module-fn-arg-third-module-struct-as-i64/
 test "third module struct: compiles without type errors" {
     # fix_third_entry imports from fix_third_a and fix_third_b.
     # fix_third_b's read_value takes a DataA from fix_third_a — third-module struct.
@@ -2704,11 +2688,6 @@ test "third module struct: both fields correct after cross-module call" {
     assert result == 80 , f"Expected 80, got {result}";
 }
 
-# ─── FIX 5: var_type_node populated for imported globals (subscript access) ───
-# Before the fix, _register_imported_globals did not store the type-annotation
-# AST node in var_type_node, so _resolve_ptr_elem_cast_type emitted i8* null
-# when accessing elements of cross-module list globals inline (ITEMS[i].field).
-# jac-bun/issues/cross-module-list-subscript-multilevel-field-access/
 test "cross-module subscript: compiles without errors" {
     prog = JacProgram();
     ir = prog.compile(str(os.path.join(FIXTURES, "fix_subscript_entry.na.jac")));
@@ -2744,4 +2723,65 @@ test "cross-module subscript: inline access to second item returns correct value
     f = get_func(eng, "test_subscript_second_item", ctypes.c_int64);
     result = f();
     assert result == 99 , f"Expected 99, got {result}";
+}
+
+test "transitive glob init: compiles without errors" {
+    # fix_transitive_glob_entry → fix_transitive_glob_mid → fix_transitive_glob_deep
+    # deep has a glob list; its init must be called even though entry only imports mid.
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "fix_transitive_glob_entry.na.jac")));
+    assert not prog.errors_had , f"Errors: {prog.errors_had}";
+    assert ir is not None;
+    assert ir.gen.native_engine is not None , "No native engine created";
+}
+
+test "transitive glob init: glob list in deep module is not null (no segfault)" {
+    # Before the fix this would SIGSEGV because _TABLE in deep was never initialised.
+    (eng, _) = compile_native("fix_transitive_glob_entry.na.jac");
+    entry_fn = get_func(eng, "jac_entry", None);
+    entry_fn();
+    run_fn = get_func(eng, "run_transitive_glob_len", ctypes.c_int64);
+    result = run_fn();
+    assert result == 0 , f"Expected initial list length 0, got {result}";
+}
+
+test "transitive glob init: push through mid updates deep glob list" {
+    # Verifies the glob list in the transitive module is live and mutable.
+    (eng, _) = compile_native("fix_transitive_glob_entry.na.jac");
+    entry_fn = get_func(eng, "jac_entry", None);
+    entry_fn();
+    push_fn = get_func(eng, "run_transitive_glob_push_and_len", ctypes.c_int64);
+    result = push_fn();
+    assert result == 1 , f"Expected list length 1 after push, got {result}";
+}
+
+# ─── FIX: Import name shadowed by Python stdlib module ───────────────────────
+# Before the fix, _register_imported_struct_types called resolve_relative_path()
+# which returned the typeshed stub (ast.pyi) for any import whose name matches
+# a Python stdlib module (ast, os, re, types, …).  The .pyi path was then
+# silently skipped, struct registration was never done, and any call passing a
+# list[Struct] argument crashed: TypeError: i64 != %"List.i64"*.
+# After the fix, _resolve_nm checks for a local .na.jac directly via
+# os.path.join(base_dir, name+".na.jac") — stdlib stubs can no longer shadow.
+# jac-bun/issues/na-import-name-shadows-stdlib/
+test "stdlib shadow: module named 'ast' compiles without errors" {
+    # ast.na.jac sits in fixtures/ next to fix_shadow_entry.na.jac.
+    # Before the fix this resolved to the typeshed ast.pyi stub and failed.
+    prog = JacProgram();
+    ir = prog.compile(str(os.path.join(FIXTURES, "fix_shadow_entry.na.jac")));
+    assert not prog.errors_had , f"Errors: {prog.errors_had}";
+    assert ir is not None;
+    assert ir.gen.native_engine is not None , "No native engine created";
+}
+
+test "stdlib shadow: list[Struct] param through 'ast'-named module returns correct value" {
+    # run_shadow_test() builds 2 nodes (kind=1, kind=2) and sums their kinds.
+    # Before the fix collect_kinds(list[Node]) crashed during NaIRGenPass
+    # because Node was never registered (ast.na.jac was shadowed by stdlib stub).
+    (eng, _) = compile_native("fix_shadow_entry.na.jac");
+    entry_fn = get_func(eng, "jac_entry", None);
+    entry_fn();
+    run_fn = get_func(eng, "run_shadow_test", ctypes.c_int64);
+    result = run_fn();
+    assert result == 3 , f"Expected 3 (1+2), got {result}";
 }

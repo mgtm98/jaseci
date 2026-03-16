@@ -482,16 +482,31 @@ and access their fields.
 """
 impl NaIRGenPass._register_imported_struct_types -> None {
     import os;
-    # Collect imports from top-level and inside na {} blocks
-    imports = [
+    import re;
+    # ── DFS work queue: collect ALL transitive .na.jac imports ───────────────
+    # Each entry: (module_name_str, cur_base_dir, parent_resolved_path_or_None)
+    # We seed with the entry module's direct imports, then enqueue each
+    # discovered module's own imports so transitive deps are also processed.
+    #
+    # `source_module_str` mirrors the value that InteropAnalysisPass stores in
+    # `binding.source_module` and that na_compile_pass uses to compute safe_name
+    # for __jac_glob_init_<safe_name>.  We compute it here by reproducing the
+    # same _resolve_native_module logic so _codegen_entry can emit matching calls.
+    processed_modules: set[str] = set();
+    # List of (source_module_str, resolved_abs_path, module_ast)
+    imported_mods: list = [];
+
+    # Work queue: (module_name_str, cur_base_dir)
+    # Seeded with entry module's import statements.
+    entry_base = os.path.dirname(os.path.abspath(self.ir_in.loc.mod_path))
+        if (self.ir_in?.loc)
+        else os.getcwd();
+    wq: list = [];
+    for imp in [
         s
         for s in ModuleCodegenPass.iter_context_stmts(self.ir_in)
         if isinstance(s, uni.Import)
-    ];
-    # Resolve all imported modules, deduplicating by absolute path.
-    processed_modules: set[str] = set();
-    imported_mods: list = [];
-    for imp in imports {
+    ] {
         if not imp.from_loc or not isinstance(imp.from_loc, uni.ModulePath) {
             continue;
         }
@@ -499,30 +514,66 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         if imp.from_loc.path and isinstance(imp.from_loc.path[0], uni.String) {
             continue;
         }
-        try {
-            resolved_path = imp.from_loc.resolve_relative_path();
-        } except Exception {
+        mod_name = getattr(imp.from_loc, 'dot_path_str', None);
+        if not mod_name and imp.from_loc?.path and imp.from_loc.path {
+            mod_name = '.'.join(getattr(p, 'value', str(p)) for p in imp.from_loc.path);
+        }
+        if mod_name {
+            wq.append((mod_name, entry_base));
+        }
+    }
+
+    # Helper: reproduce _resolve_native_module logic to get source_module string.
+    # Returns (source_module_str, full_na_jac_path) or (None, None).
+    def _resolve_nm(mod_name: str, base_dir: str) -> tuple {
+        clean = mod_name.lstrip('.');
+        na_jac = os.path.join(base_dir, f"{clean}.na.jac");
+        if os.path.exists(na_jac) {
+            return (f"{clean}.na", na_jac);
+        }
+        # dotted → directory hierarchy
+        path_name = clean.replace('.', os.sep);
+        if path_name != clean {
+            search = os.path.abspath(base_dir);
+            while True {
+                cand = os.path.join(search, f"{path_name}.na.jac");
+                if os.path.exists(cand) {
+                    rel = os.path.relpath(cand[:-4], os.path.abspath(base_dir));
+                    return (rel, cand);
+                }
+                parent = os.path.dirname(search);
+                if parent == search {
+                    break;
+                }
+                search = parent;
+            }
+        }
+        return (None, None);
+    }
+
+    qi = 0;
+    while qi < len(wq) {
+        (mod_name, cur_base) = wq[qi];
+        qi += 1;
+        (src_mod_str, full_path) = _resolve_nm(mod_name, cur_base);
+        if src_mod_str is None or full_path is None {
             continue;
         }
-        abs_key = os.path.abspath(resolved_path);
+        abs_key = os.path.abspath(full_path);
         if abs_key in processed_modules {
             continue;
         }
         # Look up the imported module in the hub (try both relative and absolute)
-        imported_mod = self.prog.mod.hub.get(resolved_path);
+        imported_mod = self.prog.mod.hub.get(full_path);
         if imported_mod is None {
             imported_mod = self.prog.mod.hub.get(abs_key);
         }
         # If not in hub, parse the imported .jac file for type extraction.
-        if (
-            imported_mod is None
-            and resolved_path.endswith('.jac')
-            and os.path.isfile(resolved_path)
-        ) {
+        if imported_mod is None and os.path.isfile(full_path) {
             try {
                 import from jaclang.jac0core.parser { parse as rd_parse }
-                source = open(resolved_path).read();
-                (imported_mod, _) = rd_parse(source, resolved_path, prog=self.prog);
+                source = open(full_path).read();
+                (imported_mod, _) = rd_parse(source, full_path, prog=self.prog);
             } except Exception {
                 continue;
             }
@@ -531,8 +582,45 @@ impl NaIRGenPass._register_imported_struct_types -> None {
             continue;
         }
         processed_modules.add(abs_key);
-        imported_mods.append((resolved_path, imported_mod));
+        imported_mods.append((src_mod_str, imported_mod));
+        # Enqueue this module's own imports for transitive DFS
+        sub_base = os.path.dirname(os.path.abspath(full_path));
+        for sub_imp in [
+            s
+            for s in ModuleCodegenPass.iter_context_stmts(imported_mod)
+            if isinstance(s, uni.Import)
+        ] {
+            if not sub_imp.from_loc
+            or not isinstance(sub_imp.from_loc, uni.ModulePath) {
+                continue;
+            }
+            if sub_imp.from_loc.path
+            and isinstance(sub_imp.from_loc.path[0], uni.String) {
+                continue;
+            }
+            sub_name = getattr(sub_imp.from_loc, 'dot_path_str', None);
+            if not sub_name and sub_imp.from_loc?.path and sub_imp.from_loc.path {
+                sub_name = '.'.join(
+                    getattr(p, 'value', str(p)) for p in sub_imp.from_loc.path
+                );
+            }
+            if sub_name {
+                wq.append((sub_name, sub_base));
+            }
+        }
     }
+
+    # Store all collected source_module strings for _codegen_entry to emit
+    # __jac_glob_init_<safe_name>() calls for ALL linked modules (not just direct).
+    if not self?._all_transitive_na_sources {
+        self._all_transitive_na_sources: list = [];
+    }
+    for (src_mod_str, _) in imported_mods {
+        if src_mod_str not in self._all_transitive_na_sources {
+            self._all_transitive_na_sources.append(src_mod_str);
+        }
+    }
+
     # ── Phase 1a: register ALL struct names (empty identified types) ─────────
     # All struct names must exist in struct_types before any body is filled
     # so that cross-module field/parameter type references (e.g.
@@ -546,14 +634,14 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         self._walk_imported_module_types(imported_mod);
     }
     # ── Phase 2: forward-declare ALL abilities from ALL modules ──────────────
-    for (resolved_path, imported_mod) in imported_mods {
+    for (src_mod_str, imported_mod) in imported_mods {
         self._walk_imported_module_abilities(imported_mod);
-        # Track path so _codegen_entry can emit __jac_glob_init_<safe_name>() calls
+        # Legacy: also keep _imported_na_paths populated (used elsewhere)
         if not self?._imported_na_paths {
             self._imported_na_paths: list = [];
         }
-        if resolved_path not in self._imported_na_paths {
-            self._imported_na_paths.append(resolved_path);
+        if src_mod_str not in self._imported_na_paths {
+            self._imported_na_paths.append(src_mod_str);
         }
     }
 }

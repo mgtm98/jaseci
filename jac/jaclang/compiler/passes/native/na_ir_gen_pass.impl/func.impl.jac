@@ -251,17 +251,18 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
     if glob_init_fn is not None {
         self.builder.call(glob_init_fn, []);
     }
-    # Call __jac_glob_init_<safe_name>() for every imported .na.jac module.
-    # We use the interop manifest's native_cross_module_imports to get the exact
-    # same source_module strings that na_compile_pass uses when renaming
-    # __jac_glob_init → __jac_glob_init_<safe_name> inside the linked IR.
-    # This guarantees the declaration here and the definition after linking share
-    # the same symbol name.
-    _manifest = self.ir_in.gen.interop_manifest if (self.ir_in?.gen) else None;
-    _cross_imports = _manifest.native_cross_module_imports if _manifest else [];
+    # Call __jac_glob_init_<safe_name>() for every imported .na.jac module,
+    # including transitive deps.  _all_transitive_na_sources is populated by
+    # _register_imported_struct_types (DFS over all import trees) and contains
+    # the exact same source_module strings that na_compile_pass uses when
+    # renaming __jac_glob_init → __jac_glob_init_<safe_name> inside the linked
+    # IR — so every declared extern here matches the renamed definition after
+    # linking, including modules that are only transitively imported.
+    _all_na_sources = self._all_transitive_na_sources
+        if self?._all_transitive_na_sources
+        else [];
     _seen_init_mods: set = set();
-    for _imp_binding in _cross_imports {
-        _source_mod = _imp_binding.source_module;
+    for _source_mod in _all_na_sources {
         if _source_mod is None or _source_mod in _seen_init_mods {
             continue;
         }
