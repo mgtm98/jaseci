@@ -3031,7 +3031,9 @@ impl TypeEvaluator._compute_narrowed_at(
         return None;
     }
     # Ignore back-edges from loop body to preserve pre-loop narrowing.
-    is_loop_header: bool = isinstance(stmt, (uni.InForStmt, uni.IterForStmt));
+    is_loop_header: bool = isinstance(
+        stmt, (uni.InForStmt, uni.IterForStmt, uni.WhileStmt)
+    );
     incoming_types: list[TypeBase] = [];
     has_unnarrowed_pred: bool = False;
     for pred in stmt.bb_in {
@@ -3044,8 +3046,10 @@ impl TypeEvaluator._compute_narrowed_at(
             ancestor: uni.UniNode | None = None;
             if isinstance(stmt, uni.InForStmt) {
                 ancestor = pred.find_parent_of_type(uni.InForStmt);
-            } else {
+            } elif isinstance(stmt, uni.IterForStmt) {
                 ancestor = pred.find_parent_of_type(uni.IterForStmt);
+            } else {
+                ancestor = pred.find_parent_of_type(uni.WhileStmt);
             }
             if ancestor is stmt {
                 continue;
@@ -3197,6 +3201,14 @@ impl TypeEvaluator._compute_narrowed_at(
             has_unnarrowed_pred = True;
         }
     }
+    # Filter out NeverType from incoming_types — NeverType indicates an
+    # unreachable path (e.g., false branch when incoming was narrowed to the
+    # exact type being excluded). These should not participate in the join.
+    incoming_types = [
+        t
+        for t in incoming_types
+        if not isinstance(t, types.NeverType)
+    ];
     # Merge incoming types.
     result: TypeBase | None = None;
     if len(incoming_types) == 0 {
@@ -3746,9 +3758,13 @@ impl TypeEvaluator._find_predicate_for(
     # Pattern 7: Truthiness narrowing - if x: (where x is a Name)
     # This excludes None from the type when the condition is truthy.
     # Only apply if the symbol's type actually contains None (e.g., X | None).
+    # Use the `symbol` parameter (from the backward walk's usage site) rather
+    # than `condition.sym`, because reassignment inside the if-body can create
+    # a new symbol whose type is the narrower assigned type (e.g., Dog instead
+    # of Dog | None), causing the None check to fail spuriously.
     if isinstance(condition, uni.Name) and condition.value == sym_name {
-        if self.prefetch and self.prefetch.none_type_class and condition.sym {
-            sym_type = self.get_type_of_symbol(condition.sym);
+        if self.prefetch and self.prefetch.none_type_class {
+            sym_type = self.get_type_of_symbol(symbol);
             # Use unified helper to check if union contains None
             if self._union_contains_none(sym_type) {
                 none_inst = self._convert_to_instance(self.prefetch.none_type_class);
@@ -4046,6 +4062,18 @@ impl TypeEvaluator.exclude_type_from_union(
         } else {
             return types.UnionType(types=remaining);
         }
+    }
+    # Non-union original: check if it exactly matches the exclusion type.
+    # e.g., exclude NoneType from NoneType → NeverType (empty).
+    # This is critical for CFG join-point reasoning: when the incoming type
+    # is narrowed to NoneType and the false branch excludes None, the result
+    # should be NeverType (unreachable path), not the original NoneType.
+    if isinstance(original, types.ClassType)
+    and isinstance(to_exclude, types.ClassType)
+    and original.shared is not None
+    and to_exclude.shared is not None
+    and original.shared == to_exclude.shared {
+        return types.NeverType();
     }
     return original;
 }

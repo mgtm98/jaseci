@@ -2497,10 +2497,30 @@ test "narrowing_gaps_total_error_count" {
     );
     TypeCheckPass(ir_in=mod, prog=program);
 
-    # All gaps fixed: Gap A (CFG propagation), Gap B+C (eager IfElseExpr evaluation).
+    # All gaps fixed: Gap A (CFG propagation), Gap B+C (eager IfElseExpr evaluation),
+    # Gap D (assignment in if-body narrows after block).
     assert len(program.errors_had) == 0 , f"Expected 0 errors (all gaps fixed), got {len(
         program.errors_had
     )}:\n" + "\n---\n".join(e.pretty_print() for e in program.errors_had);
+}
+
+"""Gap D: Assignment in if-body narrows type after the if block."""
+test "narrowing_gap_d_assign_in_if_body" {
+    program = JacProgram();
+    mod = program.compile(
+        os.path.join(CHECKER_FIXTURES, "checker_narrowing_gaps.jac"), options=NO_TC
+    );
+    TypeCheckPass(ir_in=mod, prog=program);
+
+    # Gap D ok_ functions: lines 210-300 (includes try/finally pattern)
+    gap_d_errors = [
+        e
+        for e in program.errors_had
+        if e.loc and 210 <= e.loc.first_line <= 300
+    ];
+    assert len(gap_d_errors) == 0 , f"Gap D should have 0 errors (fixed), got {len(
+        gap_d_errors
+    )}:\n" + "\n---\n".join(e.pretty_print() for e in gap_d_errors);
 }
 
 # ============================================================================
