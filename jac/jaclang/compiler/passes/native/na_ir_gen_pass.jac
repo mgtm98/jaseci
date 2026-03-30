@@ -49,6 +49,10 @@ obj NaIRGenPass(ModuleCodegenPass) {
     def _get_or_declare_extern(
         name: str, ret_type: ir.Type, arg_types: list[ir.Type], var_arg: bool = False
     ) -> ir.Function;
+
+    def _call_extern(
+        b: ir.IRBuilder, func: ir.Function, args: list[ir.Value], name: str = ""
+    ) -> ir.Value;
     # Print support
     def _get_printf -> ir.Function;
     def _emit_print(nd: uni.FuncCall) -> (ir.Value | None);

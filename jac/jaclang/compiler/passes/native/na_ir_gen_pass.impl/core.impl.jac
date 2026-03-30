@@ -3,7 +3,11 @@
 impl NaIRGenPass.init(
     ir_in: uni.Module, prog: object, cancel_token: (object | None) = None
 ) -> None {
-    self.llvm_module = ir.Module(name="jac_native", context=ir.Context());
+    # Use the source file name as the LLVM module ID so GDB shows it.
+    import os as _ni_os;
+    _ni_src: str = ir_in.loc.mod_path if ir_in.loc else "";
+    _ni_mod_name: str = _ni_os.path.basename(_ni_src) if _ni_src else "jac_native";
+    self.llvm_module = ir.Module(name=_ni_mod_name, context=ir.Context());
     # Set data layout to match native target so optimizer and MCJIT agree
     # on struct sizes. Without this, the optimizer uses default layout
     # (4-byte i64 alignment, sizeof({i8,i64})=12) while MCJIT uses native
@@ -18,6 +22,37 @@ impl NaIRGenPass.init(
     self.func_symtab: dict[(str, ir.Function)] = {};
     self.local_vars: dict[(str, ir.AllocaInstr)] = {};
     self.has_native_code = False;
+    # DWARF debug metadata — populated below when JAC_NATIVE_DEBUG=1
+    self.di_file: object = None;
+    self.di_cu: object = None;
+    # Per-function DISubprogram, set in _codegen_ability, used in _codegen_body
+    self._di_current_sp: object = None;
+    # Line numbers saved during forward declaration, used when body is emitted
+    self._func_loc: dict[str, int] = {};
+    if _ni_src and _ni_os.environ.get("JAC_NATIVE_DEBUG", "") {
+        _ni_src_dir: str = _ni_os.path.dirname(_ni_os.path.abspath(_ni_src));
+        try {
+            self.di_file = self.llvm_module.add_debug_info(
+                "DIFile", {"filename": _ni_mod_name, "directory": _ni_src_dir}
+            );
+            self.di_cu = self.llvm_module.add_debug_info(
+                "DICompileUnit",
+                {
+                    "language": ir.DIToken("DW_LANG_C"),
+                    "file": self.di_file,
+                    "producer": "jac native compiler",
+                    "runtimeVersion": 0,
+                    "isOptimized": False,
+                    "emissionKind": ir.DIToken("FullDebug"),
+
+                },
+                is_distinct=True
+            );
+        } except Exception {
+            self.di_file = None;
+            self.di_cu = None;
+        }
+    }
     # Build type_map from the centralized type registry
     _spec_map: dict[str, ir.Type] = {
         "i8": ir.IntType(8),
@@ -619,6 +654,16 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         if src_mod_str not in self._all_transitive_na_sources {
             self._all_transitive_na_sources.append(src_mod_str);
         }
+    }
+
+    # ── Phase 0: process clib imports from all imported modules ─────────────
+    # Without this, `import from "libname" { def fn(...) -> float; }` in an
+    # imported .na.jac module is never forwarded to the compiling module, so
+    # those extern symbols fall back to i64 types and produce wrong values.
+    # Fix: call _process_clib_imports for each imported (transitive) module,
+    # just as it is called for self.ir_in in transform().
+    for (_, imported_mod) in imported_mods {
+        self._process_clib_imports(imported_mod);
     }
 
     # ── Phase 1a: register ALL struct names (empty identified types) ─────────
