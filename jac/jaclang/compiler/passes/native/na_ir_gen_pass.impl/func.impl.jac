@@ -35,6 +35,8 @@ impl NaIRGenPass._maybe_declare_ability(nd: uni.ElementStmt) -> None {
         func.args[i].name = p.name.value if p.name else f"arg{i}";
     }
     self.func_symtab[name] = func;
+    # Store line info for use when the body is generated (codegen_ability)
+    self._func_loc[name] = nd.loc.first_line if nd.loc else 0;
     # Store AST signature for return type propagation in for-loops
     self.method_ast_sigs[name] = sig;
     self.has_native_code = True;
@@ -61,9 +63,31 @@ impl NaIRGenPass._declare_clib_ability(nd: uni.Ability) -> None {
     }
     # Return type -- value type for clib structs
     ret_type = self._resolve_clib_type(sig.return_type);
-    # Create function
+    # Create function — reuse existing declaration if the compiler already
+    # declared this symbol internally (e.g. free, malloc, memcpy, strlen).
+    # This prevents DuplicatedNameError when user code imports a C function
+    # that the compiler also uses.
+    #
+    # We do NOT store user-declared functions in self.extern_funcs — that
+    # cache is reserved for internal compiler use with canonical C types.
+    # If the function is already in extern_funcs (e.g. free/malloc from
+    # _emit_rc_helpers), we reuse that declaration.  Otherwise we create
+    # a new ir.Function with the user's types; if internal code later needs
+    # the same symbol via _get_or_declare_extern, it will look up the
+    # existing declaration from the LLVM module globals.
     fnty = ir.FunctionType(ret_type, param_types);
-    func = ir.Function(self.llvm_module, fnty, name=name);
+    if name in self.extern_funcs {
+        func = self.extern_funcs[name];
+    } elif name in self.func_symtab {
+        # Already declared (e.g. by a previous _process_clib_imports call on
+        # another module that shares the same library symbol).  Reuse it so we
+        # don't get a DuplicatedNameError from llvmlite.
+        func = self.func_symtab[name];
+    } else {
+        func = ir.Function(self.llvm_module, fnty, name=name);
+        # Do NOT store in extern_funcs — let _get_or_declare_extern
+        # create its own version with internal types if needed.
+    }
     # Name the parameters
     for (i, p) in enumerate(sig.get_parameters()) {
         func.args[i].name = p.name.value if p.name else f"arg{i}";
@@ -91,6 +115,37 @@ impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
     self.local_vars = {};
     self.var_dict_type = {};
     self.var_set_elem_type = {};
+    # ── DWARF debug info for this function definition (JAC_NATIVE_DEBUG=1) ────
+    self._di_current_sp = None;  # reset per-function scope for _codegen_body
+    if self.di_cu is not None {
+        _dbg_line: int = self._func_loc.get(name, nd.loc.first_line if nd.loc else 0);
+        try {
+            _di_sub_type = self.llvm_module.add_debug_info(
+                "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
+            );
+            _di_sp = self.llvm_module.add_debug_info(
+                "DISubprogram",
+                {
+                    "name": name,
+                    "file": self.di_file,
+                    "line": _dbg_line,
+                    "isDefinition": True,
+                    "unit": self.di_cu,
+                    "type": _di_sub_type
+                },
+                is_distinct=True
+            );
+            func.set_metadata("dbg", _di_sp);
+            # Expose to _codegen_body so per-statement DILocations can be emitted
+            self._di_current_sp = _di_sp;
+        } except Exception {
+            pass;  # debug info is best-effort
+        }
+        # Prevent inlining so GDB sees the correct function on backtraces.
+        # (optnone is skipped — it's redundant at opt=0 and triggers stricter
+        # LLVM verifier checks that conflict with linked IR in MCJIT.)
+        func.attributes.add("noinline");
+    }
     # Store parameters as local variables (alloca + store pattern)
     sig = (nd).signature;
     for (i, p) in enumerate(sig.get_parameters()) {
@@ -156,6 +211,36 @@ impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
             self.builder.ret(ir.Constant(ret_type, 0));
         }
     }
+    # ── DWARF post-pass: ensure every call instruction has !dbg ─────────────
+    # LLVM verifier requires that all inlinable calls inside a function that
+    # has DISubprogram metadata carry a !dbg location.  _codegen_body tags
+    # instructions for top-level statements, but inner blocks created by
+    # if/while/for branches may still be missing !dbg.  Walk all blocks once
+    # and fill in a fallback location (the function's first source line) for
+    # any instruction that hasn't been tagged yet.
+    if self._di_current_sp is not None {
+        try {
+            _fb_line: int = self._func_loc.get(
+                name, nd.loc.first_line if nd.loc else 1
+            )
+                if nd.loc
+                else 1;
+            _fb_loc = self.llvm_module.add_debug_info(
+                "DILocation",
+                {"line": _fb_line, "column": 0, "scope": self._di_current_sp}
+            );
+            for _blk in func.blocks {
+                for _instr in _blk.instructions {
+                    if "dbg" not in getattr(_instr, "metadata", {}) {
+                        _instr.set_metadata("dbg", _fb_loc);
+                    }
+                }
+            }
+        } except Exception {
+            pass;  # best-effort; verifier will catch any remaining issues
+        }
+    }
+
     (nd).gen.llvm_ir = func;
     self.builder = None;
 }
