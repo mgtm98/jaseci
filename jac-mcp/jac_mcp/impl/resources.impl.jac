@@ -2,6 +2,12 @@
 
 import from typing { Any }
 import from pathlib { Path }
+import json;
+import from urllib.request { urlopen, Request }
+import from urllib.error { URLError }
+
+glob GITHUB_API_BASE: str = "https://api.github.com/repos/jaseci-labs/jaseci",
+     _github_cache: dict[str, str] = {};
 
 """Find the repo root by walking up from jaclang package location."""
 impl find_repo_root -> str | None {
@@ -272,6 +278,14 @@ impl ResourceProvider.index_resources -> None {
         # PyPI install — bundled content + bundled docs
         self._index_bundled();
         self._index_bundled_docs();
+        # Examples fetched lazily from GitHub on first access
+        self._resources["jac://examples/index"] = {
+            "uri": "jac://examples/index",
+            "name": "Examples Index",
+            "description": "Index of all available Jac code examples",
+            "mimeType": "text/plain",
+            "_is_lazy_github": True
+        };
         return;
     }
     repo_root = Path(self._repo_root);
@@ -313,31 +327,17 @@ impl ResourceProvider.index_resources -> None {
     }
     # Bundled content (always available)
     self._index_bundled();
-    # Examples
+    # Examples — prefer local repo, fall back to lazy GitHub
     examples_dir = repo_root / "jac" / "examples";
     if examples_dir.exists() {
-        categories: list[str] = [];
-        for entry in sorted(examples_dir.iterdir()) {
-            if entry.is_dir()
-            and not entry.name.startswith(".")
-            and not entry.name.startswith("_") {
-                categories.append(entry.name);
-                self._resources[f"jac://examples/{entry.name}"] = {
-                    "uri": f"jac://examples/{entry.name}",
-                    "name": f"Example: {entry.name}",
-                    "description": f"Example Jac code for {entry.name}",
-                    "mimeType": "text/plain",
-                    "path": str(entry),
-                    "_is_dir": True
-                };
-            }
-        }
+        self._index_examples_local(examples_dir);
+    } else {
         self._resources["jac://examples/index"] = {
             "uri": "jac://examples/index",
             "name": "Examples Index",
             "description": "Index of all available Jac code examples",
             "mimeType": "text/plain",
-            "_categories": categories
+            "_is_lazy_github": True
         };
     }
 }
@@ -364,6 +364,16 @@ impl ResourceProvider._index_bundled -> None {
             "description": "Idiomatic Jac code patterns with complete examples",
             "mimeType": "text/markdown",
             "path": str(patterns_path)
+        };
+    }
+    understand_path = content_dir / "understand.md";
+    if understand_path.exists() {
+        self._resources["jac://guide/understand"] = {
+            "uri": "jac://guide/understand",
+            "name": "Jac & Jaseci Knowledge Map",
+            "description": "Orientation map: what Jac and Jaseci are, the 3 core paradigms, and which resource URI to fetch for any task",
+            "mimeType": "text/markdown",
+            "path": str(understand_path)
         };
     }
 }
@@ -432,23 +442,14 @@ impl ResourceProvider.list_resources -> list[dict[str, str]] {
 
 """Read resource content by URI."""
 impl ResourceProvider.read_resource(uri: str) -> str {
+    # Handle lazy GitHub examples (registered or on-demand)
+    if uri.startswith("jac://examples/") {
+        return self._read_example(uri);
+    }
     if uri not in self._resources {
         return f"Error: Resource not found: {uri}";
     }
     info = self._resources[uri];
-    # Handle examples index
-    if uri == "jac://examples/index" {
-        categories = info.get("_categories", []);
-        lines: list[str] = ["# Jac Examples Index\n"];
-        for cat in categories {
-            lines.append(f"- jac://examples/{cat}");
-        }
-        return "\n".join(lines);
-    }
-    # Handle example directories
-    if info.get("_is_dir", False) {
-        return _read_example_dir(info["path"]);
-    }
     # Handle regular files
     file_path = info.get("path");
     if not file_path {
@@ -463,6 +464,37 @@ impl ResourceProvider.read_resource(uri: str) -> str {
     } except Exception as e {
         return f"Error reading resource: {e}";
     }
+}
+
+"""Read example resource — handles local dirs, lazy GitHub index, and on-demand GitHub fetch."""
+impl ResourceProvider._read_example(uri: str) -> str {
+    info = self._resources.get(uri);
+    # Local directory example
+    if info and info.get("_is_dir", False) {
+        return _read_example_dir(info["path"]);
+    }
+    # Lazy GitHub index — fetch categories on first access
+    if uri == "jac://examples/index" {
+        if info and "_categories" in info {
+            # Already populated
+            categories = info["_categories"];
+        } else {
+            # Fetch from GitHub
+            categories = self._fetch_github_categories();
+        }
+        lines: list[str] = ["# Jac Examples Index\n"];
+        for cat in categories {
+            lines.append(f"- jac://examples/{cat}");
+        }
+        return "\n".join(lines);
+    }
+    # Specific example — local info exists with categories but not this one,
+    # or it's a GitHub-sourced example
+    example_name = uri.replace("jac://examples/", "");
+    if not example_name {
+        return "Error: Invalid example URI";
+    }
+    return _fetch_example_github(f"jac/examples/{example_name}");
 }
 
 """Read all .jac files from an example directory."""
@@ -482,4 +514,131 @@ def _read_example_dir(dir_path: str) -> str {
         return "No .jac files found in this example.";
     }
     return "\n\n".join(result_parts);
+}
+
+"""Fetch JSON from a URL, returns parsed dict/list or None on failure."""
+def _github_api_get(url: str) -> Any {
+    try {
+        req = Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "jac-mcp"
+            }
+        );
+        with urlopen(req, timeout=10) as resp {
+            return json.loads(resp.read().decode());
+        }
+    } except (URLError, json.JSONDecodeError, OSError) {
+        return None;
+    }
+}
+
+"""Index examples by listing local directories."""
+impl ResourceProvider._index_examples_local(examples_dir: Path) -> None {
+    # Rich descriptions so AI can quickly identify the right example
+    EXAMPLE_DESCRIPTIONS: dict[str, str] = {
+        "chess": "Native chess engine, backend-only, no graph traversal. Demonstrates declaration/impl separation, enums, obj inheritance, and the Jac type system.",
+        "data_spatial": "Core OSP patterns: nodes, edges, walkers, entry/exit abilities, edge filtering. The canonical reference for graph-based programming in Jac.",
+        "guess_game": "Progressive 6-version guessing game, evolves from plain obj to walker-based OSP, then adds LLM hints. Best for learning Jac step by step.",
+        "littleX": "Full-stack social app (Twitter-like), OSP graph with user profiles and NLP-based search (sklearn/TF-IDF). Real-world data-spatial design.",
+        "manual_code": "Circle class showcasing declaration/impl separation and unit tests. Clean OOP reference, no graph traversal.",
+        "medical": "Graph-based medical domain, Person nodes with typed role edges. OSP design for healthcare data modelling.",
+        "micro": "Micro-snippets for individual language features: access modifiers, comprehensions, statements, class patterns. Quick syntax reference.",
+        "plugins": "Plugin development, CLI command extension and walker REST API via jac-scale. Shows how to extend Jac's toolchain.",
+        "rpg_game": "2D RPG game using library mode, Python interop with pygame for sprites and maps. Native/lib mode integration example.",
+        "shopping_cart": "E-commerce shopping cart, obj-based domain model with metadata and datetime. OOP-style Jac without graph traversal."
+    };
+    categories: list[str] = [];
+    for entry in sorted(examples_dir.iterdir()) {
+        if entry.is_dir()
+        and not entry.name.startswith(".")
+        and not entry.name.startswith("_") {
+            categories.append(entry.name);
+            desc = EXAMPLE_DESCRIPTIONS.get(
+                entry.name, f"Example Jac code for {entry.name}"
+            );
+            self._resources[f"jac://examples/{entry.name}"] = {
+                "uri": f"jac://examples/{entry.name}",
+                "name": f"Example: {entry.name}",
+                "description": desc,
+                "mimeType": "text/plain",
+                "path": str(entry),
+                "_is_dir": True
+            };
+        }
+    }
+    self._resources["jac://examples/index"] = {
+        "uri": "jac://examples/index",
+        "name": "Examples Index",
+        "description": "Index of all available Jac code examples",
+        "mimeType": "text/plain",
+        "_categories": categories
+    };
+}
+
+"""Fetch example categories from GitHub and cache them."""
+impl ResourceProvider._fetch_github_categories -> list[str] {
+    data = _github_api_get(f"{GITHUB_API_BASE}/contents/jac/examples");
+    if data is None or not isinstance(data, list) {
+        return [];
+    }
+    categories: list[str] = [
+        item["name"]
+        for item in data
+        if item.get("type") == "dir"
+        and not item["name"].startswith(".")
+        and not item["name"].startswith("_")
+    ];
+    # Cache on the index resource so we don't re-fetch
+    self._resources["jac://examples/index"]["_categories"] = categories;
+    return categories;
+}
+
+"""Fetch all .jac files from a GitHub directory using contents API."""
+def _fetch_example_github(github_path: str) -> str {
+    if github_path in _github_cache {
+        return _github_cache[github_path];
+    }
+    jac_files = _list_jac_files_recursive(github_path);
+    if not jac_files {
+        return "No .jac files found or GitHub API unavailable.";
+    }
+    result_parts: list[str] = [];
+    for (rel_path, download_url) in sorted(jac_files) {
+        try {
+            req = Request(download_url, headers={"User-Agent": "jac-mcp"});
+            with urlopen(req, timeout=10) as resp {
+                content = resp.read().decode();
+            }
+            result_parts.append(f"--- {rel_path} ---\n{content}");
+        } except (URLError, OSError) {
+            result_parts.append(f"--- {rel_path} ---\nError: failed to fetch");
+        }
+    }
+    result = "\n\n".join(result_parts) if result_parts else "No .jac files found.";
+    _github_cache[github_path] = result;
+    return result;
+}
+
+"""Recursively list .jac files in a GitHub directory via contents API.
+Returns list of (relative_path, download_url) tuples."""
+def _list_jac_files_recursive(github_path: str, base_path: str = "") -> list[tuple] {
+    data = _github_api_get(f"{GITHUB_API_BASE}/contents/{github_path}");
+    if data is None or not isinstance(data, list) {
+        return [];
+    }
+    results: list[tuple] = [];
+    for item in data {
+        name = item.get("name", "");
+        rel = f"{base_path}/{name}" if base_path else name;
+        if item.get("type") == "file" and name.endswith(".jac") {
+            results.append((rel, item.get("download_url", "")));
+        } elif item.get("type") == "dir"
+        and not name.startswith(".")
+        and not name.startswith("_") {
+            results.extend(_list_jac_files_recursive(item["path"], rel));
+        }
+    }
+    return results;
 }

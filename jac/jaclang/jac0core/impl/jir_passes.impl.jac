@@ -67,9 +67,17 @@ impl JirWriter.write_module(
     );
 
     # Assemble: header (uncompressed) + zlib(pool + nodes + links) + optional sections
-    import from jaclang.jac0core.jir { write_sections }
+    import from jaclang.jac0core.jir { SEC_TYPE_TAGS, write_sections }
     payload = pool_bytes + bytes(ir_buf) + bytes(link_buf);
     compressed = zlib.compress(payload, 6);
+    # Collect type tags from enriched Expr nodes and add as a section
+    tag_bytes = self._serialize_type_tags();
+    if sections is None {
+        sections = {};
+    }
+    if tag_bytes {
+        sections[SEC_TYPE_TAGS] = tag_bytes;
+    }
     section_bytes = write_sections(sections);
     return header + compressed + section_bytes;
 }
@@ -98,6 +106,8 @@ impl JirWriter._get_node_id(ir_node: (UniNode | None)) -> int {
 
 impl JirWriter._write_node(buf: bytearray, ir_node: UniNode) -> None {
     import from jaclang.jac0core.unitree { UniScopeNode, UniCFGNode, NameAtom, Symbol }
+    import from jaclang.jac0core.unitree { ContextAwareNode }
+    import from jaclang.jac0core.constant { CodeContext }
 
     cls_name = type(ir_node).__name__;
     type_idx = NAME_TO_IDX.get(cls_name);
@@ -109,6 +119,7 @@ impl JirWriter._write_node(buf: bytearray, ir_node: UniNode) -> None {
 
     is_scope = isinstance(ir_node, UniScopeNode);
     is_cfg = isinstance(ir_node, UniCFGNode);
+    is_context_aware = isinstance(ir_node, ContextAwareNode);
 
     # Write type index as varint
     _write_varint(buf, type_idx);
@@ -123,6 +134,9 @@ impl JirWriter._write_node(buf: bytearray, ir_node: UniNode) -> None {
     }
     if isinstance(ir_node, NameAtom) {
         overlay_flags |= 4;
+    }
+    if is_context_aware {
+        overlay_flags |= 8;
     }
     buf.append(overlay_flags);
 
@@ -230,6 +244,18 @@ impl JirWriter._write_node(buf: bytearray, ir_node: UniNode) -> None {
             _write_varint(buf, self._pool.intern(str(sym_cat.value)));
         } else {
             _write_varint(buf, self._pool.intern(''));
+        }
+    }
+
+    # Write code_context overlay (postinit field, not in spec)
+    if is_context_aware {
+        ctx = ir_node.code_context;
+        if ctx == CodeContext.CLIENT {
+            buf.append(1);
+        } elif ctx == CodeContext.NATIVE {
+            buf.append(2);
+        } else {
+            buf.append(0);  # SERVER (default)
         }
     }
 }
@@ -356,6 +382,34 @@ impl JirWriter._count_symbols(module: Module) -> int {
     return count;
 }
 
+"""Serialize backend_type_tag values from enriched Expr nodes into a compact section.
+
+Format: varint(count) followed by count × [varint(node_id), varint(str_pool_idx)].
+Only Expr nodes with non-None backend_type_tag are included. The string pool used
+here is the same _pool that was built during _write_node, so tag strings are
+interned alongside the rest of the IR strings.
+"""
+impl JirWriter._serialize_type_tags -> bytes {
+    import from jaclang.jac0core.unitree { Expr }
+    buf = bytearray();
+    pairs: list[tuple[int, int]] = [];
+    for ir_item in self._nodes {
+        if isinstance(ir_item, Expr) and ir_item.backend_type_tag is not None {
+            nid = self._node_ids.get(id(ir_item));
+            if nid is not None {
+                tag_idx = self._pool.intern(ir_item.backend_type_tag);
+                pairs.append((nid, tag_idx));
+            }
+        }
+    }
+    _write_varint(buf, len(pairs));
+    for (nid, tag_idx) in pairs {
+        _write_varint(buf, nid);
+        _write_varint(buf, tag_idx);
+    }
+    return bytes(buf);
+}
+
 
 # =============================================================================
 # JirReader implementation
@@ -435,18 +489,27 @@ impl JirReader.read_module(data: bytes) -> (Module | None) {
                 self._wire_source(last_node);
             }
             self._fix_param_kinds();
-            # Decode trailing TLV sections (bytecode, MTIR, LLVM IR, interop)
+            # Decode trailing TLV sections (bytecode, MTIR, LLVM IR, interop, type tags)
             import from jaclang.jac0core.jir {
                 SEC_BYTECODE,
                 SEC_MTIR,
                 SEC_LLVM_IR,
-                SEC_INTEROP
+                SEC_INTEROP,
+                SEC_TYPE_TAGS
             }
             secs = self._read_trailing_sections(data);
             self.bytecode_section = secs.get(SEC_BYTECODE);
             self.mtir_section = secs.get(SEC_MTIR);
             self.llvm_ir_section = secs.get(SEC_LLVM_IR);
             self.interop_section = secs.get(SEC_INTEROP);
+            self.type_tags_section = secs.get(SEC_TYPE_TAGS);
+            if self.type_tags_section is not None {
+                try {
+                    self._apply_type_tags(self.type_tags_section);
+                } except Exception {
+                    pass;  # corrupt section — tags simply remain None
+                }
+            }
             return last_node;
         }
     }
@@ -781,7 +844,8 @@ impl JirReader._read_node(data: (bytes | memoryview), pos: int, idx: int) -> int
         nd.setdefault('from_walker', False);
     }
 
-    # ContextAwareNode.postinit: code_context (by postinit -> not in __init__, defaults to SERVER)
+    # ContextAwareNode.postinit: code_context (backward compat for old JIR
+    # files without the overlay; new files read it from the bit-3 overlay)
     if isinstance(ir_node, self._ContextAwareNode) {
         nd.setdefault('code_context', self._CodeContext_SERVER);
     }
@@ -814,9 +878,9 @@ impl JirReader._read_node(data: (bytes | memoryview), pos: int, idx: int) -> int
 
     # Module.init: extra attributes
     if isinstance(ir_node, self._Module) {
-        nd.setdefault('impl_mod', None);
-        nd.setdefault('test_mod', None);
-        nd.setdefault('variant_mod', None);
+        nd.setdefault('impl_mod', []);
+        nd.setdefault('test_mod', []);
+        nd.setdefault('variant_mod', []);
         nd.setdefault('src_terminals', None);
         nd.setdefault('is_raised_from_py', False);
     }
@@ -864,6 +928,20 @@ impl JirReader._read_node(data: (bytes | memoryview), pos: int, idx: int) -> int
     }
     if overlay_flags & 4 and isinstance(ir_node, NameAtomT) {
         pos = self._read_name_atom_overlay(data, pos, ir_node);
+    }
+    if overlay_flags & 8 {
+        import from jaclang.jac0core.unitree { ContextAwareNode }
+        import from jaclang.jac0core.constant { CodeContext }
+        ctx_byte = data[pos];
+        pos += 1;
+        if isinstance(ir_node, ContextAwareNode) {
+            if ctx_byte == 1 {
+                ir_node.code_context = CodeContext.CLIENT;
+            } elif ctx_byte == 2 {
+                ir_node.code_context = CodeContext.NATIVE;
+            }
+            # 0 = SERVER, already the default from postinit
+        }
     }
 
     return pos;
@@ -1157,4 +1235,37 @@ impl JirReader._read_link_table(data: (bytes | memoryview), pos: int) -> int {
     }
 
     return pos;
+}
+
+"""Apply backend_type_tag values from a serialized SEC_TYPE_TAGS section.
+
+Reads varint-encoded (node_id, pool_idx) pairs and sets backend_type_tag on the
+corresponding Expr nodes. The string pool used here is the same _pool that was
+populated during read_module (deserialized before the node stream). Any invalid
+node_id or pool_idx is silently skipped so a corrupt section cannot crash the reader.
+"""
+impl JirReader._apply_type_tags(data: bytes) -> None {
+    import from jaclang.jac0core.unitree { Expr }
+    if self._pool is None {
+        return;
+    }
+    pool = self._pool;
+    nodes = self._nodes;
+    mv = memoryview(data);
+    pos = 0;
+    (count, pos) = _read_varint(mv, pos);
+    for _ in range(count) {
+        (nid, pos) = _read_varint(mv, pos);
+        (tag_idx, pos) = _read_varint(mv, pos);
+        if nid < len(nodes)
+        and nodes[nid] is not None
+        and isinstance(nodes[nid], Expr) {
+            try {
+                tag = pool.get(tag_idx);
+                nodes[nid].backend_type_tag = tag;
+            } except Exception {
+                pass;
+            }
+        }
+    }
 }

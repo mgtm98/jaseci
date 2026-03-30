@@ -345,23 +345,20 @@ test "jac impl err" {
     assert f'"{path_to_file}", line 2' in stdout_value;
 }
 
-test "param name diff" {
-    captured_output = io.StringIO();
-    sys.stdout = captured_output;
-    sys.stderr = captured_output;
-    try {
-        execution.run(fixture_path("decl_defn_param_name.jac"));
-    } except Exception {
-        _ = None;
-    }
-    sys.stdout = sys.__stdout__;
-    sys.stderr = sys.__stderr__;
-
-    expected_stdout_values = ("short_name = 42", "p1 = 64 , p2 = foobar");
-    output = captured_output.getvalue();
-    for exp in expected_stdout_values {
-        assert exp in output;
-    }
+test "param name diff warns" {
+    import from jaclang.jac0core.program { JacProgram }
+    prog = JacProgram();
+    prog.compile(fixture_path("decl_defn_param_name.jac"), no_cgen=True);
+    warn_msgs = [str(w) for w in prog.warnings_had];
+    assert any(
+        "'some_long_paramenter_name'" in m and "'short_name'" in m for m in warn_msgs
+    ) , (f"Expected param name mismatch warning for method1, got: {warn_msgs}");
+    assert any("'param1'" in m and "'p1'" in m for m in warn_msgs) , (
+        f"Expected param name mismatch warning for method2 param1, got: {warn_msgs}"
+    );
+    assert any("'param2'" in m and "'p2'" in m for m in warn_msgs) , (
+        f"Expected param name mismatch warning for method2 param2, got: {warn_msgs}"
+    );
 }
 
 test "jac test err" {
@@ -925,6 +922,44 @@ test "format preserves file on syntax error" {
             );
         }
     }
+}
+
+test "format prints error messages and summary for syntax error file" {
+    captured_stdout = io.StringIO();
+    captured_stderr = io.StringIO();
+    old_stdout = sys.stdout;
+    old_stderr = sys.stderr;
+    sys.stdout = captured_stdout;
+    sys.stderr = captured_stderr;
+
+    try {
+        result = analysis.format([fixture_path("test_syntax_err.jac")]);
+        stdout = captured_stdout.getvalue();
+        stderr = captured_stderr.getvalue();
+    } finally {
+        sys.stdout = old_stdout;
+        sys.stderr = old_stderr;
+    }
+
+    combined = stdout + stderr;
+
+    # Should exit with code 1 (syntax errors fail the command)
+    assert result == 1 , "format should exit with code 1 for syntax error file";
+
+    # Should show FAILURES section header
+    assert "FAILURES" in combined , "should display FAILURES section for syntax errors";
+
+    # Failed file path should appear in the FAILURES section
+    assert "test_syntax_err.jac" in combined , "should show file path in FAILURES section";
+
+    # Actual syntax error messages should appear in stderr
+    assert len(stderr.strip()) > 0 , "should print syntax error messages to stderr";
+
+    # failed files summary section should appear
+    assert "failed files" in combined , "should display failed files summary";
+
+    # Summary line should mention error count
+    assert "error" in combined , "should show error count in failed files summary";
 }
 
 test "format --lintfix preserves file on parse error" {
@@ -1807,4 +1842,275 @@ test "jac check reports errors for files inside jaclang source tree" {
     assert "failed" in combined.lower() , (
         "Expected failure output for jaclang-internal file with type errors"
     );
+}
+
+"""Regression: JIR cache must preserve Archetype.body for generic type inference."""
+test "jir cache preserves generic type inference" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.runtime { JacRuntime }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        with open(os.path.join(tmpdir, "lib.jac"), "w") as f {
+            f.write("obj Box[T] { has value: T; def get -> T { return self.value; } }");
+        }
+        with open(os.path.join(tmpdir, "main.jac"), "w") as f {
+            f.write(
+                "import from lib { Box }\nwith entry { print(Box(value=42).get() + 1); }"
+            );
+        }
+        main_path = os.path.join(tmpdir, "main.jac");
+        # Run check twice: first creates cache, second uses it
+        outputs: list[str] = [];
+        for _ in range(2) {
+            JacRuntime.program = JacProgram();
+            (cap_out, cap_err, old_out, old_err) = _capture_output();
+            try {
+                analysis.check([main_path]);
+                outputs.append(cap_out.getvalue() + cap_err.getvalue());
+            } finally {
+                _restore_output(old_out, old_err);
+            }
+        }
+        # E1055 appears if Box[int].get() returns Unknown due to lost type info
+        assert "No matching overload" not in outputs[1] , f"JIR cache lost type info:\n{outputs[
+            1
+        ]}";
+    }
+}
+
+"""Regression: JIR cache must preserve IndexSlice.slices (Slice is a UniNode).
+
+IndexSlice.Slice was previously a plain inner class without a node ID, so the
+JIR writer serialised the slices field as EXTERNAL_REF, reader discarded it,
+slices=[] on cache hit, list iteration type became Unknown.
+"""
+test "jir cache preserves list iteration type through IndexSlice" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.runtime { JacRuntime }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        with open(os.path.join(tmpdir, "main.jac"), "w") as f {
+            f.write(
+                "import from jaclang.jac0core.archetype { NodeAnchor }\n"
+                "def check_iter(na: NodeAnchor) -> None {\n"
+                "    for a in na.edges { aid = a.id; }\n"
+                "}\n"
+            );
+        }
+        main_path = os.path.join(tmpdir, "main.jac");
+        # Run check twice: first creates cache, second uses it
+        outputs: list[str] = [];
+        for _ in range(2) {
+            JacRuntime.program = JacProgram();
+            (cap_out, cap_err, old_out, old_err) = _capture_output();
+            try {
+                analysis.check([main_path]);
+                outputs.append(cap_out.getvalue() + cap_err.getvalue());
+            } finally {
+                _restore_output(old_out, old_err);
+            }
+        }
+        # E1032 appears if anchor type becomes Unknown on the cached run
+        assert "Type is Unknown" not in outputs[1] , f"JIR cache lost IndexSlice type info:\n{outputs[
+            1
+        ]}";
+    }
+}
+
+"""Regression: JIR cache must preserve impl-defined instance variables.
+
+Instance variables defined in impl files (e.g., self.x in __init__) are added to
+the archetype's symbol table by DeclImplMatchPass._populate_self_member_symbols.
+Since impl_mod is not serialized in JIR, these symbols were lost on cache reload.
+"""
+test "jir cache preserves impl defined instance variables" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.runtime { JacRuntime }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        # Create a class with __init__ declared in .jac, implemented in .impl.jac
+        with open(os.path.join(tmpdir, "myclass.jac"), "w") as f {
+            f.write(
+                "class Foo {\n    def init(val: int);\n    def get_val -> int { return self.value; }\n}\n"
+            );
+        }
+        with open(os.path.join(tmpdir, "myclass.impl.jac"), "w") as f {
+            f.write("impl Foo.init(val: int) { self.value = val; }\n");
+        }
+        with open(os.path.join(tmpdir, "main.jac"), "w") as f {
+            f.write(
+                "import from myclass { Foo }\nwith entry { print(Foo(10).get_val()); }\n"
+            );
+        }
+        main_path = os.path.join(tmpdir, "main.jac");
+        # Run check twice: first creates cache, second uses it
+        outputs: list[str] = [];
+        for _ in range(2) {
+            JacRuntime.program = JacProgram();
+            (cap_out, cap_err, old_out, old_err) = _capture_output();
+            try {
+                analysis.check([main_path]);
+                outputs.append(cap_out.getvalue() + cap_err.getvalue());
+            } finally {
+                _restore_output(old_out, old_err);
+            }
+        }
+        # E1031 "has no attribute 'value'" appears if impl symbols lost on cache reload
+        assert "has no attribute" not in outputs[1] , f"JIR cache lost impl-defined instance variable:\n{outputs[
+            1
+        ]}";
+    }
+}
+
+"""Regression: JIR cache must compute MRO for subtype checking.
+
+When a module is loaded from JIR cache, class types may have empty MRO lists.
+The is_sub_class check must compute MRO on demand to properly recognize
+subtype relationships (e.g., ClassType extends TypeBase).
+"""
+test "jir cache computes mro for subtype checking" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.runtime { JacRuntime }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        # Create a module with base and derived classes
+        with open(os.path.join(tmpdir, "types.jac"), "w") as f {
+            f.write(
+                "obj Base { has x: int = 0; }\n"
+                "obj Derived(Base) { has y: int = 0; }\n"
+            );
+        }
+        # Create main that uses Derived where Base is expected
+        with open(os.path.join(tmpdir, "main.jac"), "w") as f {
+            f.write(
+                "import from types { Base, Derived }\n"
+                "def use_base(b: Base) -> int { return b.x; }\n"
+                "with entry { print(use_base(Derived())); }\n"
+            );
+        }
+        main_path = os.path.join(tmpdir, "main.jac");
+        # Run check twice: first creates cache, second uses it
+        outputs: list[str] = [];
+        for _ in range(2) {
+            JacRuntime.program = JacProgram();
+            (cap_out, cap_err, old_out, old_err) = _capture_output();
+            try {
+                analysis.check([main_path]);
+                outputs.append(cap_out.getvalue() + cap_err.getvalue());
+            } finally {
+                _restore_output(old_out, old_err);
+            }
+        }
+        # E1053 "Cannot assign Derived to parameter 'b' of type Base" appears if MRO not computed
+        assert "Cannot assign" not in outputs[1] , f"JIR cache lost MRO for subtype check:\n{outputs[
+            1
+        ]}";
+    }
+}
+
+"""jac check on .impl.jac files should compile the base file and filter errors."""
+test "jac check on impl file redirects to base and filters errors" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.runtime { JacRuntime }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        # Create a base .jac file with a type error in the base
+        with open(os.path.join(tmpdir, "mymod.jac"), "w") as f {
+            f.write(
+                "def greet(name: str) -> str;\n"
+                "def bad_base -> int { return 'not_int'; }\n"
+            );
+        }
+        # Create an impl file with its own type error
+        impl_dir = os.path.join(tmpdir, "impl");
+        os.makedirs(impl_dir);
+        with open(os.path.join(impl_dir, "mymod.impl.jac"), "w") as f {
+            f.write("impl greet(name: str) -> str { return 42; }\n");
+        }
+        impl_path = os.path.join(impl_dir, "mymod.impl.jac");
+        JacRuntime.program = JacProgram();
+        (cap_out, cap_err, old_out, old_err) = _capture_output();
+        try {
+            result = analysis.check([impl_path]);
+            output = cap_out.getvalue() + cap_err.getvalue();
+        } finally {
+            _restore_output(old_out, old_err);
+        }
+        # The impl file has a type error (returning int instead of str),
+        # so check should report failure
+        assert result == 1 , (
+            f"Expected exit code 1 for impl file with errors, got {result}. "
+            f"Output:\n{output}"
+        );
+        # Errors from the base file (bad_base) should NOT appear in output
+        assert "bad_base" not in output , (
+            f"Base file errors should be filtered out when checking impl file. "
+            f"Output:\n{output}"
+        );
+    }
+}
+
+"""Regression: JIR cache must preserve code_context for .cl.jac modules.
+
+When a .cl.jac file is compiled, its body items get code_context=CLIENT via
+_coerce_client_module. The JIR serializer must persist this per-node context
+so that the ES code generator includes (not filters out) client statements
+when the module is loaded from cache.
+"""
+test "jir cache preserves code context for cl jac files" {
+    import from jaclang.jac0core.program { JacProgram }
+    import from jaclang.jac0core.constant { CodeContext }
+    import from jaclang.jac0core.jir_passes { JirWriter, JirReader }
+    import from jaclang.jac0core.unitree { ContextAwareNode }
+
+    with tempfile.TemporaryDirectory() as tmpdir {
+        # Create a .cl.jac module with a pub global and a pub function
+        cl_jac_path = os.path.join(tmpdir, "api.cl.jac");
+        with open(cl_jac_path, "w") as f {
+            f.write(
+                'cl {\n'
+                '    glob:pub baseUrl = "http://localhost";\n'
+                '    def:pub fetchData() -> str { return baseUrl; }\n'
+                '}\n'
+            );
+        }
+        # Compile the .cl.jac file
+        program = JacProgram();
+        mod = program.compile(cl_jac_path);
+        # Verify code_context is CLIENT after compilation
+        client_stmts = [
+            s
+            for s in mod.body
+            if isinstance(s, ContextAwareNode)
+        ];
+        assert len(client_stmts) > 0 , "No ContextAwareNode statements found";
+        for stmt in client_stmts {
+            assert stmt.code_context == CodeContext.CLIENT , (
+                f"Before JIR: {type(stmt).__name__} has "
+                f"code_context={stmt.code_context}, expected CLIENT"
+            );
+        }
+        # Round-trip through JIR: write then read
+        writer = JirWriter();
+        jir_bytes = writer.write_module(mod);
+        reader = JirReader();
+        restored_mod = reader.read_module(jir_bytes);
+        # Verify code_context is preserved after JIR round-trip
+        restored_stmts = [
+            s
+            for s in restored_mod.body
+            if isinstance(s, ContextAwareNode)
+        ];
+        assert len(restored_stmts) == len(client_stmts) , (
+            f"JIR round-trip changed stmt count: "
+            f"{len(client_stmts)} -> {len(restored_stmts)}"
+        );
+        for stmt in restored_stmts {
+            assert stmt.code_context == CodeContext.CLIENT , (
+                f"After JIR: {type(stmt).__name__} has "
+                f"code_context={stmt.code_context}, expected CLIENT. "
+                f"JIR cache lost code_context."
+            );
+        }
+    }
 }

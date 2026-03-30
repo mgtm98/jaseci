@@ -38,6 +38,12 @@ impl ViteCompiler.compile(
     # Compile runtime AFTER dependencies so it overwrites any dependency-compiled
     # version of client_runtime.js with the proper ES module exports
     self.compile_runtime_utils();
+    # Compile PWA runtime if PWA is enabled
+    import from jac_client.plugin.src.config_loader { JacClientConfig as PwaConfig }
+    pwa_config = PwaConfig(self.project_dir);
+    if pwa_config.is_pwa_enabled() {
+        self.compile_pwa_runtime();
+    }
     self.copy_root_assets();
     self.create_entry_file(module_path);
     # Return exports and globals without bundling
@@ -380,14 +386,37 @@ impl ViteCompiler.compile_runtime_utils(self: ViteCompiler) -> tuple[str, list[s
     return (runtimeutils_js, all_exports);
 }
 
+"""Compile PWA runtime utilities (only when PWA is enabled)."""
+impl ViteCompiler.compile_pwa_runtime(self: ViteCompiler) -> tuple[str, list[str]] {
+    runtime_path = self.runtime_path;
+    if runtime_path is None {
+        return ('', []);
+    }
+    pwa_runtime_path: Path = runtime_path.parent / 'pwa_runtime.cl.jac';
+    if not pwa_runtime_path.exists() {
+        return ('', []);
+    }
+    (pwa_js, mod, pwa_manifest) = self.jac_compiler.compile_module(pwa_runtime_path);
+    pwa_exports_list = self.jac_compiler.extract_exports(pwa_manifest);
+    glob_names = list(pwa_manifest.globals) if pwa_manifest else [];
+    all_exports = sorted(set(pwa_exports_list + glob_names));
+    self.compiled_dir.mkdir(parents=True, exist_ok=True);
+    (self.compiled_dir / 'pwa_runtime.js').write_text(pwa_js, encoding='utf-8');
+    return (pwa_js, all_exports);
+}
+
 """Convert a .jac relative path string to .js, handling compound extensions."""
 impl ViteCompiler._jac_path_to_js(self: ViteCompiler, rel_str: str) -> str {
+    # Convert Windows backslashes to forward slashes for JS imports
+    rel_str = rel_str.replace('\\', '/');
     for compound_ext in self.COMPOUND_EXTENSIONS {
         if rel_str.endswith(compound_ext) {
             return rel_str[:-len(compound_ext)] + '.js';
         }
     }
-    return str(Path(rel_str).with_suffix('.js'));
+    result = str(Path(rel_str).with_suffix('.js'));
+    # Ensure forward slashes in the final result (Path may reintroduce backslashes on Windows)
+    return result.replace('\\', '/');
 }
 
 """Scan pages/ directory, compile page files, and generate _routes.js manifest.

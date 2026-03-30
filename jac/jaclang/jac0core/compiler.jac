@@ -71,6 +71,9 @@ def get_ir_gen_sched -> list[type[Transform[uni.Module, uni.Module]]] {
         import from jaclang.compiler.passes.main.cfg_build_pass { CFGBuildPass }
         import from jaclang.compiler.passes.main.mtir_gen_pass { MTIRGenPass }
         import from jaclang.compiler.passes.main.sem_def_match_pass { SemDefMatchPass }
+        import from jaclang.compiler.passes.main.unitree_enrich_pass {
+            UniTreeEnrichPass
+        }
         # Pre-compile shared analysis modules so codegen passes can import them
         import jaclang.compiler.symbol_utils;
         import jaclang.compiler.passes.main.layout_pass;
@@ -81,7 +84,8 @@ def get_ir_gen_sched -> list[type[Transform[uni.Module, uni.Module]]] {
             SemanticAnalysisPass,
             SemDefMatchPass,
             CFGBuildPass,
-            MTIRGenPass
+            MTIRGenPass,
+            UniTreeEnrichPass
         ];
     } except ImportError {
         return [
@@ -114,7 +118,18 @@ def get_type_check_sched -> list[type[Transform[uni.Module, uni.Module]]] {
         import from jaclang.compiler.passes.main.static_analysis_pass {
             StaticAnalysisPass
         }
-        return [TypeCheckPass, StaticAnalysisPass];
+        import from jaclang.compiler.passes.main.portability_check_pass {
+            PortabilityCheckPass
+        }
+        import from jaclang.compiler.passes.main.unitree_enrich_pass {
+            UniTreeEnrichPass
+        }
+        return [
+            TypeCheckPass,
+            StaticAnalysisPass,
+            PortabilityCheckPass,
+            UniTreeEnrichPass
+        ];
     } except ImportError {
         return [];
     } finally {
@@ -140,12 +155,8 @@ def get_py_code_gen -> list[type[Transform[uni.Module, uni.Module]]] {
             InteropAnalysisPass,
             EsastGenPass
         ];
-        import from jaclang.compiler.passes.native {
-            NativeCompatCheckPass,
-            NaIRGenPass,
-            NativeCompilePass
-        }
-        passes.extend([NativeCompatCheckPass, NaIRGenPass, NativeCompilePass]);
+        import from jaclang.compiler.passes.native { NaIRGenPass, NativeCompilePass }
+        passes.extend([NaIRGenPass, NativeCompilePass]);
         passes.extend([PyastGenPass, PyJacAstLinkPass, PyBytecodeGenPass]);
         return passes;
     } except ImportError {
@@ -227,14 +238,6 @@ obj _SetupProgress {
 
 glob setup_progress = _SetupProgress();
 
-"""Recalculate parent pointers after mutating node children."""
-def _recalculate_parents(nd: uni.UniNode) -> None {
-    for child in nd.kid {
-        child.parent = nd;
-        _recalculate_parents(child);
-    }
-}
-
 """Coerce a module to a specific code context by unfolding its target block type.
 
 Unfolds elements from `unfold_type` blocks, keeps `skip_types` blocks as-is,
@@ -285,7 +288,6 @@ def _coerce_module(
     }
     new_kid.extend(module.body);
     module.set_kids(nodes=new_kid or [uni.EmptyToken()]);
-    _recalculate_parents(module);
 }
 
 """Coerce a .cl.jac module to client context."""

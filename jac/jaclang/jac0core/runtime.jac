@@ -10,6 +10,7 @@ import from collections { OrderedDict }
 import from collections.abc { Callable, Coroutine, Iterator, Mapping, Sequence }
 import from concurrent.futures { Future, ThreadPoolExecutor }
 import from contextlib { contextmanager, suppress }
+import from contextvars { ContextVar }
 import dataclasses;
 import from dataclasses { dataclass, field }
 import from functools { wraps }
@@ -77,7 +78,10 @@ glob plugin_manager = plugin.PluginManager('jac'),
      JsonValue: TypeAlias = None | str | int | float | bool | `list['JsonValue'] | `dict[
          (str, 'JsonValue')
      ],
-     StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)];
+     StatusCode: TypeAlias = Literal[(200, 201, 400, 401, 404, 500, 503)],
+     _request_context: ContextVar[ExecutionContext | None] = ContextVar(
+         'request_context', default=None
+     );
 
 """Jac Access Validation Specs."""
 class JacAccessValidation {
@@ -124,6 +128,50 @@ class JacAccessValidation {
 
     """Access validation."""
     static def check_access_level(`to: Anchor, no_custom: bool = False) -> AccessLevel;
+}
+
+"""Batch-prefetch edge stubs and their source/target nodes into L1 cache.
+Reduces N+1 database fetches to 2 batch queries for all edges of all origin nodes.
+"""
+def _prefetch_edges(origin: list[NodeArchetype]) -> None {
+    ctx = JacRuntimeInterface.get_context();
+    if not hasattr(ctx.mem, 'batch_get') {
+        return;
+    }
+    edge_ids: list = [];
+    for nd in origin {
+        nanch = nd.__jac__;
+        for edge_stub in nanch.edges {
+            if not edge_stub.is_populated() {
+                edge_ids.append(edge_stub.id);
+            }
+        }
+    }
+    if edge_ids {
+        ctx.mem.batch_get(edge_ids);
+    }
+    node_ids: list = [];
+    for nd in origin {
+        nanch = nd.__jac__;
+        for anchor in nanch.edges {
+            loaded = ctx.mem.get(anchor.id);
+            if loaded {
+                if loaded?.source
+                and loaded.source is not None
+                and not loaded.source.is_populated() {
+                    node_ids.append(loaded.source.id);
+                }
+                if loaded?.target
+                and loaded.target is not None
+                and not loaded.target.is_populated() {
+                    node_ids.append(loaded.target.id);
+                }
+            }
+        }
+    }
+    if node_ids {
+        ctx.mem.batch_get(node_ids);
+    }
 }
 
 """Jac Node Operations."""
@@ -307,14 +355,14 @@ class JacBasics {
     """Set Class References."""
     static def setup -> None;
 
-    """Get current execution context."""
+    """Get current execution context (request-scoped if available, else global)."""
     static def get_context -> ExecutionContext;
 
     """Commit all data from memory to datasource."""
     static def commit(anchor: Anchor | Archetype | None = None) -> None;
 
     """Purge current or target graph."""
-    static def reset_graph(`root: (Root | None) = None) -> int;
+    static def reset_graph(root: (Root | None) = None) -> int;
 
     """Get object given id."""
     static def get_object(id: str) -> (Archetype | None);
@@ -410,7 +458,8 @@ system,
 
     """Jac's apply_dir stmt feature."""
     static def refs(
-        path: ObjectSpatialPath | NodeArchetype | list[NodeArchetype]
+        path: ObjectSpatialPath | NodeArchetype | list[NodeArchetype],
+        post_filter: (Callable[([Archetype], bool)] | None) = None
     ) -> list[NodeArchetype] | list[EdgeArchetype] | list[
         (NodeArchetype | EdgeArchetype)
     ];
@@ -452,7 +501,7 @@ system,
     static def safe_subscript(`obj: Any, key: Any) -> Any;
 
     """Jac's root getter."""
-    static def `root -> Root;
+    static def root -> Root;
 
     """Get all the roots."""
     static def get_all_root -> list[Root];
@@ -946,8 +995,14 @@ class JacRuntime(JacRuntimeInterface) {
         """
     static def set_base_path(base_path: (str | None)) -> None;
 
-    """Set the context for the machine."""
+    """Set the context for the machine (global, for backward compatibility)."""
     static def set_context(context: ExecutionContext) -> None;
+
+    """Set request-scoped execution context (for web servers)."""
+    static def set_request_context(context: ExecutionContext) -> None;
+
+    """Clear request-scoped context and commit changes."""
+    static def clear_request_context -> None;
 }
 
 """Context manager to temporarily disable external plugins.

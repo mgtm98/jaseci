@@ -69,6 +69,7 @@ obj RedisBackend(CacheMemory) {
     ) -> (Anchor | None);
 
     def commit(anchor: (Anchor | None) = None) -> None;
+    def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
     # CacheMemory-specific
     def exists(id: UUID) -> bool;
     def put_if_exists(anchor: Anchor) -> bool;
@@ -85,9 +86,11 @@ obj MongoBackend(PersistentMemory) {
         collection: Any by postinit,
         db_name: str = 'jac_db',
         collection_name: str = '_anchors',
-        mongo_url: (str | None) = None;
+        mongo_url: (str | None) = None,
+        _mem_ref: (dict[UUID, Anchor] | None) = None;
 
     def postinit -> None;
+    def set_memory_ref(mem: dict[UUID, Anchor]) -> None;
     def is_available -> bool;
     # PersistentMemory interface (Memory methods + persistence-specific)
     def get(id: UUID) -> (Anchor | None);
@@ -111,6 +114,7 @@ obj MongoBackend(PersistentMemory) {
     ) -> (Anchor | None);
 
     def commit(anchor: (Anchor | None) = None) -> None;
+    def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
     # PersistentMemory-specific
     def sync -> None;
     def bulk_put(anchors: Iterable[Anchor]) -> None;
@@ -144,4 +148,5 @@ obj ScaleTieredMemory(TieredMemory) {
     def init(use_cache: bool = True) -> None;
     def commit(anchor: (Anchor | None) = None) -> None;
     def close -> None;
+    def batch_get(ids: list[UUID]) -> dict[UUID, Anchor];
 }
