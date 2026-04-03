@@ -1,5 +1,5 @@
 """byLLM Package."""
-import from byllm.llm { MockLLM, Model }
+import from byllm.llm { MockLLM, Model, ModelPool }
 import from byllm.mtir { MTIR, MTRuntime }
 import from byllm.plugin { JacRuntime }
 import from byllm.types { Image, MockToolCall, StreamEvent, Video }
@@ -13,6 +13,7 @@ import from byllm.exceptions {
     FinishToolError,
     ConfigurationError
 }
+import from byllm.telemetry { register_agent_callback }
 
 glob by = JacRuntime.by ,
      __all__ = [
@@ -29,8 +30,10 @@ glob by = JacRuntime.by ,
          'MockLLM',
          'MockToolCall',
          'Model',
+         'ModelPool',
          'MTIR',
          'MTRuntime',
          'StreamEvent',
-         'Video'
+         'Video',
+         'register_agent_callback'
      ];

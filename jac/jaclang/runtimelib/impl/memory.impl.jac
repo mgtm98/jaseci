@@ -158,6 +158,7 @@ impl SqliteMemory.postinit -> None {
     self.__gc__ = set();
     # Connection is lazily initialized on first write
     self.__conn__ = None;
+    self.l3_fetch_count = 0;
 }
 
 """Lazily initialize SQLite connection when first needed."""
@@ -209,6 +210,7 @@ impl SqliteMemory.get(id: UUID) -> (Anchor | None) {
         );
         if (row := cursor.fetchone()) {
             try {
+                self.l3_fetch_count += 1;
                 anchor = loads(row[0]);
                 # Promote to memory cache
                 self.__mem__[id] = anchor;
@@ -578,9 +580,51 @@ impl TieredMemory.`has(id: UUID) -> bool {
     return False;
 }
 
+"""Get L3 fetch count for testing/instrumentation."""
+impl TieredMemory.get_l3_fetch_count -> int {
+    import from jaclang.runtimelib.memory { SqliteMemory }
+    if isinstance(self.l3, SqliteMemory) {
+        return self.l3.l3_fetch_count;
+    }
+    return 0;
+}
+
+"""Reset L3 fetch count for testing/instrumentation."""
+impl TieredMemory.reset_l3_fetch_count -> None {
+    import from jaclang.runtimelib.memory { SqliteMemory }
+    if isinstance(self.l3, SqliteMemory) {
+        self.l3.l3_fetch_count = 0;
+    }
+}
+
 """Commit - syncs L3 persistence if available."""
 impl TieredMemory.commit(anchor: (Anchor | None) = None) -> None {
     if self.l3 {
         self.l3.sync();
     }
+}
+
+"""Batch get: check L1, then load L3 misses, promote all to L1/L2."""
+impl TieredMemory.batch_get(ids: list[UUID]) -> dict[UUID, Anchor] {
+    result: dict[UUID, Anchor] = {};
+    missing_ids: list[UUID] = [];
+    for id in ids {
+        if (anchor := self.__mem__.get(id)) {
+            result[id] = anchor;
+        } else {
+            missing_ids.append(id);
+        }
+    }
+    if missing_ids and self.l3 {
+        for mid in missing_ids {
+            if (anchor := self.l3.get(mid)) {
+                self.__mem__[anchor.id] = anchor;
+                if self.l2 {
+                    self.l2.put(anchor);
+                }
+                result[anchor.id] = anchor;
+            }
+        }
+    }
+    return result;
 }

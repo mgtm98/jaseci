@@ -455,7 +455,47 @@ impl apply_solved_type_vars(
         if ty.is_self and class_type is not None {
             return class_type.clone_as_instance();
         }
-        # Regular TypeVar -> lookup in solution by name
+        # Only substitute TypeVars that are declared class type parameters.
+        # Module-level TypeVars that are NOT used as class type params should
+        # not be substituted, as they are independent of the class hierarchy.
+        #
+        # A TypeVar should be substituted if:
+        # 1. is_class_type_param flag is True (set when created from class type param), OR
+        # 2. Name matches a class type_param AND the TypeVar has NO bound
+        #    (module-level TypeVars typically have bounds from TypeVar(...) call,
+        #    while class type params from Generic[T] don't unless explicitly bounded)
+        #
+        # This allows typeshed TypeVars (which don't have is_class_type_param) to be
+        # substituted when they match class type params, while preventing module-level
+        # TypeVars with explicit bounds from being incorrectly substituted.
+        is_declared_class_param = ty.is_class_type_param;
+        if not is_declared_class_param and ty.name {
+            # Check if this TypeVar matches a class type param by name AND bound
+            if class_type is not None {
+                for tp in class_type.shared.type_params {
+                    if tp.name == ty.name {
+                        # Only substitute if the TypeVar's bound matches the class type param's bound
+                        # (or if neither has a bound)
+                        if ty.bound is None
+                        or (tp.bound is not None and ty.bound == tp.bound) {
+                            is_declared_class_param = True;
+                        }
+                        break;
+                    }
+                }
+            }
+            # Also allow substitution if the TypeVar has no bound AND name is in solution
+            # This handles typeshed TypeVars without bounds
+            if not is_declared_class_param
+            and ty.bound is None
+            and ty.name in solution {
+                is_declared_class_param = True;
+            }
+        }
+        if not is_declared_class_param {
+            return ty;
+        }
+        # Regular TypeVar (class type param) -> lookup in solution by name
         if ty.name and ty.name in solution {
             resolved = solution[ty.name];
             return convert_to_instance(resolved);
@@ -509,90 +549,6 @@ impl apply_solved_type_vars(
 }
 
 """
-Resolve the concrete type args that src supplies to target_base through the MRO.
-
-Walks the inheritance chain, accumulating TypeVar bindings through intermediate
-classes so that multi-level generic inheritance is properly resolved.
-"""
-impl resolve_type_args_for_base(
-    src: types.ClassType, target_base: types.ClassType
-) -> list[types.TypeBase] {
-    # Direct match: same class, return its type_args directly
-    if src.shared == target_base.shared {
-        return src.private.type_args if src.private else [];
-    }
-
-    # Quick check: is target_base even in src's MRO?
-    found_in_mro = False;
-    for mro_cls in src.shared.mro {
-        if mro_cls.shared == target_base.shared {
-            found_in_mro = True;
-            break;
-        }
-    }
-    if not found_in_mro {
-        return [];
-    }
-
-    # Build cumulative TypeVar solution by walking the MRO.
-    # Start with src's own type_params -> type_args mapping.
-    solution: dict[str, types.TypeBase] = {};
-    if src.shared.type_params and src.private and src.private.type_args {
-        for (idx, tp) in enumerate(src.shared.type_params) {
-            if tp.name and idx < len(src.private.type_args) {
-                solution[tp.name] = src.private.type_args[idx];
-            }
-        }
-    }
-
-    # Walk the MRO (which includes src itself as first entry).
-    # For each class in the MRO, if it has type_params and type_args,
-    # resolve the type_args using the current solution and add new bindings.
-    for mro_cls in src.shared.mro {
-        if mro_cls.shared.type_params
-        and mro_cls.private
-        and mro_cls.private.type_args {
-            for (idx, tp) in enumerate(mro_cls.shared.type_params) {
-                if tp.name and idx < len(mro_cls.private.type_args) {
-                    arg = mro_cls.private.type_args[idx];
-                    # Resolve any TypeVars in this arg using accumulated solution
-                    resolved = apply_solved_type_vars(arg, solution);
-                    solution[tp.name] = resolved;
-                }
-            }
-        }
-
-        # When we reach the target base, extract its type_args with full substitution
-        if mro_cls.shared == target_base.shared {
-            if mro_cls.private and mro_cls.private.type_args {
-                return [
-                    apply_solved_type_vars(arg, solution)
-                    for arg in mro_cls.private.type_args
-                ];
-            }
-            # MRO entry has no type_args — try to resolve target's type_params
-            # from accumulated solution (handles cases like class Foo(Bar[T]))
-            if target_base.shared.type_params {
-                result: list[types.TypeBase] = [];
-                for tp in target_base.shared.type_params {
-                    if tp.name and tp.name in solution {
-                        result.append(solution[tp.name]);
-                    } else {
-                        result.append(types.UnknownType());
-                    }
-                }
-                # Only return if we resolved at least one param
-                if any(not isinstance(r, types.UnknownType) for r in result) {
-                    return result;
-                }
-            }
-            return [];
-        }
-    }
-    return [];
-}
-
-"""
 Build a cumulative TypeVar name -> concrete type mapping for a specialized class.
 
 Walks the MRO accumulating bindings so that inherited TypeVars are resolved
@@ -602,13 +558,26 @@ declares get() -> T, then build_type_var_solution(Box[int]) yields {U: int, T: i
 impl build_type_var_solution(class_type: types.ClassType) -> dict[str, types.TypeBase] {
     solution: dict[str, types.TypeBase] = {};
 
-    # Start with the class's own type_params -> type_args
+    # Start with the class's own type_params -> type_args.
+    # PEP 484: bare generics (e.g. list without [T]) default unresolved
+    # TypeVars to Any so downstream operations (iteration, subscript,
+    # method calls) work correctly instead of producing Unknown.
     if class_type.shared.type_params
     and class_type.private
-    and class_type.private.type_args {
+    and class_type.private.type_args
+    and len(class_type.private.type_args) > 0 {
         for (idx, tp) in enumerate(class_type.shared.type_params) {
             if tp.name and idx < len(class_type.private.type_args) {
                 solution[tp.name] = class_type.private.type_args[idx];
+            }
+        }
+    } elif class_type.shared and class_type.shared.type_params {
+        # Bare generic (e.g. list without [T]): default all TypeVars to Any
+        # per PEP 484 so downstream operations (iteration, subscript,
+        # method calls) work correctly instead of producing Unknown.
+        for tp in class_type.shared.type_params {
+            if tp.name {
+                solution[tp.name] = types.AnyType();
             }
         }
     }
@@ -636,7 +605,152 @@ impl build_type_var_solution(class_type: types.ClassType) -> dict[str, types.Typ
         }
     }
 
+    # Propagate TypeVar bindings transitively through the inheritance chain.
+    # MRO entries are unspecialized (shared only, no type_args), so Phase 2
+    # above misses TypeVars defined on ancestor classes (e.g., _VT_co on
+    # Mapping when specializing dict[str, int]). Use the existing
+    # specialize_for_base_class infrastructure to get each MRO entry's
+    # specialized form, then extract its TypeVar bindings into the solution.
+    for mro_cls in class_type.shared.mro {
+        if not mro_cls.shared.type_params {
+            continue;
+        }
+        specialized = specialize_for_base_class(class_type, mro_cls);
+        if specialized.private is not None and specialized.private.type_args {
+            for (idx, tp) in enumerate(specialized.shared.type_params) {
+                if tp.name and idx < len(specialized.private.type_args) {
+                    arg = specialized.private.type_args[idx];
+                    if not isinstance(arg, types.TypeVarType) {
+                        if tp.name not in solution
+                        or isinstance(solution[tp.name], types.TypeVarType) {
+                            solution[tp.name] = arg;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return solution;
+}
+
+"""Build type_params → type_args mapping from a specialized class."""
+impl build_solution_from_specialized_class(
+    class_type: types.ClassType
+) -> dict[str, types.TypeBase] {
+    solution: dict[str, types.TypeBase] = {};
+
+    if class_type.shared.type_params
+    and class_type.private
+    and class_type.private.type_args {
+        for (idx, tp) in enumerate(class_type.shared.type_params) {
+            if tp.name and idx < len(class_type.private.type_args) {
+                # Skip duplicates (e.g., Generator has _YieldT_co twice)
+                if tp.name not in solution {
+                    solution[tp.name] = class_type.private.type_args[idx];
+                }
+            }
+        }
+    }
+
+    return solution;
+}
+
+"""Specialize a base class using type args from the derived class."""
+impl specialize_for_base_class(
+    src_type: types.ClassType, base_class: types.ClassType
+) -> types.ClassType {
+    # If same class, return src_type directly
+    if src_type.shared == base_class.shared {
+        return src_type;
+    }
+
+    # If base_class has no type params, no specialization needed
+    if not base_class.shared.type_params {
+        return base_class;
+    }
+
+    # Find the path from src_type to base_class through base_classes
+    # and progressively specialize at each step
+    return _specialize_for_base_recursive(src_type, base_class);
+}
+
+"""
+Recursively find and specialize base_class from src_type's inheritance hierarchy.
+"""
+def _specialize_for_base_recursive(
+    src_type: types.ClassType, target_base: types.ClassType
+) -> types.ClassType {
+    # Direct match
+    if src_type.shared == target_base.shared {
+        return src_type;
+    }
+
+    # Build solution from src_type
+    solution = build_solution_from_specialized_class(src_type);
+
+    # Search through base_classes
+    if src_type.shared.base_classes {
+        for base in src_type.shared.base_classes {
+            if not isinstance(base, types.ClassType) {
+                continue;
+            }
+
+            # Check if this base IS the target or CONTAINS the target in its hierarchy
+            if base.shared == target_base.shared {
+                # Direct match - specialize base using our solution
+                return _apply_solution_to_class(base, solution);
+            }
+
+            # Check if target_base is in this base's MRO
+            target_in_mro = False;
+            for mro_cls in base.shared.mro {
+                if mro_cls.shared == target_base.shared {
+                    target_in_mro = True;
+                    break;
+                }
+            }
+
+            if target_in_mro {
+                # First specialize the intermediate base
+                specialized_base = _apply_solution_to_class(base, solution);
+                # Then recursively find target_base from the specialized intermediate
+                return _specialize_for_base_recursive(specialized_base, target_base);
+            }
+        }
+    }
+
+    # Not found - return base_class unchanged
+    return target_base;
+}
+
+"""
+Apply a TypeVar solution to specialize a ClassType's type_args.
+"""
+def _apply_solution_to_class(
+    class_type: types.ClassType, solution: dict[str, types.TypeBase]
+) -> types.ClassType {
+    if not class_type.private or not class_type.private.type_args {
+        return class_type;
+    }
+
+    # Apply solution to each type_arg
+    new_args: list[types.TypeBase] = [];
+    any_changed = False;
+
+    for type_arg in class_type.private.type_args {
+        specialized = apply_solved_type_vars(type_arg, solution);
+        new_args.append(specialized);
+        if specialized is not type_arg {
+            any_changed = True;
+        }
+    }
+
+    if any_changed {
+        return class_type.specialize_generics(new_args);
+    }
+
+    return class_type;
 }
 
 """Helper to apply type vars to a FunctionType."""
@@ -659,7 +773,8 @@ def _apply_to_function(
                 is_cls=param.is_cls,
                 param_kind=param.param_kind
             ) for param in func.parameters
-        ]
+        ],
+        type_params=func.type_params,
     );
 
     # Specialize parameter types

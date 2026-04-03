@@ -56,7 +56,7 @@ obj UniNode {
     }
 
     @gen.setter
-    def gen(value: CodeGenTarget) -> None {
+    def gen(value: CodeGenTarget) {
         self._gen = value;
     }
 
@@ -311,7 +311,8 @@ are evaluated to produce a value.
 obj Expr(UniNode) {
     has _type_sym_tab: (UniScopeNode | None) by postinit,
         type: (TypeBase | None) by postinit,
-        attached_tokens: (list[Token] | None) by postinit;
+        attached_tokens: (list[Token] | None) by postinit,
+        backend_type_tag: (str | None) by postinit;
 
     def postinit -> None;
     @property
@@ -320,7 +321,7 @@ obj Expr(UniNode) {
     }
 
     @type_sym_tab.setter
-    def type_sym_tab(type_sym_tab: UniScopeNode) -> None {
+    def type_sym_tab(type_sym_tab: UniScopeNode) {
         self._type_sym_tab = type_sym_tab;
     }
 }
@@ -368,7 +369,7 @@ obj NameAtom(AtomExpr, EnumBlockStmt) {
     }
 
     @sym.setter
-    def sym(sym: Symbol) -> None {
+    def sym(sym: Symbol) {
         self._sym = sym;
     }
 
@@ -393,7 +394,7 @@ obj NameAtom(AtomExpr, EnumBlockStmt) {
     }
 
     @py_ctx_func.setter
-    def py_ctx_func(py_ctx_func: type[ast3.expr_context]) -> None {
+    def py_ctx_func(py_ctx_func: type[ast3.expr_context]) {
         self._py_ctx_func = py_ctx_func;
     }
 
@@ -424,7 +425,12 @@ obj Module(AstDocNode, UniScopeNode) {
         source: Source,
         body: Sequence[ElementStmt | String | EmptyToken],
         terminals: list[Token],
-        stub_only: bool = False;
+        stub_only: bool = False,
+        impl_mod: list[Module] = [],
+        test_mod: list[Module] = [],
+        variant_mod: list[Module] = [],
+        src_terminals: list[Token] = [],
+        is_raised_from_py: bool = False;
 
     def postinit -> None;
     @property
@@ -1134,15 +1140,17 @@ obj FuncCall(Expr) {
     def postinit -> None;
 }
 
+"""Slice item node type for IndexSlice."""
+obj Slice(UniNode) {
+    has start: (Expr | None),
+        stop: (Expr | None),
+        step: (Expr | None);
+
+    def postinit -> None;
+}
+
 """IndexSlice node type for Jac Ast."""
 obj IndexSlice(AtomExpr) {
-    """Slice node type for Jac Ast."""
-    obj Slice {
-        has start: (Expr | None),
-            stop: (Expr | None),
-            step: (Expr | None);
-    }
-
     has slices: list[Slice],
         is_range: bool;
 
@@ -1381,6 +1389,8 @@ obj Token(UniNode) {
 
 """Name node type for Jac Ast."""
 obj Name(Token, NameAtom) {
+    has js_decl_kind: (str | None) by postinit;
+
     def init(
         orig_src: Source,
         name: str,

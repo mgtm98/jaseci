@@ -11,6 +11,7 @@ glob JAC_ROOT = str(Path(jaclang.__file__).parent.parent),
          JAC_ROOT, "tests", "langserve", "fixtures", "circle_pure_err.jac"
      ),
      EDGE_CASES_FILE = os.path.join(FIXTURES, "console_edge_cases.jac"),
+     FSTRING_ENCODING_FILE = os.path.join(FIXTURES, "fstring_encoding.jac"),
      ESC = '\x1b[';
 
 """Run jac and return (stdout, stderr) tuple."""
@@ -63,8 +64,49 @@ test "error messages are readable" {
 }
 
 # =============================================================================
+# Encoding: escape sequences and non-ASCII chars in f-strings (raw_unicode_escape fix)
+# =============================================================================
+test "fstring escape sequences are decoded correctly" {
+    (stdout, _) = run_jac(['run', FSTRING_ENCODING_FILE]);
+    assert 'ESC_NEWLINE:\nhello world' in stdout , "\\n escape not decoded in f-string";
+    assert 'ESC_TAB:\there world' in stdout , "\\t escape not decoded in f-string";
+    assert 'ESC_ANSI:\x1b[0mworld' in stdout , "\\x1b escape not decoded in f-string";
+    assert 'UNICODE_A:A world' in stdout , "\\uXXXX escape not decoded in f-string";
+    assert 'CHINESE:你好 world' in stdout , "Chinese chars garbled in f-string";
+    assert 'ARABIC:مرحبا world' in stdout , "Arabic chars garbled in f-string";
+}
+
+test "4-byte emoji literals in f-strings are not garbled" {
+    (stdout, _) = run_jac(['run', FSTRING_ENCODING_FILE]);
+    assert 'EMOJI_BOOK:📚 world' in stdout , "📚 garbled in f-string";
+    assert 'EMOJI_CHAT:💬 world' in stdout , "💬 garbled in f-string";
+    assert 'EMOJI_BUG:🐛 world' in stdout , "🐛 garbled in f-string";
+    assert 'EMOJI_ROCKET:🚀 world' in stdout , "🚀 garbled in f-string";
+    assert '📚 world 💬' in stdout , "emoji mixed with escape sequence garbled in f-string";
+    assert '\xc3\xb0' not in stdout , "double-encoded emoji byte found — raw_unicode_escape fix regression";
+}
+
+# =============================================================================
 # Regression: user data with special patterns preserved unchanged
 # =============================================================================
+# =============================================================================
+# Windows encoding: unencodable chars replaced instead of crash
+# =============================================================================
+test "Windows console encoding handles unencodable Unicode" {
+    # This test verifies that characters outside cp1252 don't crash on Windows.
+    # On Windows cmd/PowerShell (without WT_SESSION), unencodable chars are replaced.
+    # On Linux/Mac/Windows Terminal, they pass through unchanged.
+    (stdout, _) = run_jac(['run', FSTRING_ENCODING_FILE]);
+
+    # The file contains emoji (📚💬🐛🚀) which can't be encoded in cp1252.
+    # Test should not crash - output should contain either the emoji or replacement char.
+    assert len(stdout) > 0 , "No output - possible encoding crash";
+
+    # At minimum, the ASCII parts should always be present
+    assert 'world' in stdout , "ASCII content missing from output";
+    assert 'ESC_NEWLINE' in stdout , "Label missing - possible encoding crash";
+}
+
 test "all edge case patterns preserved" {
     (stdout, stderr) = run_jac(['run', EDGE_CASES_FILE]);
 

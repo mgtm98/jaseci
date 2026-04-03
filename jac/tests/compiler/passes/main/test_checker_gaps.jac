@@ -20,6 +20,7 @@ Gap index:
   #48 - TypeCheckPass self-check produces 100+ false positives
   #49 - TYPE_CHECKING forward-reference string annotations
   #50 - postinit body not validated against by-postinit field declarations
+  #51 - @property on union types returns FunctionType instead of return type
 """
 
 import os;
@@ -37,7 +38,10 @@ glob JAC_ROOT = str(Path(jaclang.__file__).parent.parent),
 """Compile a checker fixture and run the type check pass."""
 def compile_and_check(fixture_name: str) -> JacProgram {
     program = JacProgram();
-    mod = program.compile(os.path.join(CHECKER_FIXTURES, fixture_name));
+    mod = program.compile(
+        os.path.join(CHECKER_FIXTURES, fixture_name),
+        options=CompileOptions(type_check=False)
+    );
     TypeCheckPass(ir_in=mod, prog=program);
     return program;
 }
@@ -287,12 +291,13 @@ test "gap 44 context manager exit not checked" {
 test "gap 45 enum iteration false positive" {
     program = compile_and_check("checker_gap_enum_iter.jac");
 
-    # Expected: 0 errors (iterating over enum is valid Python/Jac)
-    # Actual: 1 error (enum class not recognized as iterable — Unknown not treated as Any)
-    assert len(program.errors_had) == 1 , f"Gap #45: Enum iteration raises false positive. "
-    f"Expected 1 type error but got {len(program.errors_had)}: "
-    f"{[str(e) for e in program.errors_had]}. "
-    f"Iterating over an enum class should be valid (EnumMeta provides __iter__).";
+    # PARTIALLY FIXED: Structural protocol matching for Iterable (__iter__) now
+    # recognizes enum classes as iterable via EnumMeta.
+    # Remaining 1: c.name in list comprehension — iteration var type resolves
+    # to Unknown in comprehension scope, causing false E1032 on .name access.
+    assert len(program.errors_had) == 1 , f"Gap #45: Enum iteration should produce 1 error, "
+    f"but got {len(program.errors_had)}: "
+    f"{[str(e) for e in program.errors_had]}.";
 }
 
 # =========================================================================
@@ -316,7 +321,7 @@ test "gap 46 impl file standalone scope resolution" {
     program = JacProgram();
     mod = program.compile(
         os.path.join(CHECKER_FIXTURES, "checker_gap_impl_scope.impl.jac"),
-        options=CompileOptions(resolve_annex_parent=True)
+        options=CompileOptions(resolve_annex_parent=True, type_check=False)
     );
     TypeCheckPass(ir_in=mod, prog=program);
 
@@ -515,4 +520,19 @@ test "gap 50 postinit assignment tracking" {
         incomplete_errors
     )}. "
     f"All errors: {[e.pretty_print()[:100] for e in program.errors_had]}";
+}
+
+# =========================================================================
+# Gap #51: @property on union types returns FunctionType instead of return type
+# =========================================================================
+test "gap 51 property on union type returns function type" {
+    program = compile_and_check("checker_gap_property.jac");
+    fixture_errors = [
+        e
+        for e in program.errors_had
+        if "checker_gap_property.jac" in (e.loc.mod_path or "")
+    ];
+    assert len(fixture_errors) == 0 , f"Gap #51: Property on union type not unwrapped. "
+    f"Expected 0 errors but got {len(fixture_errors)}. "
+    f"Errors: {[e.pretty_print()[:100] for e in fixture_errors]}";
 }

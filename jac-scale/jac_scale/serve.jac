@@ -36,6 +36,7 @@ import from jaclang.cli.console { console }
 import from jaclang.cli.banners { JAC_DISCORD_URL }
 import from fastapi { WebSocket, WebSocketDisconnect }  # jac:runtime
 import from jac_scale.admin.admin_portal { JacAPIServerAdmin }
+import from jac_scale.admin.llm_telemetry { JacAPIServerLLMTelemetry }
 import from jac_scale.enums { Platforms, Operations }
 import from jac_scale.scheduler { JacScaleScheduler }
 import from jaclang.runtimelib.builtin { ScheduleTrigger }
@@ -92,10 +93,14 @@ obj JacAPIServerCore {
     def register_update_password_endpoint -> None;
     def register_sso_endpoints -> None;
     def _create_sso_callback_wrapper -> Callable[..., (Response | TransportResponse)];
+    # Health check
+    def register_health_endpoint -> None;
     # Client error reporting
     def _register_client_error_endpoint -> None;
     # HMR support
     def enable_hmr(hot_reloader: Any) -> None;
+    def _register_endpoints -> None;
+    def _refresh_dev_endpoints -> None;
     def _setup_scheduler -> None;
     # API key management
     def get_api_key_manager -> ApiKeyManager;
@@ -146,12 +151,6 @@ obj JacAPIServerEndpoints {
     def get_ws_manager -> WebSocketConnectionManager;
     def create_websocket_handler(walker_name: str) -> Callable;
     def register_websocket_endpoints -> None;
-    # Dynamic HMR endpoints
-    def register_dynamic_walker_endpoint -> None;
-    def register_dynamic_function_endpoint -> None;
-    def register_dynamic_introspection_endpoints -> None;
-    def register_dynamic_webhook_endpoint -> None;
-    def register_dynamic_websocket_endpoint -> None;
 }
 
 """Scheduler job management REST API endpoints."""
@@ -185,7 +184,7 @@ obj JacAPIServerStatic {
 }
 
 """Composed JacAPIServer class combining all mixins with JServer base."""
-obj JacAPIServer(JacAPIServerCore, JacAPIServerEndpoints, JacAPIServerStatic, JacAPIServerAdmin, JacAPIServerScheduler, JServer) {
+obj JacAPIServer(JacAPIServerCore, JacAPIServerEndpoints, JacAPIServerStatic, JacAPIServerAdmin, JacAPIServerLLMTelemetry, JacAPIServerScheduler, JServer) {
     # HMR (Hot Module Replacement) support fields
     has _hmr_pending: bool = False,
         _hot_reloader: Any | None = None,

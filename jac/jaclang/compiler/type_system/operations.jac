@@ -246,8 +246,32 @@ def get_type_of_binary_operation(
         }
     }
 
+    # Handle '|' union types BEFORE the is_any_type() guard, because TypeVarType
+    # reports is_any_type()=True but is valid in type annotations (e.g., _VT | None).
+    if (isinstance(expr.op, uni.Token) and expr.op.name == Tok.BW_OR) {
+        def is_annotation_type(ty: jtypes.TypeBase) -> bool {
+            if ty.is_instantiable() or isinstance(ty, jtypes.UnionType) {
+                return True;
+            }
+            # TypeVars are valid in union type annotations (e.g., _VT | None in typeshed stubs).
+            if isinstance(ty, jtypes.TypeVarType) {
+                return True;
+            }
+            # Although None is not a valid class, it can be used as a class in the type annotation.
+            if isinstance(ty, jtypes.ClassType) {
+                return ty.shared == evaluator.prefetch.none_type_class.shared;
+            }
+            return False;
+        }
+        if is_annotation_type(left_type) and is_annotation_type(right_type) {
+            return jtypes.UnionType(types=[left_type, right_type]);
+        }
+    }
+
     if left_type.is_any_type() or right_type.is_any_type() {
-        return jtypes.UnknownType();
+        if not (isinstance(expr.op, uni.Token) and expr.op.name == Tok.BW_OR) {
+            return jtypes.UnknownType();
+        }
     }
     # Boolean operations
     if (
@@ -267,7 +291,11 @@ def get_type_of_binary_operation(
             if ty.is_instantiable() or isinstance(ty, jtypes.UnionType) {
                 return True;
             }
-            # Althought None is not a valid class, it can be used as a class in the type annotation.
+            # TypeVarType is valid in union type annotations (e.g., T | None)
+            if isinstance(ty, jtypes.TypeVarType) {
+                return True;
+            }
+            # Although None is not a valid class, it can be used as a class in the type annotation.
             if isinstance(ty, jtypes.ClassType) {
                 return ty.shared == evaluator.prefetch.none_type_class.shared;
             }
@@ -323,8 +351,8 @@ def get_type_of_binary_operation(
             );
         }
         # Check whether a type is a valid node operand for connections.
-        # Accepts: node instances, UnionType where all members are node instances,
-        # AnyType, and UnknownType (not enough info to diagnose).
+        # Accepts: node instances, list of node instances, UnionType where all
+        # members are valid, AnyType, and UnknownType (not enough info to diagnose).
         def is_valid_node_operand(t: jtypes.TypeBase) -> bool {
             if t.is_any_type() or isinstance(t, jtypes.UnknownType) {
                 return True;
@@ -334,6 +362,16 @@ def get_type_of_binary_operation(
             }
             if isinstance(t, jtypes.UnionType) {
                 return all(is_valid_node_operand(m) for m in t.types);
+            }
+            # Also accept list of node instances (runtime accepts list[NodeArchetype])
+            if isinstance(t, jtypes.ClassType)
+            and t.is_builtin()
+            and t.shared.class_name == "list" {
+                if t.private.type_args and len(t.private.type_args) > 0 {
+                    return is_valid_node_operand(t.private.type_args[0]);
+                }
+                return True;  # Unparameterized list - allow
+
             }
             return False;
         }
@@ -419,8 +457,20 @@ def get_type_of_binary_operation(
                     }
                 }
             }
+            # Connect operator returns list of nodes (right operand)
+            if evaluator.prefetch and evaluator.prefetch.list_class {
+                list_type = evaluator.prefetch.list_class.clone_as_instance();
+                if isinstance(list_type, jtypes.ClassType) {
+                    list_type.private.type_args = [right_type];
+                    return list_type;
+                }
+            }
             return right_type;
         }
+    }
+    # Spawn operator: node spawn Walker() returns the walker instance
+    if isinstance(expr.op, uni.Token) and expr.op.name == Tok.KW_SPAWN {
+        return right_type;
     }
     #  walrus assignment
     if isinstance(expr.op, uni.Token) and expr.op.name == Tok.WALRUS_EQ {

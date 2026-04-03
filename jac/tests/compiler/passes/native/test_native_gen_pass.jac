@@ -11,13 +11,15 @@ import sys;
 import from pathlib { Path }
 import jaclang;
 import from jaclang.jac0core.program { JacProgram }
+import jaclang.jac0core.unitree as uni;
+import from llvmlite.binding { ExecutionEngine }
 
 glob FIXTURES = str(
          Path(jaclang.__file__).parent.parent / "tests" / "compiler" / "passes" / "native" / "fixtures"
      );
 
 """Compile a .na.jac fixture and return the JIT engine."""
-def compile_native(fixture: str) -> tuple {
+def compile_native(fixture: str) -> tuple[ExecutionEngine, uni.Module] {
     prog = JacProgram();
     ir = prog.compile(file_path=str(os.path.join(FIXTURES, fixture)));
     errors = [str(e) for e in prog.errors_had] if prog.errors_had else [];
@@ -28,7 +30,7 @@ def compile_native(fixture: str) -> tuple {
 }
 
 """Get a ctypes-callable function from the JIT engine."""
-def get_func(eng: object, name: str, restype: type, *argtypes: type) -> object {
+def get_func(eng: object, name: str, restype: type | None, *argtypes: type) -> object {
     addr = eng.get_function_address(name);
     assert addr != 0 , f"Function '{name}' not found in JIT engine";
     functype = ctypes.CFUNCTYPE(restype, *argtypes);
@@ -1926,7 +1928,7 @@ glob CHESS_JAC = str(
      );
 
 """Compile a regular .jac file with auto-promotion and return the engine."""
-def compile_auto_native(file_path: str) -> tuple {
+def compile_auto_native(file_path: str) -> tuple[uni.Module, JacProgram] {
     prog = JacProgram();
     prog._auto_promote_native = True;
     prog._auto_promote_target = os.path.abspath(file_path);
@@ -1939,9 +1941,7 @@ def compile_auto_native(file_path: str) -> tuple {
 test "auto promote chess.jac detects native compatible" {
     (ir, _) = compile_auto_native(CHESS_JAC);
     assert ir is not None;
-    assert ir.gen._auto_promoted_native , (
-        "chess.jac should be auto-promoted to native"
-    );
+    assert ir.gen.native_compat , ("chess.jac should be auto-promoted to native");
     assert ir.gen.native_engine is not None , (
         "Auto-promoted chess.jac should have a native engine"
     );
@@ -1950,6 +1950,7 @@ test "auto promote chess.jac detects native compatible" {
 test "auto promote chess.jac has entry and key functions" {
     (ir, _) = compile_auto_native(CHESS_JAC);
     eng = ir.gen.native_engine;
+    assert eng is not None;
     # jac_entry must exist
     assert eng.get_function_address("jac_entry") != 0;
     # Key game functions must be present
@@ -2385,6 +2386,7 @@ test "struct layout exports correct field types" {
 test "struct layout tracks field indices correctly" {
     (eng, ir) = compile_native("func_ptr_fields.na.jac");
     layout = ir.gen.native_layout;
+    assert layout is not None;
     af = layout.structs["AllFields"];
     indices = [f.index for f in af.fields];
     # Indices should be consecutive starting from 0
@@ -2394,6 +2396,7 @@ test "struct layout tracks field indices correctly" {
 test "optional field compiles to pointer type" {
     (eng, ir) = compile_native("func_ptr_fields.na.jac");
     layout = ir.gen.native_layout;
+    assert layout is not None;
     assert "MaybePoint" in layout.structs;
     mp = layout.structs["MaybePoint"];
     field_map = {f.name: f for f in mp.fields};
@@ -2448,6 +2451,7 @@ test "maybe_point struct round-trip" {
 test "NativeFieldInfo func_ptr defaults to False" {
     (eng, ir) = compile_native("func_ptr_fields.na.jac");
     layout = ir.gen.native_layout;
+    assert layout is not None;
     af = layout.structs["AllFields"];
     for f in af.fields {
         assert f.is_func_ptr == False , f"Field {f.name} should not be func_ptr";
@@ -2459,6 +2463,7 @@ test "NativeFieldInfo func_ptr defaults to False" {
 test "function layout exports param and return types" {
     (eng, ir) = compile_native("func_ptr_fields.na.jac");
     layout = ir.gen.native_layout;
+    assert layout is not None;
     assert "add" in layout.functions;
     add_layout = layout.functions["add"];
     assert add_layout.param_types == ["i64", "i64"];
@@ -2468,6 +2473,7 @@ test "function layout exports param and return types" {
 test "layout exports all expected functions" {
     (eng, ir) = compile_native("func_ptr_fields.na.jac");
     layout = ir.gen.native_layout;
+    assert layout is not None;
     expected = {"add","mul","negate","identity","make_all_fields","get_all_fields_x","get_all_fields_flag","make_maybe_point","get_maybe_x"};
     assert expected == set(layout.functions.keys());
 }
@@ -2949,4 +2955,59 @@ test "float NaN: 3.14 == 3.14 must be true (1) after fix" {
     f = get_func(eng, "finite_eq_self", ctypes.c_int64);
     result = f();
     assert result == 1 , f"Expected 3.14 == 3.14 = 1, got {result}";
+}
+
+# --- Lambda Support (Phase 1: simple, no captures) ---
+test "lambda simple add" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(eng, "apply_int_op", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64);
+    assert f(3, 4) == 7 , f"Expected 7, got {f(3, 4)}";
+    assert f(10, 20) == 30 , f"Expected 30, got {f(10, 20)}";
+}
+
+test "lambda negate single param" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(eng, "negate_via_lambda", ctypes.c_int64, ctypes.c_int64);
+    assert f(5) == -5 , f"Expected -5, got {f(5)}";
+    assert f(0) == 0 , f"Expected 0, got {f(0)}";
+    assert f(-3) == 3 , f"Expected 3, got {f(-3)}";
+}
+
+test "lambda no params" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(eng, "get_forty_two", ctypes.c_int64);
+    assert f() == 42 , f"Expected 42, got {f()}";
+}
+
+
+# --- Lambda Closures (Phase 2: capturing outer scope) ---
+test "lambda closure captures local" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(eng, "add_offset", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64);
+    assert f(10, 5) == 15 , f"Expected 15, got {f(10, 5)}";
+    assert f(0, 42) == 42 , f"Expected 42, got {f(0, 42)}";
+    assert f(7, -3) == 4 , f"Expected 4, got {f(7, -3)}";
+}
+
+test "lambda closure captures multiple vars" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(
+        eng,
+        "weighted_sum",
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64,
+        ctypes.c_int64
+    );
+    assert f(3, 4, 2, 5) == 26 , f"Expected 26, got {f(3, 4, 2, 5)}";
+    assert f(1, 1, 10, 20) == 30 , f"Expected 30, got {f(1, 1, 10, 20)}";
+}
+
+test "lambda closure as scaler" {
+    (eng, _) = compile_native("lambdas.na.jac");
+    f = get_func(eng, "make_scaler", ctypes.c_int64, ctypes.c_int64, ctypes.c_int64);
+    assert f(5, 3) == 15 , f"Expected 15, got {f(5, 3)}";
+    assert f(10, 0) == 0 , f"Expected 0, got {f(10, 0)}";
+    assert f(7, -2) == -14 , f"Expected -14, got {f(7, -2)}";
 }

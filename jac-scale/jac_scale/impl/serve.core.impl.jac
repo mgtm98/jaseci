@@ -209,34 +209,28 @@ impl JacAPIServerCore.start(
             }
         }
     }
-    self.register_create_user_endpoint();
-    self.register_login_endpoint();
-    self.register_page_endpoint();
-    self.register_refresh_token_endpoint();
-    self.register_sso_endpoints();
-    self.register_client_js_endpoint();
-    self.register_static_file_endpoint();
-    self.register_update_username_endpoint();
-    self.register_update_password_endpoint();
-    self.register_api_key_endpoints();
-    self.register_graph_endpoint();
-    self.register_admin_endpoints();
-    # Use dynamic routing for HMR support, static routing for production
-    if dev {
-        self.register_dynamic_walker_endpoint();
-        self.register_dynamic_function_endpoint();
-        self.register_dynamic_introspection_endpoints();
-        self.register_dynamic_webhook_endpoint();
-        self.register_dynamic_websocket_endpoint();
-    } else {
-        self.register_walkers_endpoints();
-        self.register_functions_endpoints();
-        self.register_webhook_endpoints();
-        self.register_websocket_endpoints();
+    server_config = get_scale_config().get_server_config();
+    if not server_config.get('docs_enabled', True) {
+        self.server.app.docs_url = None;
+        self.server.app.openapi_url = None;
+        self.server.app.redoc_url = None;
     }
-    self.register_root_asset_endpoint();
-    self._register_client_error_endpoint();
-    self._configure_openapi_security();
+    self._register_endpoints();
+    if dev {
+        # Add middleware to refresh endpoints on HMR file changes
+        import from starlette.requests { Request as StarletteRequest }
+        import from starlette.responses { Response as StarletteResponse }
+        _self = self;
+        @self.server.app.middleware("http")
+        async def hmr_refresh_middleware(
+            request: StarletteRequest, call_next: Any
+        ) -> StarletteResponse {
+            if _self._hmr_pending {
+                _self._refresh_dev_endpoints();
+            }
+            return await call_next(request);
+        }
+    }
     self.user_manager.create_user(Con.GUEST.value, '__no_password__');
     self._setup_scheduler();
     # Find an available port (may differ from requested if port is in use)
@@ -722,10 +716,10 @@ impl JacAPIServerCore._create_sso_callback_wrapper -> Callable[
 ] {
     import from urllib.parse { quote }
     async def sso_callback_wrapper(
-        request: Request, platform: str, operation: str
+        request: Request, platform: str
     ) -> (Response | TransportResponse) {
         # Call original sso_callback which returns TransportResponse
-        result = await self.user_manager.sso_callback(request, platform, operation);
+        result = await self.user_manager.sso_callback(request, platform);
 
         # Check if frontend redirect URL is configured
         sso_config = get_scale_config().get_sso_config();
@@ -765,7 +759,7 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='SSO platform: google',
+                    description='SSO platform: google, apple, github',
                     type=ParameterType.PATH
                 ),
                 APIParameter(
@@ -773,43 +767,58 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
                     data_type='string',
                     required=True,
                     default=None,
-                    description='Operation to perform: "login" or "register"',
+                    description='Operation: "login" or "register"',
                     type=ParameterType.PATH
                 )
             ],
             response_model=None,
             tags=['SSO APIs'],
             summary='Initiate SSO authentication',
-            description='Redirects to the SSO provider for authentication. Supported platforms: Google. Configure each platform by setting SSO_{PLATFORM}_CLIENT_ID and SSO_{PLATFORM}_CLIENT_SECRET environment variables.'
+            description='Redirects to the SSO provider for authentication. Supported platforms: Google, Apple, GitHub. Operations: login, register. Configure each platform in jac.toml under [plugins.scale.sso].'
         )
     );
+    sso_callback_wrapper = self._create_sso_callback_wrapper();
     self.server.add_endpoint(
         JEndPoint(
             method=HTTPMethod.GET,
-            path='/sso/{platform}/{operation}/callback',
-            callback=self._create_sso_callback_wrapper(),
+            path='/sso/{platform}/callback',
+            callback=sso_callback_wrapper,
             parameters=[
                 APIParameter(
                     name='platform',
                     data_type='string',
                     required=True,
                     default=None,
-                    description='SSO platform: google',
-                    type=ParameterType.PATH
-                ),
-                APIParameter(
-                    name='operation',
-                    data_type='string',
-                    required=True,
-                    default=None,
-                    description='Operation to perform: "login" or "register"',
+                    description='SSO platform: google, apple, github',
                     type=ParameterType.PATH
                 )
             ],
             response_model=None,
             tags=['SSO APIs'],
-            summary='SSO callback endpoint',
-            description='Handles the callback from SSO provider after authentication. If client_auth_callback_url is configured, redirects with token/error params.'
+            summary='SSO callback endpoint (GET)',
+            description='Handles the callback from SSO provider after authentication. Logs in existing users or registers new ones automatically. If client_auth_callback_url is configured, redirects with token/error params.'
+        )
+    );
+    # Apple Sign In sends callbacks as POST - register a POST handler for the same path
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.POST,
+            path='/sso/{platform}/callback',
+            callback=sso_callback_wrapper,
+            parameters=[
+                APIParameter(
+                    name='platform',
+                    data_type='string',
+                    required=True,
+                    default=None,
+                    description='SSO platform: google, apple, github',
+                    type=ParameterType.PATH
+                )
+            ],
+            response_model=None,
+            tags=['SSO APIs'],
+            summary='SSO callback endpoint (POST)',
+            description='Handles the POST callback from SSO providers like Apple Sign In. Logs in existing users or registers new ones automatically. If client_auth_callback_url is configured, redirects with token/error params.'
         )
     );
 }
@@ -817,6 +826,25 @@ impl JacAPIServerCore.register_sso_endpoints -> None {
 # ============================================================================
 # HMR (Hot Module Replacement) Support
 # ============================================================================
+"""Register the /healthz endpoint for liveness checks."""
+impl JacAPIServerCore.register_health_endpoint -> None {
+    async def health_check -> dict {
+        return {"status": "ok"};
+    }
+    self.server.add_endpoint(
+        JEndPoint(
+            method=HTTPMethod.GET,
+            path='/healthz',
+            callback=health_check,
+            parameters=[],
+            response_model=None,
+            tags=['Health'],
+            summary='Liveness check',
+            description='Returns 200 if the server is running'
+        )
+    );
+}
+
 """Register the /cl/__error__ endpoint for client-side error reporting."""
 impl JacAPIServerCore._register_client_error_endpoint -> None {
     import from fastapi { Request }
@@ -890,13 +918,55 @@ impl JacAPIServerCore._register_client_error_endpoint -> None {
 impl JacAPIServerCore.enable_hmr(hot_reloader: Any) -> None {
     self._hot_reloader = hot_reloader;
     # Callback when file changes - sets pending flag
-    def on_change(event: Any) -> None {
+    def on_change(event: Any) {
         self._hmr_pending = True;
         logger.debug(f"Change detected: {event.path}");
     }
     # Register callback with the watcher
     hot_reloader.watcher.add_callback(on_change);
     logger.debug("Dynamic routing enabled for jac-scale");
+}
+
+"""Register all endpoints (core + user-defined). Called at startup and on HMR refresh."""
+impl JacAPIServerCore._register_endpoints -> None {
+    # Core endpoints
+    self.register_health_endpoint();
+    self.register_create_user_endpoint();
+    self.register_login_endpoint();
+    self.register_page_endpoint();
+    self.register_refresh_token_endpoint();
+    self.register_sso_endpoints();
+    self.register_client_js_endpoint();
+    self.register_static_file_endpoint();
+    self.register_update_username_endpoint();
+    self.register_update_password_endpoint();
+    self.register_api_key_endpoints();
+    self.register_graph_endpoint();
+    self.register_admin_endpoints();
+    self.register_llm_telemetry_endpoints();
+    # User-defined endpoints (walkers, functions, webhooks)
+    self.register_walkers_endpoints();
+    self.register_functions_endpoints();
+    self.register_webhook_endpoints();
+    self.register_websocket_endpoints();
+    # Post-registration
+    self.register_scheduler_endpoints();
+    self.register_root_asset_endpoint();
+    self._register_client_error_endpoint();
+    self._configure_openapi_security();
+}
+
+"""Refresh all endpoints after HMR reload - clears routes and re-registers from scratch."""
+impl JacAPIServerCore._refresh_dev_endpoints -> None {
+    self._hmr_pending = False;
+    self.introspector.load(force_reload=True);
+    # Clear all routes and endpoints, then re-setup docs and re-register
+    self.server._endpoints[:] = [];
+    self.server.app.routes.clear();
+    self.server.app.setup();
+    self._register_endpoints();
+    self.server.execute();
+    self.server.app.openapi_schema = None;
 }
 
 # ============================================================================
@@ -1079,9 +1149,6 @@ impl JacAPIServerCore._setup_scheduler -> None {
 
     # Start APScheduler background thread
     jac_scheduler.start();
-
-    # Register /jobs REST endpoints
-    self.register_scheduler_endpoints();
 }
 
 """Create a wrapper around the metrics endpoint that requires admin authentication."""
@@ -1091,18 +1158,42 @@ impl JacAPIServerCore._create_admin_metrics_handler(
     import from fastapi { Request }
     import from fastapi.responses { Response, JSONResponse }
     import from jaclang.runtimelib.transport { TransportResponse, Meta }
+    import dataclasses;
+    import base64;
+
+    monitoring_config = get_scale_config().get_monitoring_config();
+    prometheus_password = monitoring_config.get('prometheus_admin_password', '');
+    admin_config = get_scale_config().get_admin_config();
+    admin_username = admin_config.get('username', 'admin');
 
     async def admin_metrics_handler(request: Request) -> Response {
         authorization = request.headers.get('Authorization');
-        admin_user = self.validate_admin_token(authorization);
-        if not admin_user {
+        # Accept Bearer JWT token (admin portal) or Basic Auth (Prometheus scraping)
+        authed = False;
+        if authorization {
+            if authorization.startswith('Bearer ') {
+                authed = self.validate_admin_token(authorization) is not None;
+            } elif authorization.startswith('Basic ') and prometheus_password {
+                try {
+                    decoded = base64.b64decode(authorization[6:]).decode('utf-8');
+                    parts = decoded.split(':', 1);
+                    authed = parts[0] == admin_username
+                    and parts[1] == prometheus_password;
+                } except Exception {
+                    authed = False;
+                }
+            }
+        }
+        if not authed {
             return JSONResponse(
                 status_code=403,
-                content=TransportResponse.fail(
-                    code='FORBIDDEN',
-                    message='Admin access required',
-                    meta=Meta(extra={'http_status': 403})
-                ).model_dump()
+                content=dataclasses.asdict(
+                    TransportResponse.fail(
+                        code='FORBIDDEN',
+                        message='Admin access required',
+                        meta=Meta(extra={'http_status': 403})
+                    )
+                )
             );
         }
         return original_handler();

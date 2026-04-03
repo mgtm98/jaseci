@@ -17,6 +17,11 @@ impl MongoBackend.postinit -> None {
     }
 }
 
+"""Set reference to parent TieredMemory's __mem__ for sync()."""
+impl MongoBackend.set_memory_ref(mem: dict[UUID, Anchor]) -> None {
+    self._mem_ref = mem;
+}
+
 """Check if MongoDB is available and connected."""
 impl MongoBackend.is_available -> bool {
     if not self.mongo_url {
@@ -53,7 +58,8 @@ impl MongoBackend.get(id: UUID) -> (Anchor | None) {
     try {
         db_obj = self.collection.find_one({'_id': str(_id)});
         if db_obj {
-            return self._load_anchor(db_obj);
+            anchor = self._load_anchor(db_obj);
+            return anchor;
         }
     } except Exception as e {
         logger.debug(f"MongoDB get failed: {e}");
@@ -74,6 +80,7 @@ impl MongoBackend.put(anchor: Anchor) -> None {
             {'$set': {'data': data, 'type': type(anchor).__name__}},
             upsert=True
         );
+        anchor.hash = Serializer._compute_hash(anchor);
     } except Exception as e {
         logger.error(f"MongoDB put failed: {e}");
     }
@@ -102,6 +109,7 @@ impl MongoBackend.close -> None {
         }
         self.client = None;
     }
+    self._mem_ref = None;
 }
 
 """Check if an anchor exists in MongoDB."""
@@ -181,9 +189,25 @@ impl MongoBackend.commit(anchor: (Anchor | None) = None) -> None {
 }
 
 # PersistentMemory-specific methods
-"""Sync - no-op for MongoDB (writes are immediate)."""
+"""Sync - flush L1 memory to MongoDB (only changed anchors)."""
 impl MongoBackend.sync -> None {
-# No-op: MongoDB writes are immediate
+    import from jaclang { JacRuntimeInterface as Jac }
+    if not self._mem_ref or not self.client {
+        return;
+    }
+    for (_, anchor) in list(self._mem_ref.items()) {
+        if not anchor.persistent or not Jac.check_write_access(anchor) {
+            continue;
+        }
+        current_hash = Serializer._compute_hash(anchor);
+        if current_hash != anchor.hash {
+            try {
+                self.put(anchor);
+            } except Exception as e {
+                logger.warning(f"MongoDB sync failed for anchor {anchor.id}: {e}");
+            }
+        }
+    }
 }
 
 """Bulk store multiple anchors."""
@@ -217,6 +241,26 @@ impl MongoBackend.bulk_put(anchors: Iterable[Anchor]) -> None {
             logger.debug(f"MongoDB bulk_write failed: {e}");
         }
     }
+}
+
+"""Batch get multiple anchors by ID using MongoDB $in query."""
+impl MongoBackend.batch_get(ids: list[UUID]) -> dict[UUID, Anchor] {
+    result: dict[UUID, Anchor] = {};
+    if self.client is None or not ids {
+        return result;
+    }
+    str_ids = [str(to_uuid(id)) for id in ids];
+    try {
+        for doc in self.collection.find({'_id': {'$in': str_ids}}) {
+            if (anchor := self._load_anchor(doc)) {
+                anchor.is_updated = False;
+                result[UUID(doc['_id'])] = anchor;
+            }
+        }
+    } except Exception as e {
+        logger.debug(f"MongoDB batch_get failed: {e}");
+    }
+    return result;
 }
 
 """Load anchor from raw MongoDB document."""

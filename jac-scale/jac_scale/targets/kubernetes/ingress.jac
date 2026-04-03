@@ -33,7 +33,7 @@ obj IngressDeployer {
         core_v1: Any,
         rbac_v1: Any,
         networking_v1: Any
-    ) -> None {
+    ) {
         controller_name = f"{app_name}-ingress-nginx";
         cluster_resource_name = f"{namespace}-{app_name}-ingress-nginx";
         configmap_name = f"{app_name}-nginx-configuration";
@@ -240,10 +240,23 @@ obj IngressDeployer {
                     'metadata': {'labels': {'app': controller_name}},
                     'spec': {
                         'serviceAccountName': controller_name,
+                        'securityContext': {
+                            'seccompProfile': {'type': 'RuntimeDefault'}
+                        },
                         'containers': [
                             {
                                 'name': 'controller',
                                 'image': 'registry.k8s.io/ingress-nginx/controller:v1.12.0',
+                                'securityContext': {
+                                    'runAsNonRoot': True,
+                                    'runAsUser': 101,
+                                    'allowPrivilegeEscalation': False,
+                                    'capabilities': {
+                                        'drop': ['ALL'],
+                                        'add': ['NET_BIND_SERVICE']
+                                    },
+                                    'seccompProfile': {'type': 'RuntimeDefault'}
+                                },
                                 'args': [
                                     '/nginx-ingress-controller',
                                     f"--ingress-class={ingress_class_name}",
@@ -275,6 +288,26 @@ obj IngressDeployer {
                                     {'name': 'https', 'containerPort': 443},
                                     {'name': 'webhook', 'containerPort': 8443}
                                 ],
+                                'readinessProbe': {
+                                    'httpGet': {
+                                        'path': '/healthz',
+                                        'port': 10254,
+                                        'scheme': 'HTTP'
+                                    },
+                                    'initialDelaySeconds': 10,
+                                    'periodSeconds': 10,
+                                    'failureThreshold': 3
+                                },
+                                'livenessProbe': {
+                                    'httpGet': {
+                                        'path': '/healthz',
+                                        'port': 10254,
+                                        'scheme': 'HTTP'
+                                    },
+                                    'initialDelaySeconds': 10,
+                                    'periodSeconds': 10,
+                                    'failureThreshold': 3
+                                },
                                 'resources': {
                                     'requests': {'cpu': '100m', 'memory': '90Mi'},
                                     'limits': {'cpu': '500m', 'memory': '256Mi'}
@@ -423,7 +456,7 @@ obj IngressDeployer {
             elapsed = elapsed + poll;
         }
         if self.logger {
-            self.logger.warning(
+            self.logger.warn(
                 f"NGINX controller '{controller_name}' not ready after {max_wait}s, proceeding anyway"
             );
         }
@@ -445,7 +478,7 @@ obj IngressDeployer {
         mongo_dashboard: bool,
         networking_v1: Any,
         core_v1: Any
-    ) -> None {
+    ) {
         ingress_name = f"{app_name}-ingress";
         redis_ingress_name = f"{app_name}-redis-insight-ingress";
 
@@ -493,18 +526,37 @@ obj IngressDeployer {
             );
         }
 
-        main_rule: dict;
-        if self.k8s_config.domain {
-            main_rule = {'host': self.k8s_config.domain, 'http': {'paths': paths}};
-        } else {
-            main_rule = {'http': {'paths': paths}};
-        }
+        # Always deploy with a wildcard rule (no host).
+        # The domain is stored in the jac-scale/domain annotation so that
+        # --enable-tls can read it and add the host + TLS together in one step.
+        # Setting host here without TLS causes nginx to restrict routing to that
+        # domain before the cert exists, making the app unreachable via IP/NLB.
+        main_rule: dict = {'http': {'paths': paths}};
 
         ingress_annotations: dict = {
             'nginx.ingress.kubernetes.io/proxy-body-size': '0',
             'nginx.ingress.kubernetes.io/proxy-read-timeout': '3600',
-            'nginx.ingress.kubernetes.io/proxy-send-timeout': '3600'
+            'nginx.ingress.kubernetes.io/proxy-send-timeout': '3600',
+            'nginx.ingress.kubernetes.io/limit-rps': str(
+                self.k8s_config.ingress_limit_rps
+            ),
+            'nginx.ingress.kubernetes.io/limit-burst-multiplier': str(
+                self.k8s_config.ingress_limit_burst_multiplier
+            ),
+            'nginx.ingress.kubernetes.io/limit-connections': str(
+                self.k8s_config.ingress_limit_connections
+            ),
+            'nginx.ingress.kubernetes.io/limit-req-status-code': '429'
         };
+        if self.k8s_config.ingress_session_affinity {
+            ingress_annotations['nginx.ingress.kubernetes.io/affinity'] = 'cookie';
+            ingress_annotations['nginx.ingress.kubernetes.io/session-cookie-name'] = 'route';
+            ingress_annotations['nginx.ingress.kubernetes.io/session-cookie-max-age'] = '2147483647';
+            ingress_annotations['nginx.ingress.kubernetes.io/session-cookie-expires'] = '2147483647';
+            ingress_annotations[
+                'nginx.ingress.kubernetes.io/session-cookie-change-on-failure'
+            ] = 'true';
+        }
         if self.k8s_config.domain {
             ingress_annotations['jac-scale/domain'] = self.k8s_config.domain;
         }
@@ -612,7 +664,6 @@ obj IngressDeployer {
             redis_ingress_annotations['nginx.ingress.kubernetes.io/auth-secret'] = ri_auth_secret_name;
             redis_ingress_annotations['nginx.ingress.kubernetes.io/auth-realm'] = 'RedisInsight';
 
-            redis_rule: dict;
             redis_paths = [
                 {
                     'path': '/cache-dashboard(/|$)(.*)',
@@ -625,14 +676,8 @@ obj IngressDeployer {
                     }
                 }
             ];
-            if self.k8s_config.domain {
-                redis_rule = {
-                    'host': self.k8s_config.domain,
-                    'http': {'paths': redis_paths}
-                };
-            } else {
-                redis_rule = {'http': {'paths': redis_paths}};
-            }
+            # Same as main ingress: always wildcard rule; host added by --enable-tls.
+            redis_rule: dict = {'http': {'paths': redis_paths}};
 
             redis_ingress = {
                 'apiVersion': 'networking.k8s.io/v1',
@@ -688,7 +733,7 @@ obj IngressDeployer {
         core_v1: Any,
         rbac_v1: Any,
         networking_v1: Any
-    ) -> None {
+    ) {
         self._deploy_nginx_controller(
             app_name, namespace, cluster_env, apps_v1, core_v1, rbac_v1, networking_v1
         );
@@ -706,7 +751,7 @@ obj IngressDeployer {
         apps_v1: Any,
         core_v1: Any,
         networking_v1: Any
-    ) -> None {
+    ) {
         self._wait_for_nginx_ready(app_name, namespace, apps_v1);
         self._deploy_ingress_resource(
             app_name,
@@ -734,7 +779,7 @@ obj IngressDeployer {
         core_v1: Any,
         rbac_v1: Any,
         networking_v1: Any
-    ) -> None {
+    ) {
         self.start_controller(
             app_name, namespace, cluster_env, apps_v1, core_v1, rbac_v1, networking_v1
         );
@@ -1051,7 +1096,7 @@ obj IngressDeployer {
         core_v1: Any,
         rbac_v1: Any,
         networking_v1: Any
-    ) -> None {
+    ) {
         controller_name = f"{app_name}-ingress-nginx";
         cluster_resource_name = f"{namespace}-{app_name}-ingress-nginx";
         ingress_class_name = f"{namespace}-{app_name}-nginx";

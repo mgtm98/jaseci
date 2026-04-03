@@ -1,8 +1,3 @@
-"""Initialize the DocIRGenPass."""
-impl DocIRGenPass.init(ir_in: uni.Module, prog: Any, cancel_token: Any = None) -> None {
-    super.init(ir_in, prog, cancel_token);
-}
-
 """Generate DocIR for JSX expressions."""
 impl DocIRGenPass.exit_jsx_expression(nd: uni.JsxExpression) -> None {
     parts: list[doc.DocType] = [];
@@ -1113,6 +1108,15 @@ impl DocIRGenPass.exit_gen_compr(nd: uni.GenCompr) -> None {
     nd.gen.doc_ir = self.format_comprehension(parts);
 }
 
+"""Generate DocIR for a single slice item."""
+impl DocIRGenPass.exit_slice(nd: uni.Slice) -> None {
+    parts: list[doc.DocType] = [];
+    for i in nd.kid {
+        parts.append(i.gen.doc_ir);
+    }
+    nd.gen.doc_ir = self.group(self.concat(parts, ast_node=nd), ast_node=nd);
+}
+
 """Generate DocIR for index slices."""
 impl DocIRGenPass.exit_index_slice(nd: uni.IndexSlice) -> None {
     parts: list[doc.DocType] = [];
@@ -1875,6 +1879,7 @@ impl DocIRGenPass.exit_func_signature(nd: uni.FuncSignature) -> None {
                 isinstance(i, uni.Token)
                 and (i.name == Tok.RETURN_HINT)
                 and not has_parens
+                and not parts
             ) {
                 parts.append(self.space());
             }
