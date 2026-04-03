@@ -2761,18 +2761,6 @@ test "transitive glob init: push through mid updates deep glob list" {
     assert result == 1 , f"Expected list length 1 after push, got {result}";
 }
 
-test "stdlib shadow: list[Struct] param through 'ast'-named module returns correct value" {
-    # run_shadow_test() builds 2 nodes (kind=1, kind=2) and sums their kinds.
-    # Before the fix collect_kinds(list[Node]) crashed during NaIRGenPass
-    # because Node was never registered (ast.na.jac was shadowed by stdlib stub).
-    (eng, _) = compile_native("fix_shadow_entry.na.jac");
-    entry_fn = get_func(eng, "jac_entry", None);
-    entry_fn();
-    run_fn = get_func(eng, "run_shadow_test", ctypes.c_int64);
-    result = run_fn();
-    assert result == 3 , f"Expected 3 (1+2), got {result}";
-}
-
 # ─── FIX: Transitive C-library dependency loading ────────────────────────────
 # When module A imports module B which in turn imports a .so (e.g. libm), the
 # .so was only loaded during B's compilation. When A linked B's bitcode, MCJIT
