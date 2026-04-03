@@ -2761,25 +2761,6 @@ test "transitive glob init: push through mid updates deep glob list" {
     assert result == 1 , f"Expected list length 1 after push, got {result}";
 }
 
-# ─── FIX: Import name shadowed by Python stdlib module ───────────────────────
-# Before the fix, _register_imported_struct_types called resolve_relative_path()
-# which returned the typeshed stub (ast.pyi) for any import whose name matches
-# a Python stdlib module (ast, os, re, types, …).  The .pyi path was then
-# silently skipped, struct registration was never done, and any call passing a
-# list[Struct] argument crashed: TypeError: i64 != %"List.i64"*.
-# After the fix, _resolve_nm checks for a local .na.jac directly via
-# os.path.join(base_dir, name+".na.jac") — stdlib stubs can no longer shadow.
-# jac-bun/issues/na-import-name-shadows-stdlib/
-test "stdlib shadow: module named 'ast' compiles without errors" {
-    # ast.na.jac sits in fixtures/ next to fix_shadow_entry.na.jac.
-    # Before the fix this resolved to the typeshed ast.pyi stub and failed.
-    prog = JacProgram();
-    ir = prog.compile(str(os.path.join(FIXTURES, "fix_shadow_entry.na.jac")));
-    assert not prog.errors_had , f"Errors: {prog.errors_had}";
-    assert ir is not None;
-    assert ir.gen.native_engine is not None , "No native engine created";
-}
-
 test "stdlib shadow: list[Struct] param through 'ast'-named module returns correct value" {
     # run_shadow_test() builds 2 nodes (kind=1, kind=2) and sums their kinds.
     # Before the fix collect_kinds(list[Node]) crashed during NaIRGenPass
