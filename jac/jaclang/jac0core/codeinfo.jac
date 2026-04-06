@@ -100,7 +100,9 @@ ensure consistent native module path resolution across the compiler.
 Returns (source_module_str, full_path) or (None, None) if not found.
 source_module_str mirrors the value stored in InteropBinding.source_module.
 """
-def resolve_native_module(module_name: str, base_dir: str) -> tuple[(str | None, str | None)] {
+def resolve_native_module(
+    module_name: str, base_dir: str
+) -> tuple[(str | None, str | None)] {
     import os;
     clean = module_name.lstrip('.');
     # Fast path: flat filename (e.g. 'tokens' → 'tokens.na.jac')

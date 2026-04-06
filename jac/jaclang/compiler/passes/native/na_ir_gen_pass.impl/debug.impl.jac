@@ -15,7 +15,9 @@ import sys;
 Creates DISubroutineType + DISubprogram metadata and sets it on the function.
 Also marks the function as noinline so GDB sees real stack frames.
 No-op when di_cu is None (debug mode disabled)."""
-impl NaIRGenPass._attach_di_subprogram(func: ir.Function, name: str, line: int) -> None {
+impl NaIRGenPass._attach_di_subprogram(
+    func: ir.Function, name: str, line: int
+) -> None {
     self._di_current_sp = None;
     if self.di_cu is None {
         return;
