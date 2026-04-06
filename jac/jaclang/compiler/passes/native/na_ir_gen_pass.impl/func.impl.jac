@@ -115,37 +115,10 @@ impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
     self.local_vars = {};
     self.var_dict_type = {};
     self.var_set_elem_type = {};
-    # ── DWARF debug info for this function definition (JAC_NATIVE_DEBUG=1) ────
-    self._di_current_sp = None;  # reset per-function scope for _codegen_body
-    if self.di_cu is not None {
-        _dbg_line: int = self._func_loc.get(name, nd.loc.first_line if nd.loc else 0);
-        try {
-            _di_sub_type = self.llvm_module.add_debug_info(
-                "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
-            );
-            _di_sp = self.llvm_module.add_debug_info(
-                "DISubprogram",
-                {
-                    "name": name,
-                    "file": self.di_file,
-                    "line": _dbg_line,
-                    "isDefinition": True,
-                    "unit": self.di_cu,
-                    "type": _di_sub_type
-                },
-                is_distinct=True
-            );
-            func.set_metadata("dbg", _di_sp);
-            # Expose to _codegen_body so per-statement DILocations can be emitted
-            self._di_current_sp = _di_sp;
-        } except Exception {
-            pass;  # debug info is best-effort
-        }
-        # Prevent inlining so GDB sees the correct function on backtraces.
-        # (optnone is skipped — it's redundant at opt=0 and triggers stricter
-        # LLVM verifier checks that conflict with linked IR in MCJIT.)
-        func.attributes.add("noinline");
-    }
+    # DWARF debug info (JAC_NATIVE_DEBUG=1)
+    self._attach_di_subprogram(
+        func, name, self._func_loc.get(name, nd.loc.first_line if nd.loc else 0)
+    );
     # Store parameters as local variables (alloca + store pattern)
     sig = (nd).signature;
     for (i, p) in enumerate(sig.get_parameters()) {
@@ -211,35 +184,10 @@ impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
             self.builder.ret(ir.Constant(ret_type, 0));
         }
     }
-    # ── DWARF post-pass: ensure every call instruction has !dbg ─────────────
-    # LLVM verifier requires that all inlinable calls inside a function that
-    # has DISubprogram metadata carry a !dbg location.  _codegen_body tags
-    # instructions for top-level statements, but inner blocks created by
-    # if/while/for branches may still be missing !dbg.  Walk all blocks once
-    # and fill in a fallback location (the function's first source line) for
-    # any instruction that hasn't been tagged yet.
-    if self._di_current_sp is not None {
-        try {
-            _fb_line: int = self._func_loc.get(
-                name, nd.loc.first_line if nd.loc else 1
-            )
-                if nd.loc
-                else 1;
-            _fb_loc = self.llvm_module.add_debug_info(
-                "DILocation",
-                {"line": _fb_line, "column": 0, "scope": self._di_current_sp}
-            );
-            for _blk in func.blocks {
-                for _instr in _blk.instructions {
-                    if "dbg" not in getattr(_instr, "metadata", {}) {
-                        _instr.set_metadata("dbg", _fb_loc);
-                    }
-                }
-            }
-        } except Exception {
-            pass;  # best-effort; verifier will catch any remaining issues
-        }
-    }
+    # DWARF post-pass: tag untagged instructions with fallback line
+    self._finalize_di_locations(
+        func, self._func_loc.get(name, nd.loc.first_line if nd.loc else 1)
+    );
 
     (nd).gen.llvm_ir = func;
     self.builder = None;
@@ -337,15 +285,12 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
         self.builder.call(glob_init_fn, []);
     }
     # Call __jac_glob_init_<safe_name>() for every imported .na.jac module,
-    # including transitive deps.  _all_transitive_na_sources is populated by
-    # _register_imported_struct_types (DFS over all import trees) and contains
-    # the exact same source_module strings that na_compile_pass uses when
-    # renaming __jac_glob_init → __jac_glob_init_<safe_name> inside the linked
-    # IR — so every declared extern here matches the renamed definition after
-    # linking, including modules that are only transitively imported.
-    _all_na_sources = self._all_transitive_na_sources
-        if self?._all_transitive_na_sources
-        else [];
+    # including transitive deps.  native_transitive_sources is populated by
+    # _register_imported_struct_types (DFS over all import trees) on the
+    # shared InteropManifest, and contains the same source_module strings
+    # that na_compile_pass uses when renaming __jac_glob_init.
+    _manifest = self.ir_in.gen.interop_manifest if (self.ir_in?.gen) else None;
+    _all_na_sources = _manifest.native_transitive_sources if _manifest else [];
     _seen_init_mods: set = set();
     for _source_mod in _all_na_sources {
         if _source_mod is None or _source_mod in _seen_init_mods {

@@ -10,6 +10,67 @@ import from llvmlite { binding as llvm }
 import os;
 import sys;
 
+"""Attach a DWARF DISubprogram to an LLVM function (JAC_NATIVE_DEBUG=1).
+
+Creates DISubroutineType + DISubprogram metadata and sets it on the function.
+Also marks the function as noinline so GDB sees real stack frames.
+No-op when di_cu is None (debug mode disabled)."""
+impl NaIRGenPass._attach_di_subprogram(func: ir.Function, name: str, line: int) -> None {
+    self._di_current_sp = None;
+    if self.di_cu is None {
+        return;
+    }
+    try {
+        _di_sub_type = self.llvm_module.add_debug_info(
+            "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
+        );
+        _di_sp = self.llvm_module.add_debug_info(
+            "DISubprogram",
+            {
+                "name": name,
+                "file": self.di_file,
+                "line": line,
+                "isDefinition": True,
+                "unit": self.di_cu,
+                "type": _di_sub_type
+            },
+            is_distinct=True
+        );
+        func.set_metadata("dbg", _di_sp);
+        self._di_current_sp = _di_sp;
+    } except Exception {
+        pass;
+    }
+    func.attributes.add("noinline");
+}
+
+"""Tag all instructions in a function that lack !dbg metadata with a fallback location.
+
+LLVM verifier requires that all inlinable calls inside a function with
+DISubprogram metadata carry a !dbg location.  This walks all blocks and
+fills in a fallback DILocation for any untagged instruction.
+No-op when _di_current_sp is None."""
+impl NaIRGenPass._finalize_di_locations(func: ir.Function, fallback_line: int) -> None {
+    if self._di_current_sp is None {
+        return;
+    }
+    try {
+        _fb_loc = self.llvm_module.add_debug_info(
+            "DILocation",
+            {"line": fallback_line, "column": 0, "scope": self._di_current_sp}
+        );
+        for _blk in func.blocks {
+            for _instr in _blk.instructions {
+                if "dbg" not in getattr(_instr, "metadata", {}) {
+                    _instr.set_metadata("dbg", _fb_loc);
+                }
+            }
+        }
+    } except Exception {
+        pass;
+    }
+}
+
 """Dump and/or validate the generated LLVM IR.  Called after transform()."""
 impl NaIRGenPass.post_transform -> None {
     if not self.has_native_code {

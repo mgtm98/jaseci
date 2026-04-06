@@ -455,33 +455,10 @@ impl NaIRGenPass._codegen_method(arch_name: str, method: uni.Ability) -> None {
     self.var_dict_type = {};
     self.var_set_elem_type = {};
     self.var_tuple_type = {};
-    # ── DWARF debug info for this method (JAC_NATIVE_DEBUG=1) ────
-    self._di_current_sp = None;
-    if self.di_cu is not None {
-        _dbg_line: int = method.loc.first_line if method.loc else 0;
-        try {
-            _di_sub_type = self.llvm_module.add_debug_info(
-                "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
-            );
-            _di_sp = self.llvm_module.add_debug_info(
-                "DISubprogram",
-                {
-                    "name": full_name,
-                    "file": self.di_file,
-                    "line": _dbg_line,
-                    "isDefinition": True,
-                    "unit": self.di_cu,
-                    "type": _di_sub_type
-                },
-                is_distinct=True
-            );
-            func.set_metadata("dbg", _di_sp);
-            self._di_current_sp = _di_sp;
-        } except Exception {
-            pass;
-        }
-        func.attributes.add("noinline");
-    }
+    # DWARF debug info (JAC_NATIVE_DEBUG=1)
+    self._attach_di_subprogram(
+        func, full_name, method.loc.first_line if method.loc else 0
+    );
     # Store self pointer
     self_alloca = self.builder.alloca(func.args[0].type, name="self");
     self.builder.store(func.args[0], self_alloca);
@@ -560,25 +537,8 @@ impl NaIRGenPass._codegen_method(arch_name: str, method: uni.Ability) -> None {
         }
     }
     method.gen.llvm_ir = func;
-    # ── DWARF post-pass: tag untagged instructions with fallback line ────
-    if self._di_current_sp is not None {
-        try {
-            _fb_line: int = method.loc.first_line if method.loc else 1;
-            _fb_loc = self.llvm_module.add_debug_info(
-                "DILocation",
-                {"line": _fb_line, "column": 0, "scope": self._di_current_sp}
-            );
-            for _blk in func.blocks {
-                for _instr in _blk.instructions {
-                    if "dbg" not in getattr(_instr, "metadata", {}) {
-                        _instr.set_metadata("dbg", _fb_loc);
-                    }
-                }
-            }
-        } except Exception {
-            pass;
-        }
-    }
+    # DWARF post-pass: tag untagged instructions with fallback line
+    self._finalize_di_locations(func, method.loc.first_line if method.loc else 1);
     # Restore saved state
     self.builder = saved_builder;
     self.local_vars = saved_locals;
@@ -615,34 +575,10 @@ impl NaIRGenPass._codegen_no_sig_method(arch_name: str, method: uni.Ability) -> 
     self.var_dict_type = {};
     self.var_set_elem_type = {};
     self.var_tuple_type = {};
-    # ── DWARF debug info for this method (JAC_NATIVE_DEBUG=1) ────
-    self._di_current_sp = None;
-    if self.di_cu is not None {
-        _dbg_line: int = method.loc.first_line if method.loc else 0;
-        try {
-            _di_sub_type = self.llvm_module.add_debug_info(
-                "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
-            );
-            _di_sp = self.llvm_module.add_debug_info(
-                "DISubprogram",
-                {
-                    "name": full_name,
-                    "file": self.di_file,
-                    "line": _dbg_line,
-                    "isDefinition": True,
-                    "unit": self.di_cu,
-                    "type": _di_sub_type,
-
-                },
-                is_distinct=True
-            );
-            func.set_metadata("dbg", _di_sp);
-            self._di_current_sp = _di_sp;
-        } except Exception {
-            pass;
-        }
-        func.attributes.add("noinline");
-    }
+    # DWARF debug info (JAC_NATIVE_DEBUG=1)
+    self._attach_di_subprogram(
+        func, full_name, method.loc.first_line if method.loc else 0
+    );
     # Store self pointer (only parameter)
     self_alloca = self.builder.alloca(func.args[0].type, name="self");
     self.builder.store(func.args[0], self_alloca);
@@ -669,25 +605,8 @@ impl NaIRGenPass._codegen_no_sig_method(arch_name: str, method: uni.Ability) -> 
         self.builder.ret_void();
     }
     method.gen.llvm_ir = func;
-    # ── DWARF post-pass: tag untagged instructions with fallback line ────
-    if self._di_current_sp is not None {
-        try {
-            _fb_line: int = method.loc.first_line if method.loc else 1;
-            _fb_loc = self.llvm_module.add_debug_info(
-                "DILocation",
-                {"line": _fb_line, "column": 0, "scope": self._di_current_sp}
-            );
-            for _blk in func.blocks {
-                for _instr in _blk.instructions {
-                    if "dbg" not in getattr(_instr, "metadata", {}) {
-                        _instr.set_metadata("dbg", _fb_loc);
-                    }
-                }
-            }
-        } except Exception {
-            pass;
-        }
-    }
+    # DWARF post-pass: tag untagged instructions with fallback line
+    self._finalize_di_locations(func, method.loc.first_line if method.loc else 1);
     # Restore saved state
     self.builder = saved_builder;
     self.local_vars = saved_locals;

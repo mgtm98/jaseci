@@ -2780,8 +2780,8 @@ test "transitive clib: _clib_paths of dep module propagated to entry module" {
     prog = JacProgram();
     ir = prog.compile(str(os.path.join(FIXTURES, "fix_clib_transitive_entry.na.jac")));
     assert not prog.errors_had , f"Errors: {prog.errors_had}";
-    clib_paths = getattr(ir.gen, "_clib_paths", None);
-    assert clib_paths is not None , "_clib_paths not set on entry module IR";
+    clib_paths = ir.gen._clib_paths;
+    assert clib_paths , "_clib_paths not set on entry module IR";
     assert any("/libm" in p or "libm" in p for p in clib_paths) , f"libm not found in transitive _clib_paths: {clib_paths}";
 }
 

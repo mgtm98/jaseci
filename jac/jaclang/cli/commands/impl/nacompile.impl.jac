@@ -183,7 +183,7 @@ impl nacompile(filename: str, output: str = "") -> int {
     # These come from `import from "/path/to/lib.so" { ... }` declarations
     # in the compiled module and its transitive dependencies.
     # _clib_paths is accumulated by _compile_and_link_native_imports.
-    clib_paths = getattr(ir_module.gen, '_clib_paths', None);
+    clib_paths = ir_module.gen._clib_paths;
     if clib_paths {
         for lib_path in clib_paths {
             if lib_path not in needed_libs {

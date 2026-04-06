@@ -32,7 +32,7 @@ impl NativeCompilePass.transform(ir_in: uni.Module) -> uni.Module {
         # Note: libgc (Boehm GC) no longer needed — using reference counting
         # Load C shared libraries from import from "lib" { ... } declarations
         import os;
-        clib_paths = getattr(module.gen, '_clib_paths', None);
+        clib_paths = module.gen._clib_paths;
         if clib_paths {
             for lib_path in clib_paths {
                 try {
@@ -324,13 +324,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
         # Without this, transitive `import from "lib.so" { ... }` in a dep
         # module causes an unresolved-symbol segfault at runtime.
         import ctypes.util as _ctu;
-        dep_clib_paths = getattr(imported_ir.gen, '_clib_paths', None);
+        dep_clib_paths = imported_ir.gen._clib_paths;
         if dep_clib_paths {
             # Propagate dep C-lib paths back to the main module so that
             # nacompile (AOT) can discover all needed shared libraries.
-            if not getattr(module.gen, '_clib_paths', None) {
-                module.gen._clib_paths = [];
-            }
             for dep_lib_path in dep_clib_paths {
                 if dep_lib_path not in module.gen._clib_paths {
                     module.gen._clib_paths.append(dep_lib_path);

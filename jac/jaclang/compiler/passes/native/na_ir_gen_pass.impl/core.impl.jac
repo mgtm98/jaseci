@@ -12,17 +12,7 @@ impl NaIRGenPass.postinit -> None {
     _tm = _target.create_target_machine();
     self.llvm_module.data_layout = str(_tm.target_data);
     self.llvm_module.triple = _tm.triple;
-    self.builder: (ir.IRBuilder | None) = None;
-    self.func_symtab: dict[(str, ir.Function)] = {};
-    self.local_vars: dict[(str, ir.AllocaInstr)] = {};
-    self.has_native_code = False;
     # DWARF debug metadata — populated below when JAC_NATIVE_DEBUG=1
-    self.di_file: object = None;
-    self.di_cu: object = None;
-    # Per-function DISubprogram, set in _codegen_ability, used in _codegen_body
-    self._di_current_sp: object = None;
-    # Line numbers saved during forward declaration, used when body is emitted
-    self._func_loc: dict[str, int] = {};
     if _ni_src and _ni_os.environ.get("JAC_NATIVE_DEBUG", "") {
         _ni_src_dir: str = _ni_os.path.dirname(_ni_os.path.abspath(_ni_src));
         try {
@@ -432,80 +422,35 @@ and access their fields.
 """
 impl NaIRGenPass._register_imported_struct_types -> None {
     import os;
-    import re;
+    import from jaclang.jac0core.codeinfo { resolve_native_module }
     # ── DFS work queue: collect ALL transitive .na.jac imports ───────────────
-    # Each entry: (module_name_str, cur_base_dir, parent_resolved_path_or_None)
-    # We seed with the entry module's direct imports, then enqueue each
-    # discovered module's own imports so transitive deps are also processed.
-    #
-    # `source_module_str` mirrors the value that InteropAnalysisPass stores in
-    # `binding.source_module` and that na_compile_pass uses to compute safe_name
-    # for __jac_glob_init_<safe_name>.  We compute it here by reproducing the
-    # same _resolve_native_module logic so _codegen_entry can emit matching calls.
+    # Uses the shared resolve_native_module() from codeinfo to resolve paths,
+    # ensuring consistency with InteropAnalysisPass.
     processed_modules: set[str] = set();
-    # List of (source_module_str, resolved_abs_path, module_ast)
-    imported_mods: list = [];
+    imported_mods: list = [];  # list of (source_module_str, module_ast)
+    manifest = self.ir_in.gen.interop_manifest;
 
-    # Work queue: (module_name_str, cur_base_dir)
-    # Seeded with entry module's import statements.
+    # Seed work queue with entry module's import statements.
     entry_base = os.path.dirname(os.path.abspath(self.ir_in.loc.mod_path))
         if (self.ir_in?.loc)
         else os.getcwd();
-    wq: list = [];
+    wq: list = [];  # list of (module_name_str, base_dir)
     for imp in [
         s
         for s in ModuleCodegenPass.iter_context_stmts(self.ir_in)
         if isinstance(s, uni.Import)
     ] {
-        if not imp.from_loc or not isinstance(imp.from_loc, uni.ModulePath) {
-            continue;
-        }
-        # Skip clib imports (from "libname")
-        if imp.from_loc.path and isinstance(imp.from_loc.path[0], uni.String) {
-            continue;
-        }
-        mod_name = getattr(imp.from_loc, 'dot_path_str', None);
-        if not mod_name and imp.from_loc?.path and imp.from_loc.path {
-            mod_name = '.'.join(getattr(p, 'value', str(p)) for p in imp.from_loc.path);
-        }
+        mod_name = self._extract_import_module_name(imp);
         if mod_name {
             wq.append((mod_name, entry_base));
         }
-    }
-
-    # Helper: reproduce _resolve_native_module logic to get source_module string.
-    # Returns (source_module_str, full_na_jac_path) or (None, None).
-    def _resolve_nm(mod_name: str, base_dir: str) -> tuple {
-        clean = mod_name.lstrip('.');
-        na_jac = os.path.join(base_dir, f"{clean}.na.jac");
-        if os.path.exists(na_jac) {
-            return (f"{clean}.na", na_jac);
-        }
-        # dotted → directory hierarchy
-        path_name = clean.replace('.', os.sep);
-        if path_name != clean {
-            search = os.path.abspath(base_dir);
-            while True {
-                cand = os.path.join(search, f"{path_name}.na.jac");
-                if os.path.exists(cand) {
-                    rel = os.path.relpath(cand[:-4], os.path.abspath(base_dir));
-                    return (rel, cand);
-                }
-                parent = os.path.dirname(search);
-                if parent == search {
-                    break;
-                }
-                search = parent;
-            }
-        }
-        return (None, None);
     }
 
     qi = 0;
     while qi < len(wq) {
         (mod_name, cur_base) = wq[qi];
         qi += 1;
-        (src_mod_str, full_path) = _resolve_nm(mod_name, cur_base);
+        (src_mod_str, full_path) = resolve_native_module(mod_name, cur_base);
         if src_mod_str is None or full_path is None {
             continue;
         }
@@ -540,52 +485,27 @@ impl NaIRGenPass._register_imported_struct_types -> None {
             for s in ModuleCodegenPass.iter_context_stmts(imported_mod)
             if isinstance(s, uni.Import)
         ] {
-            if not sub_imp.from_loc
-            or not isinstance(sub_imp.from_loc, uni.ModulePath) {
-                continue;
-            }
-            if sub_imp.from_loc.path
-            and isinstance(sub_imp.from_loc.path[0], uni.String) {
-                continue;
-            }
-            sub_name = getattr(sub_imp.from_loc, 'dot_path_str', None);
-            if not sub_name and sub_imp.from_loc?.path and sub_imp.from_loc.path {
-                sub_name = '.'.join(
-                    getattr(p, 'value', str(p)) for p in sub_imp.from_loc.path
-                );
-            }
+            sub_name = self._extract_import_module_name(sub_imp);
             if sub_name {
                 wq.append((sub_name, sub_base));
             }
         }
     }
 
-    # Store all collected source_module strings for _codegen_entry to emit
-    # __jac_glob_init_<safe_name>() calls for ALL linked modules (not just direct).
-    if not self?._all_transitive_na_sources {
-        self._all_transitive_na_sources: list = [];
-    }
+    # Store transitive source strings on the manifest so _codegen_entry can
+    # emit __jac_glob_init_<safe_name>() calls for ALL linked modules.
     for (src_mod_str, _) in imported_mods {
-        if src_mod_str not in self._all_transitive_na_sources {
-            self._all_transitive_na_sources.append(src_mod_str);
+        if src_mod_str not in manifest.native_transitive_sources {
+            manifest.native_transitive_sources.append(src_mod_str);
         }
     }
 
     # ── Phase 0: process clib imports from all imported modules ─────────────
-    # Without this, `import from "libname" { def fn(...) -> float; }` in an
-    # imported .na.jac module is never forwarded to the compiling module, so
-    # those extern symbols fall back to i64 types and produce wrong values.
-    # Fix: call _process_clib_imports for each imported (transitive) module,
-    # just as it is called for self.ir_in in transform().
     for (_, imported_mod) in imported_mods {
         self._process_clib_imports(imported_mod);
     }
 
     # ── Phase 1a: register ALL struct names (empty identified types) ─────────
-    # All struct names must exist in struct_types before any body is filled
-    # so that cross-module field/parameter type references (e.g.
-    # JSClosure.func: CompiledFunction) resolve correctly even when the
-    # defining module is walked after the referencing module.
     for (_, imported_mod) in imported_mods {
         self._walk_imported_module_type_names(imported_mod);
     }
@@ -594,16 +514,26 @@ impl NaIRGenPass._register_imported_struct_types -> None {
         self._walk_imported_module_types(imported_mod);
     }
     # ── Phase 2: forward-declare ALL abilities from ALL modules ──────────────
-    for (src_mod_str, imported_mod) in imported_mods {
+    for (_, imported_mod) in imported_mods {
         self._walk_imported_module_abilities(imported_mod);
-        # Legacy: also keep _imported_na_paths populated (used elsewhere)
-        if not self?._imported_na_paths {
-            self._imported_na_paths: list = [];
-        }
-        if src_mod_str not in self._imported_na_paths {
-            self._imported_na_paths.append(src_mod_str);
-        }
     }
+}
+
+"""Extract the module name string from an Import node, or None if not applicable.
+
+Skips clib imports (from "libname") and non-module imports."""
+impl NaIRGenPass._extract_import_module_name(imp: uni.Import) -> (str | None) {
+    if not imp.from_loc or not isinstance(imp.from_loc, uni.ModulePath) {
+        return None;
+    }
+    if imp.from_loc.path and isinstance(imp.from_loc.path[0], uni.String) {
+        return None;
+    }
+    mod_name = getattr(imp.from_loc, 'dot_path_str', None);
+    if not mod_name and imp.from_loc?.path and imp.from_loc.path {
+        mod_name = '.'.join(getattr(p, 'value', str(p)) for p in imp.from_loc.path);
+    }
+    return mod_name;
 }
 
 """Walk an imported module's AST and register all type declarations."""
@@ -897,7 +827,7 @@ impl NaIRGenPass._process_clib_imports(module: uni.Module) -> None {
             }
         }
         # Store clib paths on module gen for compile pass
-        if self?._clib_paths and self._clib_paths {
+        if self._clib_paths {
             module.gen._clib_paths = self._clib_paths;
             self.has_native_code = True;
         }
