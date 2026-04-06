@@ -116,9 +116,12 @@ STEM="${SRC_BASENAME%.*}"
 SYMMAP_PATH="${SRC_DIR}/.jac_ir/${STEM}.symmap"
 export JAC_SYMMAP_PATH="$SYMMAP_PATH"
 
-# ── Locate the GDB Python helper ──────────────────────────────────────────
+# ── Transpile the Jac GDB helper to Python ────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GDB_HELPER="${SCRIPT_DIR}/jac-gdb-helper.py"
+GDB_HELPER_JAC="${SCRIPT_DIR}/jac-gdb-helper.jac"
+GDB_HELPER="/tmp/jac-gdb-helper.$$.py"
+jac jac2py "$GDB_HELPER_JAC" > "$GDB_HELPER" 2>/dev/null
+trap "rm -f '$GDB_HELPER'" EXIT
 
 # ── Build gdb command ──────────────────────────────────────────────────────
 GDB_ARGS=(
@@ -134,8 +137,8 @@ GDB_ARGS=(
     -ex "set pagination off"
 )
 
-# Load the Python helper (defines jac-load-symbols, jac-auto-symbols)
-if [[ -f "$GDB_HELPER" ]]; then
+# Load the transpiled Python helper (defines jac-load-symbols, jac-auto-symbols)
+if [[ -s "$GDB_HELPER" ]]; then
     GDB_ARGS+=(-ex "source $GDB_HELPER")
 fi
 
