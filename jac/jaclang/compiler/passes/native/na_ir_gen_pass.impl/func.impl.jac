@@ -189,6 +189,13 @@ impl NaIRGenPass._codegen_ability(nd: uni.Ability) -> None {
         func, self._func_loc.get(name, nd.loc.first_line if nd.loc else 1)
     );
 
+    # Non-:pub abilities get internal linkage so they don't collide
+    # when two modules with identically-named private functions are linked.
+    _is_priv = nd.access and nd.access.tag.name == Tok.KW_PRIV;
+    if _is_priv {
+        func.linkage = "internal";
+    }
+
     (nd).gen.llvm_ir = func;
     self.builder = None;
 }
@@ -206,12 +213,15 @@ impl NaIRGenPass._emit_glob_init_func -> None {
     # Save outer builder context (may be None when called from post_transform)
     saved_builder = self.builder;
     saved_locals = self.local_vars if self?.local_vars else {};
+    saved_di_sp = self._di_current_sp;
     # Emit void __jac_glob_init()
     fnty = ir.FunctionType(ir.VoidType(), []);
     func = ir.Function(self.llvm_module, fnty, name="__jac_glob_init");
     block = func.append_basic_block(name="entry");
     self.builder = ir.IRBuilder(block);
     self.local_vars = {};
+    # DWARF debug info (JAC_NATIVE_DEBUG=1)
+    self._attach_di_subprogram(func, "__jac_glob_init", 0);
     if self?._global_init_nodes and self._global_init_nodes {
         for init_tuple in self._global_init_nodes {
             var_name = init_tuple[0];
@@ -256,10 +266,13 @@ impl NaIRGenPass._emit_glob_init_func -> None {
         }
     }
     self.builder.ret_void();
+    # DWARF post-pass: tag untagged instructions with fallback line
+    self._finalize_di_locations(func, 0);
     self.func_symtab["__jac_glob_init"] = func;
     # Restore outer builder context
     self.builder = saved_builder;
     self.local_vars = saved_locals;
+    self._di_current_sp = saved_di_sp;
 }
 
 """Generate jac_entry() function for with entry { ... } blocks."""
@@ -276,6 +289,9 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
     self.local_vars = {};
     self.var_dict_type = {};
     self.var_set_elem_type = {};
+    # DWARF debug info (JAC_NATIVE_DEBUG=1)
+    entry_line = nd.loc.first_line if nd.loc else 0;
+    self._attach_di_subprogram(func, "jac_entry", entry_line);
     # Emit __jac_glob_init() (current module) and call it first.
     # This initialises all list/dict globs declared in THIS module before any
     # imported module's code can observe them.
@@ -306,7 +322,50 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
             imp_init_fn = ir.Function(self.llvm_module, imp_init_fnty, name=init_name);
             self.func_symtab[init_name] = imp_init_fn;
         }
-        self.builder.call(imp_init_fn, []);
+        _init_call = self.builder.call(imp_init_fn, []);
+        # Tag the call with a per-module DISubprogram + DILocation so that
+        # jac-gdb correctly names the module whose glob_init crashed,
+        # instead of attributing the null call to whatever function ran before.
+        if self.di_cu is not None and self._di_current_sp is not None {
+            try {
+                import os as _os_di;
+                # Reconstruct a filename from the source_module path string.
+                # native_transitive_sources entries are relative paths like
+                # "builtins/net_bridge.na.jac" or dot-separated "builtins.net_bridge".
+                _mod_fn = _source_mod;
+                if not _mod_fn.endswith(".jac") {
+                    _mod_fn = _mod_fn.replace(".", "/") + ".na.jac";
+                }
+                _di_imp_file = self.llvm_module.add_debug_info(
+                    "DIFile",
+                    {
+                        "filename": _os_di.path.basename(_mod_fn),
+                        "directory": _os_di.path.dirname(_mod_fn) or "."
+                    }
+                );
+                _di_sub_ty = self.llvm_module.add_debug_info(
+                    "DISubroutineType", {"types": self.llvm_module.add_metadata([])}
+                );
+                _di_init_sp = self.llvm_module.add_debug_info(
+                    "DISubprogram",
+                    {
+                        "name": init_name,
+                        "file": _di_imp_file,
+                        "line": 0,
+                        "isDefinition": False,
+                        "unit": self.di_cu,
+                        "type": _di_sub_ty
+                    },
+                    is_distinct=True
+                );
+                _di_init_loc = self.llvm_module.add_debug_info(
+                    "DILocation", {"line": 1, "column": 0, "scope": _di_init_sp}
+                );
+                _init_call.set_metadata("dbg", _di_init_loc);
+            } except Exception {
+                pass;  # best-effort; debug quality degrades but safety unaffected
+            }
+        }
     }
     # Generate body statements
     if (nd).body {
@@ -321,6 +380,8 @@ impl NaIRGenPass._codegen_entry(nd: uni.ModuleCode) -> None {
         self.builder.call(fflush_fn, [null_ptr]);
         self.builder.ret_void();
     }
+    # DWARF post-pass: tag untagged instructions with fallback line
+    self._finalize_di_locations(func, entry_line);
     self.has_native_code = True;
     self.builder = None;
 }

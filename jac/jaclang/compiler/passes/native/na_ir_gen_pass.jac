@@ -12,7 +12,7 @@ import from llvmlite { ir }
 import jaclang.jac0core.unitree as uni;
 import from jaclang.jac0core.passes.module_codegen_pass { ModuleCodegenPass }
 import from jaclang.jac0core.constant { CodeContext, Tokens as Tok }
-import from jaclang.jac0core.diagnostics { E5060 }
+import from jaclang.jac0core.diagnostics { E5026, E5060 }
 
 """Compile na-context Jac AST to LLVM IR using llvmlite.
 
@@ -122,6 +122,7 @@ obj NaIRGenPass(ModuleCodegenPass) {
         # Lazily initialized tracking sets
         _struct_bodies_done: set[str] = set(),
         _native_stdlib_modules: set[str] = set(),
+        _global_origins: dict[str, str] = {},
         _clib_paths: list[str] = [],
         _native_emit_ctx_class: (type | None) = None,
         # DWARF debug metadata (populated in postinit when JAC_NATIVE_DEBUG=1)
@@ -223,7 +224,7 @@ obj NaIRGenPass(ModuleCodegenPass) {
     def _walk_imported_module_abilities(imported_mod: uni.Module) -> None;
     def _register_imported_archetype(arch: uni.Archetype) -> None;
     def _forward_declare_archetype_methods(arch: uni.Archetype) -> None;
-    def _register_imported_globals(nd: uni.GlobalVars) -> None;
+    def _register_imported_globals(nd: uni.GlobalVars, source_path: str = "") -> None;
     def _forward_declare_imported_ability(nd: uni.Ability) -> None;
     def _register_archetypes(module: uni.Module) -> None;
     def _codegen_archetype(nd: uni.Archetype) -> None;

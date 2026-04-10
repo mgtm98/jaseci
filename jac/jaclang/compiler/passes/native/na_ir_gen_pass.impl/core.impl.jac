@@ -577,7 +577,8 @@ impl NaIRGenPass._walk_imported_module_types(imported_mod: uni.Module) -> None {
         } elif isinstance(stmt, uni.Enum) {
             self._codegen_enum(stmt);
         } elif isinstance(stmt, uni.GlobalVars) {
-            self._register_imported_globals(stmt);
+            _imp_path = imported_mod.loc.mod_path if imported_mod?.loc else "";
+            self._register_imported_globals(stmt, _imp_path);
         }
     }
 }
@@ -655,7 +656,9 @@ impl NaIRGenPass._register_imported_archetype(arch: uni.Archetype) -> None {
 }
 
 """Register imported global variables with external linkage (resolved at link time)."""
-impl NaIRGenPass._register_imported_globals(nd: uni.GlobalVars) -> None {
+impl NaIRGenPass._register_imported_globals(
+    nd: uni.GlobalVars, source_path: str = ""
+) -> None {
     for assign in nd.assignments {
         targets = assign.target
             if isinstance(assign.target, (list, tuple))
@@ -676,6 +679,10 @@ impl NaIRGenPass._register_imported_globals(nd: uni.GlobalVars) -> None {
             global_var.linkage = "external";
             self.global_vars[var_name] = global_var;
             self.global_var_types[var_name] = var_type;
+            # Record origin so dup-error messages can name the source module
+            if source_path {
+                self._global_origins[var_name] = source_path;
+            }
             # Track list element types for imported list globals
             if isinstance(var_type, ir.PointerType) {
                 for (ename, ltype) in self.list_types.items() {

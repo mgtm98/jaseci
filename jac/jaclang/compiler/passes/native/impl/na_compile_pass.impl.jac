@@ -181,9 +181,7 @@ impl NativeCompilePass.transform(ir_in: uni.Module) -> uni.Module {
                         _all_fn_names.append(_fn_name_str);
                     }
                 }
-            } except Exception {
-                pass;
-            }
+            } except Exception { }
         }
 
         engine = llvm.create_mcjit_compiler(mod, target_machine);
@@ -192,9 +190,7 @@ impl NativeCompilePass.transform(ir_in: uni.Module) -> uni.Module {
         if _native_debug {
             try {
                 engine.enable_jit_events();
-            } except Exception {
-                pass;  # best-effort; GDB listener may not be available
-            }
+            } except Exception { }
         }
         module.gen.native_engine = engine;
 
@@ -253,6 +249,9 @@ impl NativeCompilePass._compile_and_link_native_imports(
     # Keep track of linked modules to avoid duplicate linking.
     # Keyed by os.path.realpath so diamond deps (A→B→C, A→C) are linked once.
     linked_modules: dict = {};
+    # Track which module originally defined each exported symbol, so collision
+    # error messages can name both conflicting source files.
+    symbol_origins: dict = {};  # symbol_name -> module_path
     # Work queue: (binding, base_dir). Seeded with direct imports; transitive
     # deps are appended after each successful compile.
     work_queue: list = [];
@@ -310,12 +309,12 @@ impl NativeCompilePass._compile_and_link_native_imports(
                 file_path=full_path, options=import_options
             );
         } except Exception as e {
-            self.emit(W5024, path=full_path, error=str(e));
+            self.emit(E5024, path=full_path, error=str(e));
             continue;
         }
 
         if imported_ir is None or imported_ir.gen.llvm_ir is None {
-            self.emit(W5024, path=full_path, error="No LLVM IR generated");
+            self.emit(E5024, path=full_path, error="No LLVM IR generated");
             continue;
         }
 
@@ -341,9 +340,7 @@ impl NativeCompilePass._compile_and_link_native_imports(
                             llvm.load_library_permanently(found_lib);
                         }
                     }
-                } except Exception {
-                    pass;  # best-effort; missing lib will fail at JIT time anyway
-                }
+                } except Exception { }
             }
         }
 
@@ -370,6 +367,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
             imported_llvm_str = imported_llvm_str.replace(
                 "@jac_entry", f"@{entry_rename}"
             );
+            # Also update DISubprogram name: for jac_entry so GDB resolves it
+            imported_llvm_str = imported_llvm_str.replace(
+                'name: "jac_entry"', f'name: "{entry_rename}"'
+            );
             # Rename __jac_glob_init to __jac_glob_init_<safe_name> so each
             # imported module's initializer has a unique symbol after linking.
             glob_init_rename = f"__jac_glob_init_{safe_name}";
@@ -379,14 +380,80 @@ impl NativeCompilePass._compile_and_link_native_imports(
             imported_llvm_str = imported_llvm_str.replace(
                 "@__jac_glob_init", f"@{glob_init_rename}"
             );
+            # Also update DISubprogram name: for __jac_glob_init so GDB resolves it
+            imported_llvm_str = imported_llvm_str.replace(
+                'name: "__jac_glob_init"', f'name: "{glob_init_rename}"'
+            );
             imported_mod = llvm.parse_assembly(imported_llvm_str);
 
             # Collect exported function names BEFORE linking, because
-            # link_in consumes the module and invalidates its references
+            # link_in consumes the module and invalidates its references.
+            # Also detect symbol collisions: if an externally-visible
+            # definition in the imported module already exists as an
+            # externally-visible definition in main_mod, emit an error
+            # instead of silently merging (which causes SIGSEGV).
+            #   linkage 0 = external, 8 = internal, 9 = private
+            _INTERNAL_LINKAGE = 8;
+            _PRIVATE_LINKAGE = 9;
             exported_funcs: list[str] = [];
+            has_collision = False;
             for func in imported_mod.functions {
-                if not func.name.startswith("llvm.") and not func.is_declaration {
-                    exported_funcs.append(func.name);
+                if func.name.startswith("llvm.") or func.is_declaration {
+                    continue;
+                }
+                if func.linkage == _INTERNAL_LINKAGE
+                or func.linkage == _PRIVATE_LINKAGE {
+                    continue;
+                }
+                exported_funcs.append(func.name);
+                # Check collision against main module
+                try {
+                    existing = main_mod.get_function(func.name);
+                    if not existing.is_declaration {
+                        origin = symbol_origins.get(func.name, "(main module)");
+                        self.emit(
+                            E5026,
+                            symbol=func.name,
+                            existing_module=origin,
+                            new_module=full_path
+                        );
+                        has_collision = True;
+                    }
+                } except NameError { }
+            }
+            for gv in imported_mod.global_variables {
+                if gv.is_declaration
+                or gv.linkage == _INTERNAL_LINKAGE
+                or gv.linkage == _PRIVATE_LINKAGE {
+                    continue;
+                }
+                try {
+                    existing_gv = main_mod.get_global_variable(gv.name);
+                    if not existing_gv.is_declaration {
+                        origin = symbol_origins.get(gv.name, "(main module)");
+                        self.emit(
+                            E5026,
+                            symbol=gv.name,
+                            existing_module=origin,
+                            new_module=full_path
+                        );
+                        has_collision = True;
+                    }
+                } except NameError { }
+            }
+            if has_collision {
+                continue;  # Skip link_in to avoid SIGSEGV
+            }
+
+            # Record symbol origins for future collision diagnostics
+            for fname in exported_funcs {
+                symbol_origins[fname] = full_path;
+            }
+            for gv in imported_mod.global_variables {
+                if not gv.is_declaration
+                and gv.linkage != _INTERNAL_LINKAGE
+                and gv.linkage != _PRIVATE_LINKAGE {
+                    symbol_origins[gv.name] = full_path;
                 }
             }
 
@@ -410,7 +477,7 @@ impl NativeCompilePass._compile_and_link_native_imports(
             linked_modules[real_path] = mod_info;
             module.gen.interop_manifest.native_module_imports[source_mod_path] = mod_info;
         } except Exception as e {
-            self.emit(W5025, path=full_path, error=str(e));
+            self.emit(E5025, path=full_path, error=str(e));
         }
     }
 }

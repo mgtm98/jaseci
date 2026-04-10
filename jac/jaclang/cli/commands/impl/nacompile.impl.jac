@@ -107,6 +107,17 @@ impl nacompile(filename: str, output: str = "") -> int {
         return 1;
     }
 
+    # Abort immediately if the pass infrastructure recorded any ERROR-level
+    # diagnostics (e.g. E5020 from a failing imported .na.jac module).
+    # Without this check, nacompile would silently link stale cached IR and
+    # write a broken binary while printing no error.
+    if prog.errors_had {
+        for _err in prog.errors_had {
+            console.print(str(_err));
+        }
+        return 1;
+    }
+
     if ir_module is None or ir_module.gen.llvm_ir is None {
         if auto_promote and not (ir_module and ir_module.gen.native_compat) {
             console.error(
