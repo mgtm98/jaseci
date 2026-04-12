@@ -214,6 +214,12 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "Bare 'root' is deprecated. Use 'root()' instead.",
          "'root' is now a builtin function — call it explicitly as 'root()'"
      ),
+     W0063 = _warn(
+         "W0063",
+         Category.SYNTAX,
+         "JSX spread '{{...expr}}' is JS-idiomatic. Prefer '{{**expr}}' in Jac.",
+         "Jac uses ** for dict unpacking — use {**expr} instead of {...expr} in JSX attributes."
+     ),
      # Lexer errors
      E0100 = _err("E0100", Category.SYNTAX, "Unterminated string literal"),
      E0101 = _err("E0101", Category.SYNTAX, "Unterminated block comment"),

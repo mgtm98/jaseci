@@ -150,7 +150,8 @@ import from jaclang.jac0core.diagnostics {
     E0046,
     E0047,
     W0060,
-    W0061
+    W0061,
+    W0063
 }
 
 impl Parser.current -> Token {
@@ -3289,10 +3290,14 @@ impl Parser.parse_jsx_attributes -> list {
                 JsxNormalAttribute(name=attr_name, value=attr_value, kid=attr_kid)
             );
         } elif self.check(TokenKind.LBRACE) {
-            # Spread attribute: {...expr}
+            # Spread attribute: {**expr} (preferred) or {...expr} (JS-idiomatic)
             self.advance();  # consume {
             spread_kid: list = [self.make_uni_token(self.previous())];
-            if self.check(TokenKind.ELLIPSIS) {
+            if self.check(TokenKind.STAR_POW) {
+                star_tok = self.advance();
+                spread_kid.append(self.make_uni_token(star_tok));
+            } elif self.check(TokenKind.ELLIPSIS) {
+                self.emit_warn(W0063, loc=self.current().loc);
                 ellipsis_tok = self.advance();
                 spread_kid.append(self.make_ellipsis(ellipsis_tok));
             }
