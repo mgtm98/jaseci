@@ -171,6 +171,27 @@ impl DeclImplMatchPass.connect_impls(
             valid_decl.sym_tab.names_in_scope
         );
         valid_decl.sym_tab.names_in_scope = sym.decl.name_of.sym_tab.names_in_scope;
+        # For nested impls (e.g. impl app.addTodo), re-parent the impl's
+        # scope to the declaration's parent scope so that enclosing has
+        # variables (component state) are reachable via deep lookup.
+        if valid_decl.sym_tab.parent_scope
+        and valid_decl.sym_tab.parent_scope is not sym.decl.name_of.sym_tab.parent_scope {
+            impl_scope = sym.decl.name_of.sym_tab;
+            parent_scope = valid_decl.sym_tab.parent_scope;
+            impl_scope.parent_scope = parent_scope;
+            # Merge parent has-field symbols into the impl scope so that
+            # assignments to component state variables (e.g. todos = ...)
+            # resolve to the declared has variable rather than creating
+            # an untyped local shadow.
+            for (name, parent_sym) in parent_scope.names_in_scope.items() {
+                if (
+                    isinstance(parent_sym.decl.name_of, uni.HasVar)
+                    and name in impl_scope.names_in_scope
+                ) {
+                    impl_scope.names_in_scope[name] = parent_sym;
+                }
+            }
+        }
         self._resolve_symbols_in_subtree(sym.decl.name_of);
         # Populate self-member symbols from impl to archetype for method impls
         # (e.g., impl Foo.init { self.x = 1; } should add 'x' to Foo's symbol table)
