@@ -578,6 +578,28 @@ impl NaIRGenPass._codegen_assignment(nd: uni.Assignment) -> None {
         if var_name in self.local_vars {
             # Update existing variable
             alloca = self.local_vars[var_name];
+            # If this is a typed re-declaration (x: T = ...) whose declared type
+            # differs from the existing alloca's type, allocate a fresh alloca with
+            # the correct type rather than silently storing through a wrongly-typed
+            # pointer (e.g. x: bool in one branch and x: SomeStruct in another).
+            if nd.type_tag and nd.type_tag.tag and nd.aug_op is None {
+                _redecl_tag = nd.type_tag.tag;
+                bare_redecl: (str | None) = None;
+                if isinstance(_redecl_tag, uni.Name) {
+                    bare_redecl = _redecl_tag.value;
+                } elif uni?.BuiltinType and isinstance(_redecl_tag, uni.BuiltinType) {
+                    bare_redecl = _redecl_tag.value;
+                }
+                _skip_redecl = bare_redecl in {"list","dict","set","frozenset"};
+                if not _skip_redecl {
+                    _declared_type = self._resolve_jac_type(_redecl_tag);
+                    if _declared_type is not None
+                    and _declared_type != alloca.type.pointee {
+                        alloca = self._entry_alloca(_declared_type, var_name);
+                        self.local_vars[var_name] = alloca;
+                    }
+                }
+            }
             is_inplace_set_op = False;  # Track set |= to skip RC release
             # Handle augmented assignment: +=, -=, *=, //=, %=
             if nd.aug_op is not None {
