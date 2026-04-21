@@ -245,6 +245,8 @@ impl NativeCompilePass._compile_and_link_native_imports(
     module: uni.Module, main_mod: object, imports: list, target_machine: object
 ) -> None {
     import os;
+    import hashlib;
+    import json;
     import from jaclang.jac0core.codeinfo { NativeModuleInfo, NativeFunctionInfo }
     # Keep track of linked modules to avoid duplicate linking.
     # Keyed by os.path.realpath so diamond deps (A→B→C, A→C) are linked once.
@@ -300,22 +302,127 @@ impl NativeCompilePass._compile_and_link_native_imports(
         }
         linked_modules[real_path] = None;  # mark visited before compile
 
-        # Compile the imported module to get its LLVM IR.
-        # Use options with skip_native_engine=True to skip JIT engine creation.
-        import from jaclang.jac0core.compile_options { CompileOptions }
-        import_options = CompileOptions(skip_native_engine=True);
-        try {
-            imported_ir = self.prog.compile(
-                file_path=full_path, options=import_options
-            );
-        } except Exception as e {
-            self.emit(E5024, path=full_path, error=str(e));
-            continue;
+        # ── Incremental compilation: check IR cache before recompiling ────
+        # Hash the source file and look for a cached IR text + metadata.
+        # Cache layout: <source_dir>/.jac_ir/<stem>.<hash8>.ir_cache
+        #               <source_dir>/.jac_ir/<stem>.<hash8>.ir_meta  (JSON)
+        # The .ir_cache file contains the raw LLVM IR text (pre-rename).
+        # The .ir_meta file contains clib_paths and transitive dep info.
+        _src_dir = os.path.dirname(real_path);
+        _src_stem = os.path.splitext(os.path.basename(real_path))[0];
+        if _src_stem.endswith(".na") {
+            _src_stem = _src_stem[:-3];
         }
+        _ir_cache_dir = os.path.join(_src_dir, ".jac_ir");
 
-        if imported_ir is None or imported_ir.gen.llvm_ir is None {
-            self.emit(E5024, path=full_path, error="No LLVM IR generated");
-            continue;
+        _source_hash = "";
+        _cache_ir_path = "";
+        _cache_meta_path = "";
+        _cache_hit = False;
+        imported_llvm_str_raw = "";
+        dep_clib_paths_cached: list = [];
+        dep_transitive_cached: list = [];
+
+        try {
+            with open(real_path, "rb") as _sf {
+                _source_hash = hashlib.sha256(_sf.read()).hexdigest()[:12];
+            }
+            _cache_ir_path = os.path.join(
+                _ir_cache_dir, f"{_src_stem}.{_source_hash}.ir_cache"
+            );
+            _cache_meta_path = os.path.join(
+                _ir_cache_dir, f"{_src_stem}.{_source_hash}.ir_meta"
+            );
+
+            if os.path.exists(_cache_ir_path) and os.path.exists(_cache_meta_path) {
+                with open(_cache_ir_path, "r") as _cf {
+                    imported_llvm_str_raw = _cf.read();
+                }
+                with open(_cache_meta_path, "r") as _mf {
+                    _meta = json.loads(_mf.read());
+                }
+                dep_clib_paths_cached = _meta.get("clib_paths", []);
+                dep_transitive_cached = _meta.get("transitive_deps", []);
+                _cache_hit = True;
+            }
+        } except Exception { }
+
+        if _cache_hit {
+            # Use cached IR — skip full compilation
+            # Still need to handle clib paths and transitive deps
+            dep_clib_paths = dep_clib_paths_cached;
+
+            # Enqueue transitive deps from cached metadata
+            dep_base = os.path.dirname(full_path);
+            for dep_mod_path in dep_transitive_cached {
+                # Create a lightweight binding-like object with source_module attr
+                class _DepBinding {
+                    def init(self: _DepBinding, sm: str) {
+                        self.source_module = sm;
+                    }
+                }
+                work_queue.append((_DepBinding(dep_mod_path), dep_base));
+            }
+        } else {
+            # No cache hit — compile from scratch
+            import from jaclang.jac0core.compile_options { CompileOptions }
+            import_options = CompileOptions(skip_native_engine=True);
+            try {
+                imported_ir = self.prog.compile(
+                    file_path=full_path, options=import_options
+                );
+            } except Exception as e {
+                self.emit(E5024, path=full_path, error=str(e));
+                continue;
+            }
+            if imported_ir is None or imported_ir.gen.llvm_ir is None {
+                self.emit(E5024, path=full_path, error="No LLVM IR generated");
+                continue;
+            }
+            imported_llvm_str_raw = str(imported_ir.gen.llvm_ir);
+            dep_clib_paths = imported_ir.gen._clib_paths or [];
+            # Collect transitive dep paths for cache metadata
+            dep_transitive_paths: list = [];
+            dep_manifest = imported_ir.gen.interop_manifest;
+            if dep_manifest is not None {
+                dep_base = os.path.dirname(full_path);
+                for dep_binding in dep_manifest.native_cross_module_imports {
+                    if dep_binding.source_module is not None {
+                        dep_transitive_paths.append(dep_binding.source_module);
+                        work_queue.append((dep_binding, dep_base));
+                    }
+                }
+            }
+            # Write cache files (best-effort, don't fail build on cache errors)
+            try {
+                os.makedirs(_ir_cache_dir, exist_ok=True);
+                # Remove stale caches for this stem (different hash)
+                import glob as _glob;
+                for stale in _glob.glob(
+                    os.path.join(_ir_cache_dir, f"{_src_stem}.*.ir_cache")
+                ) {
+                    if stale != _cache_ir_path {
+                        os.remove(stale);
+                    }
+                }
+                for stale in _glob.glob(
+                    os.path.join(_ir_cache_dir, f"{_src_stem}.*.ir_meta")
+                ) {
+                    if stale != _cache_meta_path {
+                        os.remove(stale);
+                    }
+                }
+                with open(_cache_ir_path, "w") as _wf {
+                    _wf.write(imported_llvm_str_raw);
+                }
+                _meta_obj = {
+                    "clib_paths": dep_clib_paths,
+                    "transitive_deps": dep_transitive_paths
+                };
+                with open(_cache_meta_path, "w") as _wmf {
+                    _wmf.write(json.dumps(_meta_obj));
+                }
+            } except Exception { }
         }
 
         # Load any .so libraries required by this imported module so that
@@ -323,7 +430,7 @@ impl NativeCompilePass._compile_and_link_native_imports(
         # Without this, transitive `import from "lib.so" { ... }` in a dep
         # module causes an unresolved-symbol segfault at runtime.
         import ctypes.util as _ctu;
-        dep_clib_paths = imported_ir.gen._clib_paths;
+        # dep_clib_paths is set by both cache-hit and cache-miss paths above.
         if dep_clib_paths {
             # Propagate dep C-lib paths back to the main module so that
             # nacompile (AOT) can discover all needed shared libraries.
@@ -344,20 +451,13 @@ impl NativeCompilePass._compile_and_link_native_imports(
             }
         }
 
-        # Enqueue transitive deps of this module for DFS traversal.
-        dep_manifest = imported_ir.gen.interop_manifest;
-        if dep_manifest is not None {
-            dep_base = os.path.dirname(full_path);
-            for dep_binding in dep_manifest.native_cross_module_imports {
-                work_queue.append((dep_binding, dep_base));
-            }
-        }
-
+        # Transitive deps already enqueued above (both cache-hit and cache-miss).
         try {
             # Parse the imported module's IR, renaming jac_entry to avoid
             # duplicate symbol conflicts (each .na.jac has its own entry).
             # LLVM IR may quote names as @"jac_entry" or use bare @jac_entry.
-            imported_llvm_str = str(imported_ir.gen.llvm_ir);
+            # imported_llvm_str_raw is set by both cache-hit and cache-miss.
+            imported_llvm_str = imported_llvm_str_raw;
             import re;
             safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', source_mod_path);
             entry_rename = f"__jac_entry_{safe_name}";

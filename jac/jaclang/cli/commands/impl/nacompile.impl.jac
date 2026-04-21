@@ -56,7 +56,7 @@ def _inject_entry_macho(llvm_ir_str: str) -> str {
 
 
 """Compile a .na.jac file to a standalone native binary."""
-impl nacompile(filename: str, output: str = "") -> int {
+impl nacompile(filename: str, output: str = "", scrub: bool = False) -> int {
     # Validate input
     if not filename.endswith(".na.jac") and not filename.endswith(".jac") {
         console.error("Input must be a .jac or .na.jac file.");
@@ -65,6 +65,20 @@ impl nacompile(filename: str, output: str = "") -> int {
     if not os.path.exists(filename) {
         console.error(f"File not found: {filename}");
         return 1;
+    }
+
+    # Scrub: wipe all .jac_ir/ cache directories under the source tree
+    if scrub {
+        import glob as _glob;
+        import shutil;
+        src_root = os.path.dirname(os.path.abspath(filename)) or ".";
+        cache_dirs = _glob.glob(os.path.join(src_root, "**", ".jac_ir"), recursive=True);
+        for cache_dir in cache_dirs {
+            shutil.rmtree(cache_dir, ignore_errors=True);
+        }
+        if cache_dirs {
+            console.print(f"  Scrubbed {len(cache_dirs)} .jac_ir cache dir(s).");
+        }
     }
 
     auto_promote = filename.endswith(".jac") and not filename.endswith(".na.jac");
