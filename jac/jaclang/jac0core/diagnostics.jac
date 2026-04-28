@@ -123,7 +123,7 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          "E0024",
          Category.SYNTAX,
          "Cannot assign to '{name}' -- it is a built-in reference, not a variable",
-         help="Use a different variable name, or use backtick escaping (e.g. `super) to create a local variable with the same name."
+         help="Use a different variable name, or use backtick escaping (e.g. `root) to create a local variable with the same name."
      ),
      # Parser: statement-level errors
      E0030 = _err("E0030", Category.SYNTAX, "Unexpected semicolon at module level"),
@@ -211,8 +211,8 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      W0062 = _warn(
          "W0062",
          Category.SYNTAX,
-         "Bare 'root' is deprecated. Use 'root()' instead.",
-         "'root' is now a builtin function — call it explicitly as 'root()'"
+         "'root()' is deprecated. Use bare 'root' instead.",
+         "'root' is a reserved keyword that resolves to the graph anchor — drop the parentheses."
      ),
      W0063 = _warn(
          "W0063",
