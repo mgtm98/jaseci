@@ -182,7 +182,9 @@ impl NaIRGenPass._emit_alloc_log_bb(
     _fmt = self._get_fmt_string(
         "RC MALLOC  id=%-4lld ptr=%p  bytes=%lld  type=%-12s  op=%-12s  at=%s"
     );
-    _fmt_ptr = b.gep(_fmt, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="alloc.fmt");
+    _fmt_ptr = b.gep(
+        _fmt, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="alloc.fmt"
+    );
     b.call(self._get_printf(), [_fmt_ptr, aid, user, size_arg, tag_raw, _op, _loc]);
     b.branch(ret_bb);
     return log_bb;
@@ -319,9 +321,7 @@ impl NaIRGenPass._emit_release_log_bb(
     b = ir.IRBuilder(dbg_rel_bb);
     dbg_flag2 = b.load(self.rc_debug_gv, name="rc.dbg2");
     b.cbranch(
-        b.icmp_unsigned(
-            "!=", dbg_flag2, ir.Constant(i8, 0), name="dbg.on2"
-        ),
+        b.icmp_unsigned("!=", dbg_flag2, ir.Constant(i8, 0), name="dbg.on2"),
         log_rel_bb,
         done_bb
     );
@@ -371,9 +371,7 @@ impl NaIRGenPass._emit_raw_free_bbs(
     _msz = b.call(_msz_fn, [_raw_msz], name="msz");
     dbg_flag3 = b.load(self.rc_debug_gv, name="rc.dbg3");
     b.cbranch(
-        b.icmp_unsigned(
-            "!=", dbg_flag3, ir.Constant(i8, 0), name="dbg.on3"
-        ),
+        b.icmp_unsigned("!=", dbg_flag3, ir.Constant(i8, 0), name="dbg.on3"),
         log_raw_bb,
         live_rm_bb
     );
@@ -437,9 +435,7 @@ impl NaIRGenPass._emit_struct_free_log(
     _msz2 = b.call(_msz_fn, [obj_raw], name="msz2");
     dbg_flag_s = b.load(self.rc_debug_gv, name="rc.dbg.s");
     b.cbranch(
-        b.icmp_unsigned(
-            "!=", dbg_flag_s, ir.Constant(i8, 0), name="dbg.on.s"
-        ),
+        b.icmp_unsigned("!=", dbg_flag_s, ir.Constant(i8, 0), name="dbg.on.s"),
         log_struct_line_bb,
         actual_free_struct_bb
     );
@@ -476,9 +472,7 @@ impl NaIRGenPass._set_rc_ctx(op: str, loc: str) -> None {
     if loc and self.rc_ctx_loc_gv is not None {
         _loc_gv = self._get_snprintf_fmt(loc);
         _loc_gep = self.builder.gep(
-            _loc_gv,
-            [ir.Constant(_i32c, 0), ir.Constant(_i32c, 0)],
-            name="sctx.loc.gep"
+            _loc_gv, [ir.Constant(_i32c, 0), ir.Constant(_i32c, 0)], name="sctx.loc.gep"
         );
         self.builder.store(_loc_gep, self.rc_ctx_loc_gv);
     }
@@ -597,9 +591,7 @@ impl NaIRGenPass._emit_rc_live_dump -> None {
     after_bb = func.append_basic_block("dump.after");
     dbg_flag = b.load(self.rc_debug_gv, name="dump.dbg");
     b.cbranch(
-        b.icmp_unsigned(
-            "!=", dbg_flag, ir.Constant(i8, 0), name="dump.on"
-        ),
+        b.icmp_unsigned("!=", dbg_flag, ir.Constant(i8, 0), name="dump.on"),
         dbg_on_bb,
         after_bb
     );

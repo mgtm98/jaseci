@@ -109,14 +109,32 @@ Returns the value unchanged if it's already a pointer. Use this when
 a value tuple needs to be stored in a container or passed to a function
 that expects a pointer.
 """
-impl NaIRGenPass._box_value_tuple(val: ir.Value) -> ir.Value {
+impl NaIRGenPass._box_value_tuple(val: ir.Value, loc: str = "") -> ir.Value {
     if not isinstance(val.type, ir.LiteralStructType) {
         return val;
     }
     size = ir.Constant(ir.IntType(64), self._get_struct_size(val.type));
+    # Prefer the jac_loc stamped on the value (set by _codegen_tuple_val) over
+    # the caller-supplied loc so attribution is always as specific as possible.
+    _box_loc = val?.jac_loc or loc;
+    self._set_rc_ctx("box", _box_loc);
     raw = self.builder.call(self.rc_alloc_fn, [size], name="tuple.box");
+    self._clear_rc_ctx();
     ptr = self.builder.bitcast(raw, val.type.as_pointer(), name="tuple.box.ptr");
     self.builder.store(val, ptr);
+    # RC: fresh __rc_alloc result is owned (RC=1). Mark it so callers that
+    # check rc_owned_ids (field stores, list appends, etc.) skip the extra
+    # retain that would push RC to 2 and create a permanent leak.
+    self.rc_owned_ids.add(id(ptr));
+    # Set type tag so RC debug log shows "tuple" instead of "raw".
+    if self.rc_set_type_fn is not None {
+        _tup_tag = self._get_snprintf_fmt("tuple");
+        _i32_tb = ir.IntType(32);
+        _tup_tag_gep = self.builder.gep(
+            _tup_tag, [ir.Constant(_i32_tb, 0), ir.Constant(_i32_tb, 0)], name="tup.tag"
+        );
+        self.builder.call(self.rc_set_type_fn, [raw, _tup_tag_gep]);
+    }
     return ptr;
 }
 

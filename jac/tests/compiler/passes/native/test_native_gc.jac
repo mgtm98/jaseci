@@ -76,7 +76,7 @@ def _nacompile(fixture: str, out_bin: str) {
     src = os.path.join(FIXTURES, fixture);
     assert os.path.exists(src) , f"fixture missing: {src}";
     comp = subprocess.run(
-        [sys.executable, "-m", "jaclang", "nacompile", "--scrub", src, "-o", out_bin],
+        [sys.executable, "-m", "jaclang", "nacompile", src, "-o", out_bin],
         capture_output=True,
         text=True,
         timeout=300,
@@ -148,7 +148,9 @@ test "gc reduces rss for perf_alloc_storm" {
 
 test "gc reduces rss for perf_retain_release" {
     # 1M reassignments -> ~100 MB leak without GC.
-    (gc, nogc) = _measure_gc_savings("perf_retain_release.na.jac", min_savings_kb=10240);
+    (gc, nogc) = _measure_gc_savings(
+        "perf_retain_release.na.jac", min_savings_kb=10240
+    );
     print(f"[retain_release] gc={gc} KB  nogc={nogc} KB  saved={nogc - gc} KB");
 }
 
