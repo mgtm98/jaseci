@@ -2095,11 +2095,6 @@ impl JsxExpression.postinit -> None {
 }
 
 
-impl JsxComment.postinit -> None {
-    JsxChild.postinit(self);
-}
-
-
 impl MatchStmt.postinit -> None {
     UniNode.postinit(self);
     CodeBlockStmt.postinit(self);
