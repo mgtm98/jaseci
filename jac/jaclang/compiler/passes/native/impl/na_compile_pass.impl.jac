@@ -252,8 +252,37 @@ impl NativeCompilePass._compile_and_link_native_imports(
     # Keyed by os.path.realpath so diamond deps (A→B→C, A→C) are linked once.
     linked_modules: dict = {};
     # Track which module originally defined each exported symbol, so collision
-    # error messages can name both conflicting source files.
+    # error messages can name both conflicting source files.  We use this dict
+    # as the AUTHORITATIVE source of "what is defined and where", rather than
+    # querying main_mod.get_function(...).is_declaration after link_in() —
+    # that can be unreliable across llvmlite versions for cross-module
+    # declarations promoted to definitions during linking.
     symbol_origins: dict = {};  # symbol_name -> module_path
+    _MAIN_ORIGIN = "(main module)";
+    # Seed symbol_origins with the main module's own non-declaration symbols.
+    # Otherwise the very first imported module that legitimately *declares*
+    # one of main's functions could be mis-flagged as a collision after a
+    # subsequent module *defines* the same name.
+    _INTERNAL_LINKAGE = 8;
+    _PRIVATE_LINKAGE = 9;
+    for _mfn in main_mod.functions {
+        if _mfn.is_declaration or _mfn.name.startswith("llvm.") {
+            continue;
+        }
+        if _mfn.linkage == _INTERNAL_LINKAGE or _mfn.linkage == _PRIVATE_LINKAGE {
+            continue;
+        }
+        symbol_origins[_mfn.name] = _MAIN_ORIGIN;
+    }
+    for _mgv in main_mod.global_variables {
+        if _mgv.is_declaration {
+            continue;
+        }
+        if _mgv.linkage == _INTERNAL_LINKAGE or _mgv.linkage == _PRIVATE_LINKAGE {
+            continue;
+        }
+        symbol_origins[_mgv.name] = _MAIN_ORIGIN;
+    }
     # Work queue: (binding, base_dir). Seeded with direct imports; transitive
     # deps are appended after each successful compile.
     work_queue: list = [];
@@ -489,12 +518,15 @@ impl NativeCompilePass._compile_and_link_native_imports(
             # Collect exported function names BEFORE linking, because
             # link_in consumes the module and invalidates its references.
             # Also detect symbol collisions: if an externally-visible
-            # definition in the imported module already exists as an
-            # externally-visible definition in main_mod, emit an error
-            # instead of silently merging (which causes SIGSEGV).
+            # *definition* in the imported module corresponds to a symbol
+            # already defined by a previously linked module (or by main_mod
+            # itself), emit an error instead of silently merging (which
+            # causes SIGSEGV).  We consult our own symbol_origins dict
+            # rather than main_mod.get_function(...).is_declaration so that
+            # *declarations* brought in by an earlier link_in (e.g. mid
+            # declares get_leaf, then leaf defines it) are not misreported
+            # as collisions.
             #   linkage 0 = external, 8 = internal, 9 = private
-            _INTERNAL_LINKAGE = 8;
-            _PRIVATE_LINKAGE = 9;
             exported_funcs: list[str] = [];
             has_collision = False;
             for func in imported_mod.functions {
@@ -506,40 +538,36 @@ impl NativeCompilePass._compile_and_link_native_imports(
                     continue;
                 }
                 exported_funcs.append(func.name);
-                # Check collision against main module
-                try {
-                    existing = main_mod.get_function(func.name);
-                    if not existing.is_declaration {
-                        origin = symbol_origins.get(func.name, "(main module)");
-                        self.emit(
-                            E5026,
-                            symbol=func.name,
-                            existing_module=origin,
-                            new_module=full_path
-                        );
-                        has_collision = True;
-                    }
-                } except NameError { }
+                # Check collision against previously recorded definitions
+                if func.name in symbol_origins {
+                    origin = symbol_origins[func.name];
+                    self.emit(
+                        E5026,
+                        symbol=func.name,
+                        existing_module=origin,
+                        new_module=full_path
+                    );
+                    has_collision = True;
+                }
             }
+            exported_globals: list[str] = [];
             for gv in imported_mod.global_variables {
                 if gv.is_declaration
                 or gv.linkage == _INTERNAL_LINKAGE
                 or gv.linkage == _PRIVATE_LINKAGE {
                     continue;
                 }
-                try {
-                    existing_gv = main_mod.get_global_variable(gv.name);
-                    if not existing_gv.is_declaration {
-                        origin = symbol_origins.get(gv.name, "(main module)");
-                        self.emit(
-                            E5026,
-                            symbol=gv.name,
-                            existing_module=origin,
-                            new_module=full_path
-                        );
-                        has_collision = True;
-                    }
-                } except NameError { }
+                exported_globals.append(gv.name);
+                if gv.name in symbol_origins {
+                    origin = symbol_origins[gv.name];
+                    self.emit(
+                        E5026,
+                        symbol=gv.name,
+                        existing_module=origin,
+                        new_module=full_path
+                    );
+                    has_collision = True;
+                }
             }
             if has_collision {
                 continue;  # Skip link_in to avoid SIGSEGV
@@ -549,12 +577,8 @@ impl NativeCompilePass._compile_and_link_native_imports(
             for fname in exported_funcs {
                 symbol_origins[fname] = full_path;
             }
-            for gv in imported_mod.global_variables {
-                if not gv.is_declaration
-                and gv.linkage != _INTERNAL_LINKAGE
-                and gv.linkage != _PRIVATE_LINKAGE {
-                    symbol_origins[gv.name] = full_path;
-                }
+            for gname in exported_globals {
+                symbol_origins[gname] = full_path;
             }
 
             # Link the imported module into the main module at IR level

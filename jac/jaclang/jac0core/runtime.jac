@@ -32,6 +32,7 @@ import from typing {
 import from uuid { UUID }
 import from jaclang.jac0core.archetype {
     GenericEdge,
+    ObjectAnchor,
     ObjectSpatialDestination,
     ObjectSpatialFunction,
     ObjectSpatialPath,
@@ -40,6 +41,7 @@ import from jaclang.jac0core.archetype {
 import from jaclang.jac0core.constant { EdgeDir, colors }
 import from jaclang.jac0core.constructs {
     AccessLevel,
+    access_level_cast,
     Anchor,
     Archetype,
     EdgeAnchor,
@@ -211,9 +213,9 @@ class JacWalker {
         `walker: WalkerArchetype,
         expr:
             (
-                list[
-                    (NodeArchetype | EdgeArchetype)
-                ] | list[NodeArchetype] | list[EdgeArchetype] | NodeArchetype | EdgeArchetype | ObjectSpatialPath
+                list[(NodeArchetype | EdgeArchetype)] | list[NodeArchetype] | list[
+                    EdgeArchetype
+                ] | NodeArchetype | EdgeArchetype | ObjectSpatialPath
             ),
         insert_loc: int = -1
     ) -> bool;
@@ -247,9 +249,7 @@ class JacWalker {
         Returns True if walker should continue, False if disengaged.
         """
     static def _visit_node_recursive(
-        warch: WalkerArchetype,
-        `walker: WalkerAnchor,
-        anchor: (NodeAnchor | EdgeAnchor)
+        warch: WalkerArchetype, `walker: WalkerAnchor, anchor: (NodeAnchor | EdgeAnchor)
     ) -> bool;
 
     """Jac's spawn operator feature with recursive DFS semantics.
@@ -290,9 +290,7 @@ class JacWalker {
         Returns True if walker should continue, False if disengaged.
         """
     static async def _async_visit_node_recursive(
-        warch: WalkerArchetype,
-        `walker: WalkerAnchor,
-        anchor: (NodeAnchor | EdgeAnchor)
+        warch: WalkerArchetype, `walker: WalkerAnchor, anchor: (NodeAnchor | EdgeAnchor)
     ) -> bool;
 
     """Jac's async spawn operator feature with recursive DFS semantics.
@@ -362,11 +360,19 @@ class JacBasics {
     """Commit all data from memory to datasource."""
     static def commit(anchor: Anchor | Archetype | None = None) -> None;
 
+    """Async mirror of commit — persists through the async Memory surface
+    so the caller's event loop is not blocked on L3 writes."""
+    static async def acommit(anchor: Anchor | Archetype | None = None) -> None;
+
     """Purge current or target graph."""
     static def reset_graph(root: (Root | None) = None) -> int;
 
     """Get object given id."""
     static def get_object(id: str) -> (Archetype | None);
+
+    """Async mirror of get_object — resolves through the async Memory
+    surface so L3 reads do not block the caller's event loop."""
+    static async def aget_object(id: str) -> (Archetype | None);
 
     """Get object reference id."""
     static def object_ref(`obj: Archetype) -> str;
@@ -567,6 +573,17 @@ class JacAPIServer {
         The returned class should be compatible with the JacAPIServer interface.
         """
     static def get_api_server_class -> type;
+
+    """Lazily ensure an sv-imported microservice is started and registered.
+
+        Called from sv_client.call() when an sv-imported function is invoked
+        for the first time and the service has no URL or TestClient yet.
+        Plugins (e.g. jac-scale) can override this to spawn their own
+        enhanced server. The default implementation spawns a base
+        JacAPIServer in a background thread, waits for the server to be
+        responsive, and registers the URL via sv_client.register().
+        """
+    static def ensure_sv_service(module_name: str, base_path: str) -> None;
 
     """Create the API server instance.
 
@@ -1012,6 +1029,17 @@ class JacRuntime(JacRuntimeInterface) {
 
     """Set request-scoped execution context (for web servers)."""
     static def set_request_context(context: ExecutionContext) -> None;
+
+    """Push a request-scoped execution context and return the reset token.
+
+    Prefer this over `set_request_context` for concurrent servers: the
+    returned token lets the caller restore the prior value in a `finally`
+    block, which keeps concurrent requests (each in its own asyncio Task
+    with its own ContextVar view) from trampling each other's state."""
+    static def push_request_context(context: ExecutionContext) -> Any;
+
+    """Reset the request-scoped context using a token from `push_request_context`."""
+    static def reset_request_context(token: Any) -> None;
 
     """Clear request-scoped context and commit changes."""
     static def clear_request_context -> None;

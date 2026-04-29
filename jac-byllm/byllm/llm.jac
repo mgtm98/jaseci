@@ -36,13 +36,16 @@ import from byllm.types {
     IterationContext
 }
 import from byllm.config_loader { get_byllm_config }
-import from byllm.telemetry { _emit_agent_telemetry }
+import from byllm.telemetry { _emit_agent_telemetry, _current_invocation_id }
+import from byllm.parallel { dispatch_batch, _index_by_identity, _PARALLEL_TOOL_HINT }
 
 # Load configuration purely from jac.toml
 glob _byllm_config = get_byllm_config(),
      _litellm_config = _byllm_config.get_litellm_config(),
      _model_config = _byllm_config.get_model_config(),
-     _call_params_config = _byllm_config.get_call_params_config();
+     _call_params_config = _byllm_config.get_call_params_config(),
+     _parallel_config = _byllm_config.get_parallel_config(),
+     _CACHE_CONTROL_EPHEMERAL: dict = {"type": "ephemeral"};
 
 # Configure LiteLLM based on jac.toml settings
 # Note: LiteLLM reads this env var directly, so we set it based on config
@@ -110,7 +113,8 @@ obj ModelPool(BaseLLM) {
         strategy: str | None = None,
         num_retries: int | None = None,
         timeout: float | None = None,
-        _router: object = None;
+        _router: object = None,
+        _fallback_model_names: list = [];
 
     def postinit -> None;
     override def model_call_no_stream(params: dict) -> dict;

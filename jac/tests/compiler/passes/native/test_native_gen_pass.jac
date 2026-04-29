@@ -65,7 +65,9 @@ test "arithmetic negate" {
 
 test "arithmetic float add" {
     (eng, _) = compile_native("arithmetic.na.jac");
-    fadd = get_func(eng, "float_add", ctypes.c_double, ctypes.c_double, ctypes.c_double);
+    fadd = get_func(
+        eng, "float_add", ctypes.c_double, ctypes.c_double, ctypes.c_double
+    );
     assert abs(fadd(1.5, 2.5) - 4.0) < 1e-10;
     assert abs(fadd(-1.0, 1.0)) < 1e-10;
 }
@@ -216,7 +218,9 @@ test "strings str equal" {
 
 test "strings str not equal" {
     (eng, _) = compile_native("strings.na.jac");
-    f = get_func(eng, "str_not_equal", ctypes.c_int64, ctypes.c_char_p, ctypes.c_char_p);
+    f = get_func(
+        eng, "str_not_equal", ctypes.c_int64, ctypes.c_char_p, ctypes.c_char_p
+    );
     assert f(b"hello", b"world") == 1;
     assert f(b"hello", b"hello") == 0;
 }
@@ -3049,8 +3053,6 @@ test "redecl type: int-to-bool re-declaration (True) returns 1" {
     # Before fix: wrong alloca type → crash or wrong value.
     # After fix: fresh i1 alloca; x == True → returns 1.
     (eng, _) = compile_native("redecl_type.na.jac");
-    entry_fn = get_func(eng, "jac_entry", None);
-    entry_fn();
     f = get_func(eng, "redecl_int_to_bool_true", ctypes.c_int64);
     result = f();
     assert result == 1 , f"Expected 1 (True branch taken), got {result}";
@@ -3060,8 +3062,6 @@ test "redecl type: int-to-bool re-declaration (False) returns 0" {
     # x: int = 99; x: bool = False; if x { return 1; } return 0;
     # After fix: fresh i1 alloca; x == False → returns 0.
     (eng, _) = compile_native("redecl_type.na.jac");
-    entry_fn = get_func(eng, "jac_entry", None);
-    entry_fn();
     f = get_func(eng, "redecl_int_to_bool_false", ctypes.c_int64);
     result = f();
     assert result == 0 , f"Expected 0 (False branch not taken), got {result}";
@@ -3071,8 +3071,6 @@ test "redecl type: same-type re-declaration updates value correctly" {
     # x: int = 50; x: int = 99; return x; → must return 99.
     # Same type: no fresh alloca needed; value must still be updated.
     (eng, _) = compile_native("redecl_type.na.jac");
-    entry_fn = get_func(eng, "jac_entry", None);
-    entry_fn();
     f = get_func(eng, "redecl_same_type_int", ctypes.c_int64);
     result = f();
     assert result == 99 , f"Expected 99, got {result}";
@@ -3082,8 +3080,6 @@ test "redecl type: bool-to-int re-declaration returns int value" {
     # x: bool = True; x: int = 42; return x; → must return 42.
     # After fix: fresh i64 alloca for int; correct value stored.
     (eng, _) = compile_native("redecl_type.na.jac");
-    entry_fn = get_func(eng, "jac_entry", None);
-    entry_fn();
     f = get_func(eng, "redecl_bool_to_int", ctypes.c_int64);
     result = f();
     assert result == 42 , f"Expected 42, got {result}";
