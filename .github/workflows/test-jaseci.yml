@@ -31,6 +31,13 @@ jobs:
         pip install pytest-xdist
         pip install watchdog
 
+    - name: Run bytecode memory regression tests
+      run: |
+        pytest -x \
+          jac/tests/compiler/test_bytecode_cache_retention.jac \
+          jac/tests/compiler/test_memory_retention.jac \
+          jac/tests/runtimelib/test_memory_retention.jac
+
     - name: Run compiler tests
       run: pytest -x jac/tests/compiler -n auto
 

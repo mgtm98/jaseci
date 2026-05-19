@@ -749,7 +749,9 @@ class JacByLLM {
     static def default_llm -> LLMModel;
 
     """Add MTIR to the node's MTIR map."""
-    static def add_mtir_to_map(scope: str, mtir: Info) -> None;
+    static def add_mtir_to_map(
+        scope: str, mtir: Info, module_path: (str | None) = None
+    ) -> None;
 
     """Get MTIR from the node's MTIR map."""
     static def get_mtir_from_map(scope: str) -> (Info | None);
@@ -780,6 +782,26 @@ class JacUtils {
     static def load_module(
         module_name: str, module: types.ModuleType, force: bool = False
     ) -> None;
+
+    """Remove a module from JacRuntime and optionally sys.modules."""
+    static def unload_module(
+        module_name: str, drop_sys_module: bool = True
+    ) -> bool;
+
+    """Unload modules matching predicate (default: user/dynamic modules)."""
+    static def reset_loaded_modules(
+        predicate: (Callable[[str], bool] | None) = None
+    ) -> list[str];
+
+    """Record module name -> source path for coordinated cache eviction."""
+    static def register_module_source(
+        module_name: str, module: types.ModuleType
+    ) -> (str | None);
+
+    """List all registry names tied to a module (aliases included)."""
+    static def collect_module_registry_names(
+        module_name: str
+    ) -> list[str];
 
     """List all loaded modules."""
     static def list_modules -> list[str];
@@ -1064,6 +1086,12 @@ class JacRuntime(JacRuntimeInterface) {
         pool: ThreadPoolExecutor = ThreadPoolExecutor();
         exec_ctx: (ExecutionContext | None) = None;
         loaded_modules: dict[(str, types.ModuleType)] = {};
+        # module_name -> resolved source path (bytecode/hub invalidation).
+        module_resolved_paths: dict[str, str] = {};
+        # resolved source path -> set of registry names (aliases).
+        resolved_path_module_names: dict[str, set[str]] = {};
+        # extra alias (e.g. requested dynamic name) -> import stem name.
+        dynamic_module_aliases: dict[str, str] = {};
         # When True, permission-denied write-class operations raise
         # PermissionError instead of silently no-opping. Defaults to the
         # JAC_STRICT_PERMISSIONS env var (truthy values: "1", "true",
@@ -1111,6 +1139,9 @@ class JacRuntime(JacRuntimeInterface) {
 
     """Clear request-scoped context and commit changes."""
     static def clear_request_context -> None;
+
+    """Snapshot runtime/compiler retention counters (``JAC_MEM_DEBUG``)."""
+    static def memory_snapshot -> dict[str, object];
 }
 
 """Context manager to temporarily disable external plugins.

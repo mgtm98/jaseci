@@ -133,13 +133,17 @@ impl JacCompiler.get_bytecode(
 ) -> (types.CodeType | None) {
     actual_program = self._resolve_program(full_target, target_program);
 
-    # Tier 1: in-memory hub
-    if (
-        (full_target in actual_program.mod.hub)
-        and actual_program.mod.hub[full_target].gen.py_bytecode
-    ) {
-        codeobj = actual_program.mod.hub[full_target].gen.py_bytecode;
-        return marshal.loads(codeobj) if isinstance(codeobj, `bytes) else None;
+    # Tier 1: in-memory hub (respect hub freshness stamps)
+    if full_target in actual_program.mod.hub {
+        hub_mod = actual_program.mod.hub[full_target];
+        if (
+            hub_mod.gen.py_bytecode
+            and actual_program.is_hub_entry_fresh(full_target)
+        ) {
+            codeobj = hub_mod.gen.py_bytecode;
+            return marshal.loads(codeobj) if isinstance(codeobj, `bytes) else None;
+        }
+        actual_program.invalidate_module(full_target);
     }
 
     # Tier 2: JIR cache fast path
@@ -587,6 +591,15 @@ impl JacCompiler.parse_str(
         target_program.mod.hub.update(old_hub);
     }
     target_program.mod.hub[mod.loc.mod_path] = mod;
+    if mod.loc.mod_path {
+        import from pathlib { Path }
+        try {
+            resolved = str(Path(mod.loc.mod_path).resolve());
+            target_program.hub_cache_stamp(resolved);
+        } except OSError {
+            target_program.hub_cache_stamp(mod.loc.mod_path);
+        }
+    }
     JacAnnexPass(ir_in=mod, prog=target_program);
     return mod;
 }

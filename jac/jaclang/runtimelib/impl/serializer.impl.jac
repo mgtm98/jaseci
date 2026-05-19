@@ -22,6 +22,26 @@ impl Serializer._serialize_attrs(
     };
 }
 
+"""True when ref_mode should also pin anchors in L1 (legacy cross-request)."""
+impl Serializer._ref_mode_persist_enabled -> bool {
+    import os;
+    return os.environ.get('JAC_REF_MODE_PERSIST', '').strip().lower() in (
+        '1', 'true', 'yes', 'on'
+    );
+}
+
+"""Start ephemeral ref_mode anchor registry for this request."""
+impl Serializer.begin_ref_mode_session -> None {
+    if Serializer._ref_mode_registry.get() is None {
+        Serializer._ref_mode_registry.set({});
+    }
+}
+
+"""Clear ephemeral ref_mode registry."""
+impl Serializer.end_ref_mode_session -> None {
+    Serializer._ref_mode_registry.set(None);
+}
+
 """Serialize any object to JSON-compatible format."""
 impl Serializer.serialize(
     `obj: object,
@@ -29,8 +49,17 @@ impl Serializer.serialize(
     api_mode: bool = False,
     ref_mode: bool = False
 ) -> object {
+    auto_session = False;
+    if ref_mode and Serializer._ref_mode_registry.get() is None {
+        Serializer.begin_ref_mode_session();
+        auto_session = True;
+    }
     _seen = (set(), set()) if ref_mode else None;
-    return Serializer._serialize_value(`obj, include_type, api_mode, ref_mode, _seen);
+    result = Serializer._serialize_value(`obj, include_type, api_mode, ref_mode, _seen);
+    if auto_session {
+        Serializer.end_ref_mode_session();
+    }
+    return result;
 }
 
 """Serialize a value recursively."""
@@ -136,15 +165,18 @@ impl Serializer._serialize_value(
                     return {'$ref': jac_id.hex, '$type': ref_type};
                 }
                 jac_uuids.add(jac_id);
-                # Register in memory so _deserialize_jac_ref can resolve
-                # $ref placeholders back to the live archetype.
-                try {
-                    import from jaclang { JacRuntimeInterface as Jac }
-                    Jac.get_context().mem.put(jac_anchor);
-                } except Exception as e {
-                    logger.warning(
-                        f"ref_mode: failed to register {jac_id.hex} in memory: {e}"
-                    );
+                session = Serializer._ref_mode_registry.get();
+                if session is not None {
+                    session[jac_id] = jac_anchor;
+                } elif Serializer._ref_mode_persist_enabled() {
+                    try {
+                        import from jaclang { JacRuntimeInterface as Jac }
+                        Jac.get_context().mem.put(jac_anchor);
+                    } except Exception as e {
+                        logger.warning(
+                            f"ref_mode: failed to register {jac_id.hex} in memory: {e}"
+                        );
+                    }
                 }
             }
         }
@@ -205,6 +237,18 @@ impl Serializer._deserialize_jac_ref(data: dict[str, object]) -> (object | None)
         logger.error(f"Invalid UUID in $ref: {id_str}");
         return None;
     }
+    session = Serializer._ref_mode_registry.get();
+    if session is not None {
+        anchor = session.get(ref_uuid);
+        if anchor {
+            if not anchor.is_populated() {
+                anchor.populate();
+            }
+            if anchor.is_populated() {
+                return anchor.archetype;
+            }
+        }
+    }
     try {
         import from jaclang { JacRuntimeInterface as Jac }
         anchor = Jac.get_context().mem.get(ref_uuid);
@@ -235,6 +279,12 @@ impl Serializer._deserialize_jac_ref(data: dict[str, object]) -> (object | None)
 
 """Deserialize data back to original object type."""
 impl Serializer.deserialize(data: dict[str, object]) -> (object | None) {
+    # Inherit ref_mode session from caller when nested under serialize().
+    return Serializer._deserialize_root(data);
+}
+
+"""Internal deserialize entry (uses active ref_mode session if any)."""
+impl Serializer._deserialize_root(data: dict[str, object]) -> (object | None) {
     if not isinstance(data, dict) {
         return data;
     }
@@ -281,7 +331,7 @@ impl Serializer._deserialize_value(val: object) -> object {
         if '$ref' in val and val.keys() <= {'$ref','$type'} {
             return Serializer._deserialize_jac_ref(val);
         }
-        return Serializer.deserialize(val)
+        return Serializer._deserialize_root(val)
             if '__type__' in val
             else {k: Serializer._deserialize_value(v) for (k, v) in val.items()};
     }

@@ -77,6 +77,8 @@ node_modules
 # Claude Code local instructions
 CLAUDE.local.md
 .claude/
+.cursor/
+.github/
 
 jactastic/**
 .mcp.json

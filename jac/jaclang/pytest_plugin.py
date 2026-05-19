@@ -88,12 +88,27 @@ def _fresh_jac_state(*, clear_modules: bool = True):
     has no effect because ``mock.patch`` patches a *new* module object
     while test code still reads from the *old* one.
     """
+    import shutil
+
     from jaclang.jac0core.program import JacProgram
     from jaclang.jac0core.runtime import JacRuntime, JacRuntimeInterface
+
+    global _harness_temp_dirs
 
     # Close any existing execution context
     if JacRuntime.exec_ctx is not None:
         JacRuntime.exec_ctx.mem.close()
+
+    # Tear down prior harness temp dirs and thread pool
+    prev_dir = getattr(JacRuntime, "base_path_dir", None)
+    if prev_dir and prev_dir in _harness_temp_dirs:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(prev_dir, ignore_errors=True)
+        _harness_temp_dirs.remove(prev_dir)
+    prev_pool = getattr(JacRuntime, "pool", None)
+    if prev_pool is not None:
+        with contextlib.suppress(Exception):
+            prev_pool.shutdown(wait=False)
 
     if clear_modules:
         # Remove previously-loaded user .jac modules from sys.modules.
@@ -104,7 +119,9 @@ def _fresh_jac_state(*, clear_modules: bool = True):
 
     # Set up fresh state with isolated storage (temp directory avoids
     # stale SQLite data from previous tests)
-    JacRuntime.base_path_dir = tempfile.mkdtemp()
+    new_dir = tempfile.mkdtemp()
+    JacRuntime.base_path_dir = new_dir
+    _harness_temp_dirs.append(new_dir)
     JacRuntime.program = JacProgram()
     JacRuntime.pool = ThreadPoolExecutor()
     JacRuntime.exec_ctx = JacRuntimeInterface.create_j_context(user_root=None)
@@ -116,6 +133,7 @@ def _fresh_jac_state(*, clear_modules: bool = True):
 
 _test_packages: dict[str, str] = {}
 _test_pkg_counter = 0
+_harness_temp_dirs: list[str] = []
 
 
 def _ensure_test_package(base_dir: str) -> str:

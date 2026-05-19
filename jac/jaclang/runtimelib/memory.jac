@@ -67,6 +67,9 @@ obj Memory {
     def get_gc -> list[Anchor] abs;
     def remove_from_gc(anchor: Anchor) -> None abs;
     def get_mem -> dict[UUID, Anchor] abs;
+
+    """Lightweight counts for memory debugging (``JAC_MEM_DEBUG``)."""
+    def memory_stats -> dict[str, object];
     # ---- Async hot-path mirrors ----
     # Non-abstract: default implementations delegate to the sync variant via
     # asyncio.to_thread so every existing backend (SQLite, Volatile, Tiered)
@@ -203,6 +206,7 @@ obj VolatileMemory(Memory) {
     def get_gc -> list[Anchor];
     def remove_from_gc(anchor: Anchor) -> None;
     def get_mem -> dict[UUID, Anchor];
+    def memory_stats -> dict[str, int];
 }
 
 """Local Cache Memory - In-process cache implementing CacheMemory interface.

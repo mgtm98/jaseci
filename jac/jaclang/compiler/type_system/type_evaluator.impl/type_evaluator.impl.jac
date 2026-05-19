@@ -2799,13 +2799,30 @@ impl TypeEvaluator._is_strict_site(nd: uni.UniNode) -> bool {
     if mod is None {
         return False;
     }
-    cached = self._strict_site_cache.get(id(mod));
+    mod_path = self._module_path_from_ast(mod);
+    if not mod_path {
+        return not mod.is_raised_from_py;
+    }
+    cached = self._strict_site_cache.get(mod_path);
     if cached is not None {
         return cached;
     }
     result = not mod.is_raised_from_py;
-    self._strict_site_cache[id(mod)] = result;
+    self._strict_site_cache[mod_path] = result;
     return result;
+}
+
+"""Resolved filesystem path for a Module AST node, if available."""
+impl TypeEvaluator._module_path_from_ast(mod: uni.Module) -> (str | None) {
+    import from pathlib { Path }
+    if mod.source is None or not mod.source.file_path {
+        return None;
+    }
+    try {
+        return str(Path(mod.source.file_path).resolve());
+    } except OSError {
+        return None;
+    }
 }
 
 """True when the pass is currently checking a native (.na.jac) module.
@@ -3721,12 +3738,16 @@ impl TypeEvaluator._get_type_from_flow_node(
 ) -> TypeBase | None {
     import from jaclang.compiler.type_system.type_evaluator { NarrowingTarget }
     key = target.key;
-    # Keyed by (flow_node, symbol) when a symbol is available so that
-    # different scopes with the same name don't collide; otherwise keyed
-    # by the reference string (expression-based narrowing).
-    cache_key = (id(flow_node), id(target.symbol))
+    mod_path = '';
+    cfg_mod = flow_node.find_parent_of_type(uni.Module);
+    if cfg_mod {
+        mod_path = self._module_path_from_ast(cfg_mod) or '';
+    }
+    # Keyed by (module_path, flow_node, symbol) so invalidation can drop
+    # entries per file without scanning id()-keyed stale nodes.
+    cache_key = (mod_path, id(flow_node), id(target.symbol))
         if target.symbol is not None
-        else (id(flow_node), key);
+        else (mod_path, id(flow_node), key);
     if cache_key in self._flow_node_type_cache {
         return self._flow_node_type_cache[cache_key];
     }
