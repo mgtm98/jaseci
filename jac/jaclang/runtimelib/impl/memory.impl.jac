@@ -315,10 +315,15 @@ impl VolatileMemory.put(anchor: Anchor) -> None {
     self.__mem__[anchor.id] = anchor;
 }
 
-"""Remove an anchor by ID and track for garbage collection."""
+"""Drop pending delete-queue anchors (no L3 tombstones to flush)."""
+impl VolatileMemory._flush_gc_queue -> None {
+    self.__gc__.clear();
+}
+
+"""Remove an anchor by ID; queue only when a persistence tier will drain it."""
 impl VolatileMemory.delete(id: UUID) -> None {
     if (anchor := self.__mem__.pop(id, None)) {
-        self.__gc__.add(anchor);
+        # VolatileMemory has no L3 — never retain deleted anchors.
     }
 }
 
@@ -397,9 +402,9 @@ impl VolatileMemory.get_mem -> dict[UUID, Anchor] {
     return self.__mem__;
 }
 
-"""Commit - no-op for volatile memory."""
+"""Commit - flush any stale delete queue (idempotent)."""
 impl VolatileMemory.commit(anchor: (Anchor | None) = None) -> None {
-# No persistence, nothing to commit
+    self.__gc__.clear();
 }
 
 # =============================================================================
@@ -1386,9 +1391,9 @@ impl TieredMemory.put(anchor: Anchor) -> None {
 
 """Delete anchor from all tiers."""
 impl TieredMemory.delete(id: UUID) -> None {
-    # Delete from L1 (only track persistent anchors for GC)
+    # Delete from L1 — queue for L3 tombstone sync only when L3 exists.
     if (anchor := self.__mem__.pop(id, None)) {
-        if anchor.persistent {
+        if anchor.persistent and self.l3 {
             self.__gc__.add(anchor);
         }
     }
@@ -1452,11 +1457,13 @@ impl TieredMemory.reset_l3_fetch_count -> None {
     }
 }
 
-"""Commit - syncs L3 persistence if available."""
+"""Commit - syncs L3 persistence and drains the delete queue."""
 impl TieredMemory.commit(anchor: (Anchor | None) = None) -> None {
     if self.l3 {
         self.l3.sync();
     }
+    # Always drain delete queue (L3 sync processes tombstones when present).
+    self.__gc__.clear();
 }
 
 """Batch get: check L1, then load L3 misses, promote all to L1/L2."""
@@ -1482,4 +1489,30 @@ impl TieredMemory.batch_get(ids: list[UUID]) -> dict[UUID, Anchor] {
         }
     }
     return result;
+}
+
+# =============================================================================
+# Memory instrumentation (JAC_MEM_DEBUG)
+# =============================================================================
+"""Fallback stats for backends without custom counters."""
+impl Memory.memory_stats -> dict[str, object] {
+    return {'backend': type(self).__name__};
+}
+
+"""Return L1/GC counts for volatile and tiered backends."""
+impl VolatileMemory.memory_stats -> dict[str, int] {
+    return {
+        'l1_count': len(self.__mem__),
+        'gc_queue_count': len(self.__gc__)
+    };
+}
+
+"""Tiered memory stats including optional L2/L3 presence."""
+impl TieredMemory.memory_stats -> dict[str, object] {
+    return {
+        'l1_count': len(self.__mem__),
+        'gc_queue_count': len(self.__gc__),
+        'has_l2': self.l2 is not None,
+        'has_l3': self.l3 is not None
+    };
 }

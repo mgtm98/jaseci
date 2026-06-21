@@ -2375,11 +2375,25 @@ impl JacByLLM.default_llm -> LLMModel {
 }
 
 """Add MTIR to the node's MTIR map."""
-impl JacByLLM.add_mtir_to_map(scope: str, mtir: Info) -> None {
+impl JacByLLM.add_mtir_to_map(
+    scope: str, mtir: Info, module_path: (str | None) = None
+) -> None {
+    import from pathlib { Path }
     if (JacRuntime.program is None) {
         raise AttributeError('JacRuntime.program is not initialized');
     }
-    JacRuntime.program.mtir_map[scope] = mtir;
+    prog = JacRuntime.program;
+    if module_path {
+        resolved = str(Path(module_path).resolve());
+        prog._mtir_scope_modules[scope] = resolved;
+        bucket = prog._mtir_scopes_by_module.get(resolved);
+        if bucket is None {
+            bucket = set();
+            prog._mtir_scopes_by_module[resolved] = bucket;
+        }
+        bucket.add(scope);
+    }
+    prog.mtir_map[scope] = mtir;
 }
 
 """Get MTIR from the node's MTIR map."""
@@ -2423,6 +2437,65 @@ impl JacUtils.attach_compiler(jac_compiler: JacCompiler) -> None {
     JacRuntime.compiler = jac_compiler;
 }
 
+"""Resolve and record a module's source path for bytecode cache eviction."""
+impl JacUtils.register_module_source(
+    module_name: str, module: types.ModuleType
+) -> (str | None) {
+    import from pathlib { Path }
+    file_path = getattr(module, '__file__', None);
+    if not file_path or not isinstance(file_path, str) {
+        return None;
+    }
+    try {
+        resolved = str(Path(file_path).resolve());
+    } except OSError {
+        return None;
+    }
+    JacRuntime.module_resolved_paths[module_name] = resolved;
+    bucket = JacRuntime.resolved_path_module_names.get(resolved);
+    if bucket is None {
+        bucket = set();
+        JacRuntime.resolved_path_module_names[resolved] = bucket;
+    }
+    bucket.add(module_name);
+    return resolved;
+}
+
+"""Gather every registry name for the same module object or source path."""
+impl JacUtils.collect_module_registry_names(module_name: str) -> list[str] {
+    module = JacRuntime.loaded_modules.get(module_name);
+    if module is None {
+        return [];
+    }
+    names: set[str] = {module_name};
+    # Aliases registered for dynamic modules.
+    for (alias, stem) in JacRuntime.dynamic_module_aliases.items() {
+        if stem == module_name or alias == module_name {
+            names.add(alias);
+            names.add(stem);
+        }
+    }
+    if module.__name__ {
+        names.add(module.__name__);
+    }
+    resolved = JacRuntime.module_resolved_paths.get(module_name);
+    if not resolved {
+        resolved = JacUtils.register_module_source(module_name, module);
+    }
+    if resolved {
+        for other in JacRuntime.resolved_path_module_names.get(resolved, set()) {
+            names.add(other);
+        }
+    }
+    # Any loaded_modules entry referencing the same object.
+    for (reg_name, reg_mod) in JacRuntime.loaded_modules.items() {
+        if reg_mod is module {
+            names.add(reg_name);
+        }
+    }
+    return `list(names);
+}
+
 """Load a module into the machine."""
 impl JacUtils.load_module(
     module_name: str, module: types.ModuleType, force: bool = False
@@ -2430,7 +2503,109 @@ impl JacUtils.load_module(
     if ((module_name not in JacRuntime.loaded_modules) or force) {
         JacRuntime.loaded_modules[module_name] = module;
         sys.modules[module_name] = module;
+        JacUtils.register_module_source(module_name, module);
     }
+    import from jaclang.memory_telemetry {
+        dynamic_module_limit,
+        module_eviction_enabled
+    }
+    if module_eviction_enabled() {
+        limit = dynamic_module_limit();
+        if limit is not None {
+            dynamic_names = sorted(
+                n
+                for n in JacRuntime.loaded_modules
+                if (
+                    n.startswith('_dynamic_module_')
+                    or n in JacRuntime.dynamic_module_aliases
+                )
+            );
+            overflow = len(dynamic_names) - limit;
+            if overflow > 0 {
+                for name in dynamic_names[:overflow] {
+                    JacUtils.unload_module(name, drop_sys_module=True);
+                }
+            }
+        }
+    }
+}
+
+"""Remove one module from the registry (never unloads jaclang internals)."""
+impl JacUtils.unload_module(
+    module_name: str, drop_sys_module: bool = True
+) -> bool {
+    if (
+        module_name.startswith('jaclang.')
+        or module_name == '__main__'
+    ) {
+        return False;
+    }
+    if module_name not in JacRuntime.loaded_modules {
+        return False;
+    }
+    names = JacUtils.collect_module_registry_names(module_name);
+    paths_to_invalidate: set[str] = set();
+    for name in names {
+        resolved = JacRuntime.module_resolved_paths.pop(name, None);
+        if resolved {
+            paths_to_invalidate.add(resolved);
+        }
+    }
+    for path in paths_to_invalidate {
+        bucket = JacRuntime.resolved_path_module_names.pop(path, None);
+        if bucket {
+            for name in bucket {
+                JacRuntime.module_resolved_paths.pop(name, None);
+            }
+        }
+        prog = JacRuntime.program;
+        if prog is not None {
+            prog.invalidate_module(path);
+        }
+    }
+    for (alias, stem) in list(JacRuntime.dynamic_module_aliases.items()) {
+        if alias in names or stem in names {
+            del (JacRuntime.dynamic_module_aliases[alias], );
+        }
+    }
+    for name in names {
+        JacRuntime.loaded_modules.pop(name, None);
+        if drop_sys_module {
+            sys.modules.pop(name, None);
+        }
+    }
+    import from jaclang.memory_telemetry {
+        assert_no_orphaned_module_paths,
+        mem_strict_invariants_enabled
+    }
+    if mem_strict_invariants_enabled() and JacRuntime.program is not None {
+        for path in paths_to_invalidate {
+            assert_no_orphaned_module_paths(
+                resolved_path=path, program=JacRuntime.program
+            );
+        }
+    }
+    return True;
+}
+
+"""Unload modules selected by predicate (default: non-jaclang user modules)."""
+impl JacUtils.reset_loaded_modules(
+    predicate: (Callable[[str], bool] | None) = None
+) -> list[str] {
+    if predicate is None {
+        predicate = lambda name: (
+            (not name.startswith('jaclang.')) and name != '__main__'
+        );
+    }
+    removed: list[str] = [];
+    for name in list(JacRuntime.loaded_modules.keys()) {
+        if predicate(name) {
+            if JacUtils.unload_module(name, drop_sys_module=True) {
+                removed.append(name);
+            }
+        }
+    }
+    return removed;
 }
 
 """List all loaded modules."""
@@ -2530,12 +2705,24 @@ impl JacUtils.create_archetype_from_source(
         result = JacRuntimeInterface.jac_import(
             target=tmp_module_name,
             base_path=base_path,
-            override_name=module_name,
             lng='jac'
         );
         module = result[0] if result else None;
         if module {
-            JacRuntime.loaded_modules[module_name] = module;
+            # Canonical import name is the tempfile stem (meta_importer path).
+            JacUtils.register_module_source(tmp_module_name, module);
+            if module_name != tmp_module_name {
+                JacRuntime.dynamic_module_aliases[module_name] = tmp_module_name;
+                JacRuntime.loaded_modules[module_name] = module;
+                resolved = JacRuntime.module_resolved_paths.get(tmp_module_name);
+                if resolved {
+                    JacRuntime.module_resolved_paths[module_name] = resolved;
+                    bucket = JacRuntime.resolved_path_module_names.get(resolved);
+                    if bucket is not None {
+                        bucket.add(module_name);
+                    }
+                }
+            }
         }
         return module;
     } except Exception as e {
@@ -2828,4 +3015,10 @@ impl JacRuntime.clear_request_context -> None {
         ctx.close();
         _request_context.set(None);
     }
+}
+
+"""Return process-wide memory retention counters for debugging."""
+impl JacRuntime.memory_snapshot -> dict[str, object] {
+    import from jaclang.memory_telemetry { memory_snapshot as _snapshot }
+    return _snapshot();
 }

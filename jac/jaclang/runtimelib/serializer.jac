@@ -1,6 +1,7 @@
 """JSON serialization for Jac objects with type-safe deserialization."""
 
 import logging;
+import from contextvars { ContextVar }
 import from dataclasses { fields, is_dataclass }
 import from datetime { date, datetime, time }
 import from enum { Enum }
@@ -40,7 +41,11 @@ Only classes registered via Archetype subclassing can be deserialized,
 preventing arbitrary code execution from untrusted data.
 """
 obj Serializer {
-    static has _registry: dict[str, type] = {},
+    # Ephemeral UUID -> Anchor map for ref_mode serialize/deserialize pairs.
+    static has _ref_mode_registry: ContextVar[(dict[UUID, Anchor] | None)] = ContextVar(
+        'jac_serializer_ref_mode', default=None
+    ),
+        _registry: dict[str, type] = {},
         # Alias map: old "module.ClassName" key -> new "module.ClassName" key.
         # Populated by `register_alias` / `archetype_alias` decorator. Used by
         # `_get_class` to resolve renamed or moved archetypes without losing
@@ -97,8 +102,8 @@ obj Serializer {
     Set ref_mode=True to emit {"$ref": "<uuid-hex>", "$type": "<kind>"} for
     repeated Jac objects instead of inlining them again (prevents duplication
     and infinite recursion). Note: ref_mode registers discovered Jac objects
-    in the runtime memory store so that $ref placeholders can be resolved back
-    to live archetypes during deserialization.
+    in a request-scoped registry (not L1 memory) so $ref placeholders resolve
+    during the same serialize/deserialize session without leaking anchors.
     """
     static def serialize(
         `obj: object,
@@ -106,6 +111,11 @@ obj Serializer {
         api_mode: bool = False,
         ref_mode: bool = False
     ) -> object;
+
+    """Begin a ref_mode session (paired with ``end_ref_mode_session``)."""
+    static def begin_ref_mode_session -> None;
+    """End the active ref_mode session and drop ephemeral anchor refs."""
+    static def end_ref_mode_session -> None;
 
     """Reconstruct object from serialized data."""
     static def deserialize(data: dict[str, object]) -> (object | None);
@@ -129,6 +139,7 @@ obj Serializer {
     ) -> dict[str, object];
 
     static def _deserialize_value(val: object) -> object;
+    static def _deserialize_root(data: dict[str, object]) -> (object | None);
     static def _deserialize_jac_ref(data: dict[str, object]) -> (object | None);
     static def _get_class(module_name: str, class_name: str) -> (type | None);
     static def _id_to_stub(anchor_cls: type, id_str: str) -> (object | None);

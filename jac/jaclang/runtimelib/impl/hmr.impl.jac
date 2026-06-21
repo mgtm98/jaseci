@@ -89,18 +89,15 @@ impl HotReloader._reload_server_module(file_path: str) -> None {
     for key in list(Jac.program.mod.hub.keys()) {
         sys.modules.pop(self._path_to_module(key), None);
     }
-    # Also remove from the program's module hub
+    # Coordinated compiler cache eviction (hub, native, MTIR, type caches).
     try {
-        if file_path in Jac.program.mod.hub {
-            del Jac.program.mod.hub[file_path];
-        }
-        # Also try with resolved path
         resolved_path = str(Path(file_path).resolve());
-        if resolved_path in Jac.program.mod.hub {
-            del Jac.program.mod.hub[resolved_path];
+        Jac.program.invalidate_module(resolved_path);
+        if file_path != resolved_path {
+            Jac.program.invalidate_module(file_path);
         }
     } except Exception as e {
-        console.warning(f"Could not clear module hub: {e}");
+        console.warning(f"Could not invalidate module caches: {e}");
     }
     # Re-import with force reload
     try {
@@ -173,10 +170,8 @@ impl HotReloader._recompile_client_code(
         # Clear any stale errors from previous compilations
         Jac.program.errors_had.clear();
 
-        # Clear existing module from hub to force recompilation
-        if source_key in Jac.program.mod.hub {
-            del Jac.program.mod.hub[source_key];
-        }
+        # Coordinated eviction before client recompile
+        Jac.program.invalidate_module(source_key);
 
         # Compile the file (this generates JS as part of the compilation)
         mod = Jac.program.compile(source_key);

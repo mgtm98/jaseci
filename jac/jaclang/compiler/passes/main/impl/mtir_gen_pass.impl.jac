@@ -480,5 +480,10 @@ impl MTIRGenPass._process_ability(nd: uni.Ability) -> None {
         func_info = self._extract_function_info(nd=nd);
     }
     scope = self._get_scope_str(nd);
-    Jac.add_mtir_to_map(scope, func_info);
+    mod_path = None;
+    mod = nd.find_parent_of_type(uni.Module);
+    if mod and mod.loc.mod_path {
+        mod_path = mod.loc.mod_path;
+    }
+    Jac.add_mtir_to_map(scope, func_info, module_path=mod_path);
 }

@@ -6,6 +6,9 @@ impl JacProgram.init(
     self.mod: uni.ProgramModule = main_mod or uni.ProgramModule();
     self.py_raise_map: dict[(str, str)] = {};
     self.mtir_map: dict[(str, Info)] = {};
+    # scope -> resolved module path for coordinated MTIR eviction.
+    self._mtir_scope_modules: dict[str, str] = {};
+    self._mtir_scopes_by_module: dict[str, set[str]] = {};
     self.errors_had: list[Alert] = [];
     self.warnings_had: list[Alert] = [];
     self.type_evaluator: (TypeEvaluator | None) = None;
@@ -125,6 +128,96 @@ impl JacProgram.invalidate_module(self: JacProgram, resolved_path: str) -> None 
     for bucket in self._dependents.values() {
         bucket.discard(resolved_path);
     }
+    # Drop MTIR entries owned by this module.
+    scopes = self._mtir_scopes_by_module.pop(resolved_path, set());
+    for scope in scopes {
+        self.mtir_map.pop(scope, None);
+        self._mtir_scope_modules.pop(scope, None);
+    }
+    # Compact empty dependency buckets.
+    empty_deps = [k for (k, v) in self._dependents.items() if not v];
+    for k in empty_deps {
+        del (self._dependents[k], );
+    }
+}
+
+"""Estimate total marshaled bytecode bytes held in hub entries."""
+impl JacProgram._hub_bytecode_bytes(self: JacProgram) -> int {
+    total = 0;
+    for mod in self.mod.hub.values() {
+        bc = mod.gen.py_bytecode;
+        if isinstance(bc, bytes) {
+            total += len(bc);
+        }
+    }
+    return total;
+}
+
+"""Prune stale hub/native/MTIR/type-evaluator caches (env-gated hub bound)."""
+impl JacProgram.compact_caches(
+    self: JacProgram, max_hub_entries: (int | None) = None
+) -> int {
+    import from jaclang.memory_telemetry {
+        hub_cache_bounding_enabled,
+        hub_cache_limit
+    }
+    removed = 0;
+    stale_paths = [
+        p for p in list(self.mod.hub.keys())
+        if not self.is_hub_entry_fresh(p)
+    ];
+    for path in stale_paths {
+        self.invalidate_module(path);
+        removed += 1;
+    }
+    limit = max_hub_entries;
+    if limit is None and hub_cache_bounding_enabled() {
+        limit = hub_cache_limit();
+    }
+    if limit is not None and len(self.mod.hub) > limit {
+        overflow = len(self.mod.hub) - limit;
+        for path in list(self.mod.hub.keys())[:overflow] {
+            self.invalidate_module(path);
+            removed += 1;
+        }
+    }
+    te = self.type_evaluator;
+    if te is not None {
+        try {
+            removed += te.compact_caches();
+        } except AttributeError {
+            ;
+        }
+    }
+    return removed;
+}
+
+"""Return compiler-side retention counters for debugging."""
+impl JacProgram.memory_snapshot(self: JacProgram) -> dict[str, object] {
+    bc_bytes = 0;
+    for mod in self.mod.hub.values() {
+        pybc = mod.gen.py_bytecode;
+        if isinstance(pybc, bytes) {
+            bc_bytes += len(pybc);
+        }
+    }
+    snap: dict[str, object] = {
+        'hub_modules': len(self.mod.hub),
+        'hub_bytecode_bytes': bc_bytes,
+        'mtir_map': len(self.mtir_map),
+        'mtir_scope_modules': len(self._mtir_scope_modules),
+        'errors_had': len(self.errors_had),
+        'warnings_had': len(self.warnings_had),
+        'native_cache': len(self._native_cache),
+        'hub_cache_times': len(self._hub_cache_times),
+        'dependents': len(self._dependents),
+        'mtir_scopes_by_module': len(self._mtir_scopes_by_module)
+    };
+    te = self.type_evaluator;
+    if te is not None {
+        snap['type_evaluator'] = te.memory_stats();
+    }
+    return snap;
 }
 
 impl JacProgram._get_compiler(self: JacProgram) -> JacCompiler {

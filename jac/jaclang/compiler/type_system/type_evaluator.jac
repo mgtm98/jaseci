@@ -247,10 +247,8 @@ obj TypeEvaluator {
         _flow_pending_symbols: set[int] by postinit,
         _flow_pending_keys: set[str] by postinit,
         _module_type_cache: dict[str, types.ModuleType] = {},
-        # Cache for `_is_strict_site` keyed by `id(module)`. Maps to True
-        # when the module is Jac source (Layer 2 strict-Any applies),
-        # False when it is Python source (PEP 484 stays permissive).
-        _strict_site_cache: dict[int, bool] = {},
+        # Cache for `_is_strict_site` keyed by resolved module path.
+        _strict_site_cache: dict[str, bool] = {},
         # Temporary type overrides for isinstance narrowing within AND conditions.
         # Maps symbol id → narrowed type. Set during BoolExpr(and) evaluation so
         # that RHS operands see the narrowed type from LHS isinstance checks.
@@ -294,6 +292,8 @@ obj TypeEvaluator {
     types pinned to the old module's symbol table) after the underlying
     file changes."""
     def forget_module(resolved_path: str) -> None;
+    def compact_caches(self: TypeEvaluator, max_flow_entries: int = 50000) -> int;
+    def memory_stats(self: TypeEvaluator) -> dict[str, int];
 
     def _reattach_impl_modules(mod: uni.Module, source_path: str) -> None;
     def _resolve_from_path(from_mod: uni.ModulePath) -> Path;

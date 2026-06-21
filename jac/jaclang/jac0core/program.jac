@@ -36,6 +36,8 @@ class JacProgram {
     # the program's caches references the prior IR for `p`. This is the
     # only safe entry point for in-place cache busting.
     def invalidate_module(self: JacProgram, resolved_path: str) -> None;
+    def compact_caches(self: JacProgram, max_hub_entries: (int | None) = None) -> int;
+    def memory_snapshot(self: JacProgram) -> dict[str, object];
     def get_bytecode(self: JacProgram, full_target: str) -> (types.CodeType | None);
     def parse_str(
         self: JacProgram,

@@ -441,6 +441,37 @@ impl TypeEvaluator.forget_module(resolved_path: str) -> None {
     if resolved_path in self._module_type_cache {
         del (self._module_type_cache[resolved_path], );
     }
+    self._strict_site_cache.pop(resolved_path, None);
+    flow_keys = [
+        k for k in self._flow_node_type_cache if k[0] == resolved_path
+    ];
+    for fk in flow_keys {
+        del (self._flow_node_type_cache[fk], );
+    }
+}
+
+"""Bound flow-node memoization for long-lived language-server sessions."""
+impl TypeEvaluator.compact_caches(
+    self: TypeEvaluator, max_flow_entries: int = 50000
+) -> int {
+    removed = 0;
+    if len(self._flow_node_type_cache) > max_flow_entries {
+        overflow = len(self._flow_node_type_cache) - max_flow_entries;
+        for k in list(self._flow_node_type_cache.keys())[:overflow] {
+            del (self._flow_node_type_cache[k], );
+            removed += 1;
+        }
+    }
+    return removed;
+}
+
+"""Retention counters for compiler memory telemetry."""
+impl TypeEvaluator.memory_stats(self: TypeEvaluator) -> dict[str, int] {
+    return {
+        'module_type_cache': len(self._module_type_cache),
+        'flow_node_type_cache': len(self._flow_node_type_cache),
+        'strict_site_cache': len(self._strict_site_cache)
+    };
 }
 
 impl TypeEvaluator._resolve_importer_path(ast_node: uni.UniNode) -> (str | None) {
