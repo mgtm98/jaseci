@@ -356,6 +356,8 @@ impl NativeCompilePass._compile_and_link_native_imports(
 
     import from jaclang.jac0core.codeinfo { native_stdlib_root }
     _bundled_stdlib_root = native_stdlib_root();
+    import gc as _lk_gc;
+    _lk_linked = 0;
     queue_idx = 0;
     while queue_idx < len(work_queue) {
         (binding, cur_base_dir) = work_queue[queue_idx];
@@ -705,6 +707,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
             }
 
             main_mod.link_in(imported_mod);
+            _lk_linked += 1;
+            if _lk_linked % 20 == 0 {
+                _lk_gc.collect();
+            }
 
             mod_info = NativeModuleInfo(
                 mod_path=full_path, llvm_module=None, native_engine=None
