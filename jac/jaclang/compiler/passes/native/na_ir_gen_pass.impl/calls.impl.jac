@@ -730,6 +730,13 @@ impl NaIRGenPass._codegen_call(nd: uni.FuncCall) -> (ir.Value | None) {
     } else {
         func_name = self._get_name(nd.target);
         if func_name is None {
+            _cc_callee = self._codegen_expr(nd.target);
+            if _cc_callee is not None {
+                _cc_struct = self._closure_struct_of(_cc_callee.type);
+                if _cc_struct is not None {
+                    return self._codegen_closure_call(nd, _cc_callee, _cc_struct);
+                }
+            }
             return None;
         }
     }
