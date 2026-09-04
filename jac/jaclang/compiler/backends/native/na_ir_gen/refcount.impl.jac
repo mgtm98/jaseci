@@ -1082,7 +1082,7 @@ impl NaIRGenRefcount._emit_str_desc_helpers -> None {
     _z = ir.Constant(i32, 0);
     for (fname, len_fn) in (
         ("__jac_str_wrap", self.str_len_fn),
-        ("__jac_str_wrap_raw", self.str_len_raw_fn)
+        ("__jac_str_wrap_raw", self.str_len_fn)
     ) {
         wf = self._define_function(fname, ir.FunctionType(desc, [i8p]));
         wf.linkage = "private";
