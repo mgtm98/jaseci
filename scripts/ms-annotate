@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""ms-annotate — massif post-processor that resolves Jac native symbols.
+
+The Jac native ELF linker compiles all functions with internal LLVM linkage,
+which strips them from the binary's symbol table.  Valgrind/massif then shows
+every js_engine allocation frame as a bare address + `???` (e.g.
+`0xB605C2: ??? (in .../bin/js_engine)`) instead of a function name — making the
+heap-allocation tree unreadable.
+
+When the binary is built with JAC_NATIVE_DEBUG=1 / JAC_SYMMAP=1, the linker
+writes a <binary>.symmap file alongside the binary containing:
+
+    function_name 0x<virtual_address>
+
+This is the massif analogue of scripts/cg-annotate. It:
+  1. Reads the symmap → sorted (addr → name) table.
+  2. Reads the raw massif.out heap-tree lines
+     (`<indent>nK: <bytes> 0x<addr>: <desc>`).
+  3. For every frame address that falls in the js_engine mapped range, rewrites
+     the `???`/description with the floor-matched function name (the function
+     whose start address is the greatest <= the frame address). The binary is
+     non-PIE (fixed load at 0x400000), so massif's runtime addresses equal the
+     symmap virtual addresses directly — no relocation needed.
+  4. Writes a patched massif.out and runs `ms_print` on it (forwarding extra
+     args), so the tree reads with real Jac function names.
+
+Addresses OUTSIDE the symmap range (shared libraries, stack-unwind artifacts
+like 0x1 / 0x1FFE...) are left untouched — massif already resolves lib symbols
+via their own debug info, and bogus addresses must not be floor-matched to a
+spurious Jac symbol.
+
+Usage
+-----
+    ms-annotate <massif.out> <binary.symmap> [ms_print options...]
+
+    # Typical workflow:
+    JAC_SYMMAP=1 make scrub-engine     # builds bin/js_engine + bin/js_engine.symmap
+    valgrind --tool=massif --massif-out-file=/tmp/massif.out \\
+        --detailed-freq=1 --max-snapshots=200 \\
+        ./bin/js_engine bench/leak.js
+    scripts/ms-annotate /tmp/massif.out bin/js_engine.symmap | head -120
+
+    # Peak snapshot only (the leak's shape is clearest there):
+    scripts/ms-annotate /tmp/massif.out bin/js_engine.symmap | sed -n '/(peak)/,/^---/p'
+"""
+
+import bisect
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+# Slack added above the highest symbol so an address inside the LAST function
+# (whose start is the symmap max) still resolves. Larger than any single fn.
+_MAX_FN_SPAN = 0x20000
+
+
+def load_symmap(path):
+    """Return parallel sorted (addrs, names) lists for binary search."""
+    addrs, names = [], []
+    with open(path) as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            try:
+                addr = int(parts[1], 16)
+            except ValueError:
+                continue
+            addrs.append(addr)
+            names.append(parts[0])
+    if not addrs:
+        return [], [], 0, 0
+    paired = sorted(zip(addrs, names))
+    s_addrs, s_names = zip(*paired)
+    return list(s_addrs), list(s_names), s_addrs[0], s_addrs[-1]
+
+
+def resolve(addr, addrs, names):
+    """Name of the function containing `addr` (greatest start <= addr)."""
+    idx = bisect.bisect_right(addrs, addr) - 1
+    if idx < 0:
+        return None
+    return names[idx]
+
+
+# A massif heap-tree frame line:
+#   <indent>n<children>: <bytes> 0x<addr>: <description>
+# We capture everything up to and including the address, then the description
+# tail (which we replace when the address is a resolvable js_engine frame).
+_FRAME_RE = re.compile(r'^(\s*n\d+:\s+\d+\s+)(0x[0-9a-fA-F]+)(:\s*)(.*)$')
+
+
+def patch_massif(ms_path, addrs, names, lo, hi):
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="massif_patched_", suffix=".out")
+    replaced = 0
+    hi_slack = hi + _MAX_FN_SPAN
+    with os.fdopen(tmp_fd, 'w') as out_f, open(ms_path) as in_f:
+        for line in in_f:
+            m = _FRAME_RE.match(line)
+            if m:
+                addr = int(m.group(2), 16)
+                if lo <= addr <= hi_slack:
+                    name = resolve(addr, addrs, names)
+                    if name:
+                        # Keep the address for reference; replace the ??? tail
+                        # with the resolved Jac symbol. Preserve an "(in ...)"
+                        # suffix if massif attached one.
+                        tail = m.group(4)
+                        suffix = ""
+                        paren = tail.find(' (in ')
+                        if paren != -1:
+                            suffix = tail[paren:]
+                        line = f"{m.group(1)}{m.group(2)}{m.group(3)}{name}{suffix}\n"
+                        replaced += 1
+            out_f.write(line)
+    print(f"[ms-annotate] Resolved {replaced} js_engine frame address(es).",
+          file=sys.stderr)
+    return tmp_path
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+    ms_path, symmap_path = sys.argv[1], sys.argv[2]
+    extra = sys.argv[3:]
+    if not os.path.exists(ms_path):
+        print(f"error: massif file not found: {ms_path}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.exists(symmap_path):
+        print(f"error: symmap not found: {symmap_path}", file=sys.stderr)
+        print("  Rebuild with: JAC_SYMMAP=1 make scrub-engine", file=sys.stderr)
+        sys.exit(1)
+
+    addrs, names, lo, hi = load_symmap(symmap_path)
+    print(f"[ms-annotate] Loaded {len(names)} symbol(s) "
+          f"(range 0x{lo:X}-0x{hi:X}) from {symmap_path}", file=sys.stderr)
+
+    tmp_path = patch_massif(ms_path, addrs, names, lo, hi)
+    try:
+        result = subprocess.run(["ms_print"] + extra + [tmp_path])
+        sys.exit(result.returncode)
+    finally:
+        os.unlink(tmp_path)
+
+
+if __name__ == "__main__":
+    main()

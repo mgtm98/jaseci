@@ -172,9 +172,8 @@ impl NaIRGenRefcount._emit_rc_helpers -> None {
     total = b.and_(total, ir.Constant(i64, -16), name="total.align");
     raw = b.call(self.malloc_fn, [total], name="raw");
 
-    _aid_old = b.atomic_rmw(
-        "add", alloc_id_gv, ir.Constant(i64, 1), ordering="monotonic"
-    );
+    _aid_old = b.load(alloc_id_gv, name="aid.old");
+    b.store(b.add(_aid_old, ir.Constant(i64, 1), name="aid.new"), alloc_id_gv);
     _aid_ptr = b.bitcast(raw, i64_ptr, name="aid.ptr");
     _magic_base = ir.Constant(i64, HDR_MAGIC_SHIFT_BASE);
     _aid_lo32 = b.and_(_aid_old, ir.Constant(i64, 4294967295), name="aid.lo");
@@ -338,10 +337,9 @@ impl NaIRGenRefcount._emit_rc_helpers -> None {
     b.cbranch(_mc_ok_r, do_bb, done_bb);
     b = ir.IRBuilder(do_bb);
 
-    _rmw_old_r = b.atomic_rmw(
-        "add", rc_ptr, ir.Constant(i64, 1), ordering="monotonic", name="rmw.old"
-    );
+    _rmw_old_r = b.load(rc_ptr, name="rmw.old");
     new_rc = b.add(_rmw_old_r, ir.Constant(i64, 1), name="new.rc");
+    b.store(new_rc, rc_ptr);
     if self._rc_debug_codegen {
         log_retain_bb = self._emit_retain_log_bb(
             retain_fn, done_bb, retain_fn.args[0], old_rc, new_rc
@@ -414,10 +412,9 @@ impl NaIRGenRefcount._emit_rc_helpers -> None {
     b.cbranch(is_dbl, log_dbl_free_bb, do_bb);
     b = ir.IRBuilder(do_bb);
 
-    _rmw_old = b.atomic_rmw(
-        "sub", rc_ptr, ir.Constant(i64, 1), ordering="acq_rel", name="rmw.old"
-    );
+    _rmw_old = b.load(rc_ptr, name="rmw.old");
     new_rc = b.sub(_rmw_old, ir.Constant(i64, 1), name="new.rc");
+    b.store(new_rc, rc_ptr);
     is_zero = b.icmp_unsigned("==", _rmw_old, ir.Constant(i64, 1), name="is.zero");
     dbg_rel_bb = self._emit_release_log_bb(
         release_fn, done_bb, release_fn.args[0], old_rc, new_rc
@@ -623,6 +620,12 @@ impl NaIRGenRefcount._release_owned_args(
     for _arg in call_args {
         if isinstance(_arg.type, ir.PointerType) and self._is_owned(_arg) {
             self._emit_rc_release_simple(_arg, op=op, loc="");
+        } elif (
+            self?.jacval_type is not None
+            and _arg.type == self.jacval_type
+            and self._is_owned(_arg)
+        ) {
+            self.builder.call(self._emit_jacval_release_fn(), [_arg]);
         }
     }
 }
@@ -1389,16 +1392,43 @@ impl NaIRGenRefcount._emit_struct_drop_fn(type_name: str) -> (ir.Function | None
     self.struct_drop_fns[type_name] = fn;
 
     entry_bb = fn.append_basic_block("entry");
+    owns_bb = fn.append_basic_block("region.check");
     body_bb = fn.append_basic_block("body");
     done_bb = fn.append_basic_block("done");
     b = ir.IRBuilder(entry_bb);
     is_null = b.icmp_unsigned(
         "==", fn.args[0], ir.Constant(i8p, None), name="drop.null"
     );
-    b.cbranch(is_null, done_bb, body_bb);
+    b.cbranch(is_null, done_bb, owns_bb);
+
+    b.position_at_end(owns_bb);
+    _owned = b.call(
+        self._region_kernel_fn("__jac_region_owns"),
+        [b.ptrtoint(fn.args[0], i64, name="drop.i64")],
+        name="drop.owns"
+    );
+    b.cbranch(
+        b.icmp_signed("!=", _owned, ir.Constant(i64, 0), name="drop.in.region"),
+        done_bb,
+        body_bb
+    );
 
     b.position_at_end(body_bb);
     _dobj = b.bitcast(fn.args[0], struct_type.as_pointer(), name="drop.obj");
+    self._emit_nogc_field_drops(b, type_name, _dobj);
+    free_fn = self._get_or_declare_extern("free", ir.VoidType(), [i8p]);
+    b.call(free_fn, [fn.args[0]]);
+    b.branch(done_bb);
+
+    b.position_at_end(done_bb);
+    b.ret_void();
+    return fn;
+}
+
+impl NaIRGenRefcount._emit_nogc_field_drops(
+    b: ir.IRBuilder, type_name: str, _dobj: ir.Value
+) -> None {
+    i8p = ir.IntType(8).as_pointer();
     _hook = self.struct_drop_hooks.get(type_name)
         or self.func_symtab.get(f"{type_name}.drop");
     if _hook is not None {
@@ -1453,13 +1483,6 @@ impl NaIRGenRefcount._emit_struct_drop_fn(type_name: str) -> (ir.Function | None
         fv_i8 = b.bitcast(fv, i8p, name=f"drop.{fname}.i8");
         b.call(_fld_drop, [fv_i8]);
     }
-    free_fn = self._get_or_declare_extern("free", ir.VoidType(), [i8p]);
-    b.call(free_fn, [fn.args[0]]);
-    b.branch(done_bb);
-
-    b.position_at_end(done_bb);
-    b.ret_void();
-    return fn;
 }
 
 impl NaIRGenRefcount._emit_container_drop_fn(cont_name: str) -> (ir.Function | None) {
@@ -2000,6 +2023,7 @@ impl NaIRGenRefcount._emit_scope_cleanup(
     if self._builder is None {
         return;
     }
+    self._emit_region_leaves(len(self.region_open_stack));
     _region_handles: list = [];
     for (var_name, alloca) in self.local_vars.items() {
         if var_name == "self" {
@@ -2026,6 +2050,14 @@ impl NaIRGenRefcount._emit_scope_cleanup(
                 val = self.builder.load(alloca, name=f"cleanup.{var_name}");
                 self._nogc_str_free_owned(val);
                 self.builder.store(ir.Constant(alloca.type.pointee, None), alloca);
+            }
+            continue;
+        }
+        if var_name in self.region_handle_vars
+            and isinstance(alloca.type, ir.PointerType)
+            and self._opt_ptr_payload_of(alloca.type.pointee) is not None {
+            if var_name != skip_var {
+                _region_handles.append((var_name, alloca));
             }
             continue;
         }
@@ -2099,6 +2131,12 @@ impl NaIRGenRefcount._emit_loop_iter_cleanup(body_locals: list, loc: str = "") -
                 self._nogc_str_free_owned(val);
                 self.builder.store(ir.Constant(alloca.type.pointee, None), alloca);
             }
+            continue;
+        }
+        if var_name in self.region_handle_vars
+            and isinstance(alloca.type, ir.PointerType)
+            and self._opt_ptr_payload_of(alloca.type.pointee) is not None {
+            _region_handles.append((var_name, alloca));
             continue;
         }
         if not self._nogc_headerless()

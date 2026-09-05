@@ -84,6 +84,30 @@ def na_coverage_end -> dict {
     return snap;
 }
 
+"""Modules that preferred native but were demoted to the server codespace.
+
+Returns a list of (module_path, outcome, code, detail) for every recorded
+module whose outcome is 'demoted' or 'ice'. Used by nacompile --strict to
+turn a silent whole-module demotion into a hard build error (native_demoted_
+ir_symbols only catches per-function demotion *within* modules that lowered,
+not modules that never entered the native closure)."""
+def native_demoted_modules -> list[tuple[str, str, str, str]] {
+    out: list[tuple[str, str, str, str]] = [];
+    for (path, rec) in _na_coverage.items() {
+        if rec.get('outcome') in ('demoted', 'ice') {
+            out.append(
+                (
+                    path,
+                    rec.get('outcome') or '',
+                    rec.get('code') or '',
+                    rec.get('detail') or ''
+                )
+            );
+        }
+    }
+    return sorted(out);
+}
+
 def na_demotion_note(
     file_path: str, first_err: str, is_ice: bool
 ) -> tuple[(str, str)] {
