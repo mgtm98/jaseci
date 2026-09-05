@@ -106,7 +106,11 @@ impl NaIRGenDebug.post_transform -> None {
             stem = os.path.splitext(os.path.basename(src_path))[0];
             ir_dir = str(get_native_cache_dir(src_path));
             os.makedirs(ir_dir, exist_ok=True);
-            auto_ir_path = os.path.join(ir_dir, stem + ".ll");
+            import hashlib as _hashlib;
+            path_hash = _hashlib.sha256(
+                os.path.abspath(src_path).encode()
+            ).hexdigest()[:8];
+            auto_ir_path = os.path.join(ir_dir, f"{stem}.{path_hash}.ll");
             with open(auto_ir_path, "w") as f {
                 f.write(ir_str);
             }

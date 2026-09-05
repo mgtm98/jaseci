@@ -10,6 +10,21 @@ import os;
 
 obj NaIRGenCalls(NaIRGenState) {
     def _codegen_call(nd: uni.FuncCall) -> (ir.Value | None);
+    def _try_emit_musttail_return(nd: uni.ReturnStmt) -> bool;
+    def _try_emit_musttail_expr(
+        nd: uni.ReturnStmt, expr: (uni.UniNode | None)
+    ) -> bool;
+
+    def _try_emit_musttail_ternary(
+        nd: uni.ReturnStmt, e: (uni.UniNode | None)
+    ) -> bool;
+
+    def _tailcall_enabled -> bool;
+    def _tailcall_release_plan -> (object | None);
+    def _tailcall_arg_pure(e: uni.UniNode) -> bool;
+    def _tailcall_collect_arg_names(e: uni.UniNode, names: set) -> None;
+    def _tailcall_skip(fn_name: str, nd: uni.ReturnStmt, reason: str) -> None;
+    def _tailcall_unwrap(e: (uni.UniNode | None)) -> (uni.UniNode | None);
     def _codegen_sized_builtin_call(
         nd: uni.FuncCall, func_name: (str | None), call_kind: str
     ) -> (ir.Value | None);
@@ -35,6 +50,16 @@ obj NaIRGenCalls(NaIRGenState) {
     ) -> (ir.Value | None);
 
     def _emit_intrinsic_bits_float(
+        nd: uni.FuncCall, intr: IntrinsicEntry, args: list
+    ) -> (ir.Value | None);
+
+    def _intrinsic_mem_width(intr: IntrinsicEntry) -> int;
+
+    def _emit_intrinsic_mem_peek(
+        nd: uni.FuncCall, intr: IntrinsicEntry, args: list
+    ) -> (ir.Value | None);
+
+    def _emit_intrinsic_mem_poke(
         nd: uni.FuncCall, intr: IntrinsicEntry, args: list
     ) -> (ir.Value | None);
 

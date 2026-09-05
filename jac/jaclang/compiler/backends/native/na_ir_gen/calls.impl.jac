@@ -1148,7 +1148,9 @@ impl NaIRGenCalls._codegen_intrinsic(
     _emitters: dict[IntrinsicDispatch, Callable[..., (ir.Value | None)]] = {
         IntrinsicDispatch.RC_RUNTIME: self._emit_intrinsic_rc_runtime,
         IntrinsicDispatch.FLOAT_BITS: self._emit_intrinsic_float_bits,
-        IntrinsicDispatch.BITS_FLOAT: self._emit_intrinsic_bits_float
+        IntrinsicDispatch.BITS_FLOAT: self._emit_intrinsic_bits_float,
+        IntrinsicDispatch.MEM_PEEK: self._emit_intrinsic_mem_peek,
+        IntrinsicDispatch.MEM_POKE: self._emit_intrinsic_mem_poke
     };
     handler = _emitters.get(intr.dispatch);
     if handler is None {
@@ -1238,6 +1240,64 @@ impl NaIRGenCalls._emit_intrinsic_bits_float(
         return None;
     }
     return self.builder.bitcast(arg_val, ir.DoubleType(), name="bits_float");
+}
+
+impl NaIRGenCalls._intrinsic_mem_width(intr: IntrinsicEntry) -> int {
+    if intr.name.endswith("u8") {
+        return 8;
+    }
+    if intr.name.endswith("u16") {
+        return 16;
+    }
+    if intr.name.endswith("u32") {
+        return 32;
+    }
+    return 64;
+}
+
+impl NaIRGenCalls._emit_intrinsic_mem_peek(
+    nd: uni.FuncCall, intr: IntrinsicEntry, args: list
+) -> (ir.Value | None) {
+    addr_val = self._intrinsic_operand(nd, intr, args[0], intr.param_specs[0]);
+    if addr_val is None {
+        return None;
+    }
+    width = self._intrinsic_mem_width(intr);
+    cell_ty = ir.IntType(width);
+    ptr_val = self.builder.inttoptr(
+        addr_val, cell_ty.as_pointer(), name="peek.ptr"
+    );
+    # align=1: peeks target arbitrary byte offsets in FFI buffers; without it
+    # LLVM may assume natural alignment and miscompile at higher opt levels.
+    loaded = self.builder.load(ptr_val, name="peek.val", align=1);
+    if width == 64 {
+        return loaded;
+    }
+    return self.builder.zext(loaded, ir.IntType(64), name="peek.zext");
+}
+
+impl NaIRGenCalls._emit_intrinsic_mem_poke(
+    nd: uni.FuncCall, intr: IntrinsicEntry, args: list
+) -> (ir.Value | None) {
+    addr_val = self._intrinsic_operand(nd, intr, args[0], intr.param_specs[0]);
+    if addr_val is None {
+        return None;
+    }
+    store_val = self._intrinsic_operand(nd, intr, args[1], intr.param_specs[1]);
+    if store_val is None {
+        return None;
+    }
+    width = self._intrinsic_mem_width(intr);
+    cell_ty = ir.IntType(width);
+    ptr_val = self.builder.inttoptr(
+        addr_val, cell_ty.as_pointer(), name="poke.ptr"
+    );
+    if width != 64 {
+        store_val = self.builder.trunc(store_val, cell_ty, name="poke.trunc");
+    }
+    # align=1: see _emit_intrinsic_mem_peek.
+    self.builder.store(store_val, ptr_val, align=1);
+    return None;
 }
 
 impl NaIRGenCalls._codegen_call(nd: uni.FuncCall) -> (ir.Value | None) {
@@ -3371,4 +3431,537 @@ impl NaIRGenCalls._codegen_sized_builtin_call(
         return self._codegen_wrapping(nd, func_name);
     }
     return None;
+}
+
+impl NaIRGenCalls._tailcall_enabled -> bool {
+    if self._tailcall_on is None {
+        self._tailcall_on = os.environ.get("JAC_TAILCALL", "1") != "0";
+    }
+    return bool(self._tailcall_on);
+}
+
+impl NaIRGenCalls._tailcall_release_plan -> (object | None) {
+    if len(self.closure_cell_handles) > 0 {
+        return None;
+    }
+    plan: list = [];
+    for (var_name, alloca) in self.local_vars.items() {
+        if var_name == "self" {
+            continue;
+        }
+        if var_name in self.param_vars {
+            continue;
+        }
+        if var_name in self.nogc_no_free_vars {
+            continue;
+        }
+        if var_name in self.closure_cell_handles {
+            continue;
+        }
+        if isinstance(alloca.type, ir.PointerType)
+            and isinstance(alloca.type.pointee, ir.PointerType) {
+            if var_name in self.region_handle_vars {
+                return None;
+            }
+            plan.append((var_name, alloca));
+            continue;
+        }
+
+        if isinstance(alloca.type, ir.PointerType) {
+            if self._nogc_headerless()
+                and self._str_desc_ty is not None
+                and alloca.type.pointee == self._str_desc_ty
+                and var_name in self.nogc_owned_str_vars {
+                return None;
+            }
+            if not self._nogc_headerless()
+                and self._opt_ptr_payload_of(alloca.type.pointee) is not None {
+                return None;
+            }
+        }
+    }
+    return plan;
+}
+
+impl NaIRGenCalls._tailcall_arg_pure(e: uni.UniNode) -> bool {
+    if isinstance(e, uni.Name) {
+        return True;
+    }
+    if isinstance(e, (uni.Int, uni.Float, uni.Bool, uni.String)) {
+        return True;
+    }
+    if isinstance(e, uni.UnaryExpr) {
+        return self._tailcall_arg_pure(e.operand) if e.operand is not None else False;
+    }
+    if isinstance(e, uni.BinaryExpr) {
+        if e.left is None or e.right is None {
+            return False;
+        }
+        return self._tailcall_arg_pure(e.left) and self._tailcall_arg_pure(e.right);
+    }
+    if isinstance(e, uni.AtomUnit) {
+        return self._tailcall_arg_pure(e.value) if e.value is not None else False;
+    }
+    if isinstance(e, uni.CfgExpr) {
+        return self._tailcall_arg_pure(e.expr) if e.expr is not None else False;
+    }
+    return False;
+}
+
+impl NaIRGenCalls._tailcall_unwrap(e: (uni.UniNode | None)) -> (uni.UniNode | None) {
+    while True {
+        if isinstance(e, uni.AtomUnit) and e.value is not None {
+            e = e.value;
+            continue;
+        }
+        if isinstance(e, uni.CfgExpr) and e.expr is not None {
+            e = e.expr;
+            continue;
+        }
+        return e;
+    }
+}
+
+impl NaIRGenCalls._tailcall_collect_arg_names(e: uni.UniNode, names: set) -> None {
+    if isinstance(e, uni.Name) {
+        names.add(e.value);
+        return;
+    }
+    if isinstance(e, uni.UnaryExpr) and e.operand is not None {
+        self._tailcall_collect_arg_names(e.operand, names);
+        return;
+    }
+    if isinstance(e, uni.BinaryExpr) {
+        if e.left is not None {
+            self._tailcall_collect_arg_names(e.left, names);
+        }
+        if e.right is not None {
+            self._tailcall_collect_arg_names(e.right, names);
+        }
+        return;
+    }
+    if isinstance(e, uni.AtomUnit) and e.value is not None {
+        self._tailcall_collect_arg_names(e.value, names);
+        return;
+    }
+    if isinstance(e, uni.CfgExpr) and e.expr is not None {
+        self._tailcall_collect_arg_names(e.expr, names);
+    }
+}
+
+impl NaIRGenCalls._tailcall_skip(
+    fn_name: str, nd: uni.ReturnStmt, reason: str
+) -> None {
+    if os.environ.get("JAC_TAILCALL_DEBUG", "") != "2" {
+        return;
+    }
+    import sys as _tc_sys;
+    _tl = nd.loc.first_line if nd.loc else 0;
+    _cf = self.builder.function.name if self._builder is not None else "?";
+    _tc_sys.stderr.write(
+        f"[tailcall] skip {fn_name} <- {_cf} at line {_tl}: {reason}\n"
+    );
+}
+
+impl NaIRGenCalls._try_emit_musttail_return(nd: uni.ReturnStmt) -> bool {
+    return self._try_emit_musttail_expr(nd, nd.expr);
+}
+
+impl NaIRGenCalls._try_emit_musttail_ternary(
+    nd: uni.ReturnStmt, e: (uni.UniNode | None)
+) -> bool {
+    if not self._tailcall_enabled() {
+        return False;
+    }
+    e = self._tailcall_unwrap(e);
+    if not isinstance(e, uni.IfElseExpr) {
+        return False;
+    }
+    _then_arm = self._tailcall_unwrap(e.value);
+    _else_arm = self._tailcall_unwrap(e.else_value);
+    _arm_shapes = (uni.FuncCall, uni.IfElseExpr);
+    if not (isinstance(_then_arm, _arm_shapes) or isinstance(_else_arm, _arm_shapes)) {
+        return False;
+    }
+    cond = self._codegen_expr(e.condition);
+    if cond is None {
+        return False;
+    }
+    cond = self._to_bool(cond);
+    _fn = self.builder.function;
+    _then_bb = _fn.append_basic_block(name="tail.ternary.then");
+    _else_bb = _fn.append_basic_block(name="tail.ternary.else");
+    self.builder.cbranch(cond, _then_bb, _else_bb);
+    self.builder.position_at_end(_then_bb);
+    if not self._try_emit_musttail_expr(nd, _then_arm)
+        and not self._try_emit_musttail_ternary(nd, _then_arm) {
+        self._emit_return_value(nd, _then_arm);
+    }
+    self.builder.position_at_end(_else_bb);
+    if not self._try_emit_musttail_expr(nd, _else_arm)
+        and not self._try_emit_musttail_ternary(nd, _else_arm) {
+        self._emit_return_value(nd, _else_arm);
+    }
+    return True;
+}
+
+impl NaIRGenCalls._try_emit_musttail_expr(
+    nd: uni.ReturnStmt, expr: (uni.UniNode | None)
+) -> bool {
+    if not self._tailcall_enabled() {
+        return False;
+    }
+    call_nd = self._tailcall_unwrap(expr);
+    if not isinstance(call_nd, uni.FuncCall) {
+        return False;
+    }
+    _cand = self._get_name(call_nd.target) or "?";
+    if call_nd.call_kind == "method" {
+        self._tailcall_skip(_cand, nd, "method call (dynamic receiver dispatch)");
+        return False;
+    }
+    for p in (call_nd.params or []) {
+        if isinstance(p, uni.KWPair) {
+            self._tailcall_skip(_cand, nd, "keyword arguments");
+            return False;
+        }
+    }
+    if call_nd.call_kind == "builtin" {
+        self._tailcall_skip(_cand, nd, "builtin call");
+        return False;
+    }
+    func_name = self._get_name(call_nd.target);
+    if func_name is None {
+        self._tailcall_skip(_cand, nd, "unresolvable callee name");
+        return False;
+    }
+
+    if func_name.startswith("__") {
+        self._tailcall_skip(func_name, nd, "compiler intrinsic");
+        return False;
+    }
+    import from jaclang.compiler.intrinsic_registry { INTRINSIC_REGISTRY }
+    import from jaclang.compiler.type_registry { JAC_TYPE_REGISTRY }
+    import from jaclang.compiler.symbol_utils {
+        erased_identity_call_arg,
+        is_erased_field_marker
+    }
+    if INTRINSIC_REGISTRY.get(func_name) is not None {
+        self._tailcall_skip(func_name, nd, "compiler intrinsic (registry)");
+        return False;
+    }
+    if JAC_TYPE_REGISTRY.is_sized(func_name) or func_name.startswith("wrapping_") {
+        self._tailcall_skip(func_name, nd, "sized/wrapping builtin");
+        return False;
+    }
+    if erased_identity_call_arg(call_nd) is not None
+        or is_erased_field_marker(call_nd) {
+        self._tailcall_skip(func_name, nd, "erased-generic call marker");
+        return False;
+    }
+    if func_name in self.generic_fns {
+        self._tailcall_skip(func_name, nd, "generic function");
+        return False;
+    }
+    func = self.func_symtab.get(func_name);
+    clos_alloca: (object | None) = None;
+    clos_struct: (str | None) = None;
+    if func is None {
+        _ca = self.local_vars.get(func_name);
+        if _ca is not None and isinstance(_ca.type, ir.PointerType) {
+            _cn = self._closure_struct_of(_ca.type.pointee);
+            if _cn is not None {
+                clos_alloca = _ca;
+                clos_struct = _cn;
+            }
+        }
+        if clos_alloca is None {
+            self._tailcall_skip(func_name, nd, "callee not in module symtab");
+            return False;
+        }
+    }
+
+    if func is not None
+        and isinstance(call_nd.target, uni.Name)
+        and call_nd.target.sym_name in self.arch_ast_map {
+        self._tailcall_skip(func_name, nd, "archetype constructor");
+        return False;
+    }
+    if func is not None and func_name in self.clib_extern_names {
+        self._tailcall_skip(func_name, nd, "C extern");
+        return False;
+    }
+
+    if self._gen_ctx is not None {
+        self._tailcall_skip(func_name, nd, "inside generator machinery");
+        return False;
+    }
+
+    if len(self._gen_try_stack) > 0 {
+        self._tailcall_skip(
+            func_name, nd, "inside generator try (frame must stay armed)"
+        );
+        return False;
+    }
+    _anc = nd.parent;
+    while _anc is not None
+        and not isinstance(_anc, (uni.Ability, uni.ImplDef, uni.Module)) {
+        if isinstance(_anc, uni.TryStmt) {
+            self._tailcall_skip(
+                func_name, nd, "inside try (exception frame must stay armed)"
+            );
+            return False;
+        }
+        _anc = _anc.parent;
+    }
+
+    cur_fn = self.builder.function;
+    clos_fnty_env: (object | None) = None;
+    clos_raw_fnty: (object | None) = None;
+    if func is not None {
+        if str(func.function_type) != str(cur_fn.function_type) {
+            self._tailcall_skip(
+                func_name,
+                nd,
+                f"prototype mismatch: {func.function_type} vs {cur_fn.function_type}"
+            );
+            return False;
+        }
+
+        if func.function_type.var_arg or cur_fn.function_type.var_arg {
+            self._tailcall_skip(func_name, nd, "varargs");
+            return False;
+        }
+    } else {
+        (_cst, clos_fnty_env) = self.closure_sig_registry[clos_struct];
+        _declared = list(clos_fnty_env.args)[:-1];
+        clos_raw_fnty = ir.FunctionType(clos_fnty_env.return_type, _declared);
+        if str(clos_raw_fnty) != str(cur_fn.function_type) {
+            self._tailcall_skip(
+                func_name,
+                nd,
+                f"indirect prototype mismatch: {clos_raw_fnty} vs "
+                    + f"{cur_fn.function_type}"
+            );
+            return False;
+        }
+        if clos_fnty_env.var_arg or cur_fn.function_type.var_arg {
+            self._tailcall_skip(func_name, nd, "varargs");
+            return False;
+        }
+    }
+
+    try {
+        if "wasm" in str(self.llvm_module.triple or "") {
+            self._tailcall_skip(func_name, nd, "wasm target");
+            return False;
+        }
+    } except Exception { }
+
+    plan = self._tailcall_release_plan();
+    if plan is None {
+        self._tailcall_skip(
+            func_name, nd, "epilogue blocked (closure cells or region handles)"
+        );
+        return False;
+    }
+
+    arg_names: set = set();
+    for p in (call_nd.params or []) {
+        if not self._tailcall_arg_pure(p) {
+            self._tailcall_skip(func_name, nd, "argument not provably pure");
+            return False;
+        }
+        self._tailcall_collect_arg_names(p, arg_names);
+    }
+
+    if len(plan) > 0 {
+        plan_names: set = set();
+        for (pn, _pa) in plan {
+            plan_names.add(pn);
+        }
+        for an in arg_names {
+            if an in plan_names {
+                self._tailcall_skip(
+                    func_name,
+                    nd,
+                    f"arg '{an}' is the owned local being handed off "
+                        + "(keep-alive epilogue wins)"
+                );
+                return False;
+            }
+            if an in self.param_vars {
+                continue;
+            }
+            a_slot = self.local_vars.get(an);
+            if a_slot is not None
+                and isinstance(a_slot.type, ir.PointerType)
+                and isinstance(a_slot.type.pointee, ir.PointerType) {
+                self._tailcall_skip(
+                    func_name,
+                    nd,
+                    f"arg '{an}' is a pointer borrow (may alias a released local)"
+                );
+                return False;
+            }
+        }
+    }
+
+    for an in arg_names {
+        if an in self.param_vars {
+            continue;
+        }
+        h_slot = self.local_vars.get(an);
+        if h_slot is None or not isinstance(h_slot.type, ir.PointerType) {
+            continue;
+        }
+        if (self._str_desc_ty is not None and h_slot.type.pointee == self._str_desc_ty)
+            or self._opt_ptr_payload_of(h_slot.type.pointee) is not None {
+            self._tailcall_skip(
+                func_name,
+                nd,
+                f"arg '{an}' is an owned RC-carrying local (handoff — "
+                    + "keep-alive epilogue wins)"
+            );
+            return False;
+        }
+    }
+
+    if clos_alloca is not None {
+        _i32 = ir.IntType(32);
+        _i8p = ir.IntType(8).as_pointer();
+        _declared = list(clos_fnty_env.args)[:-1];
+        _iraw: list = [];
+        for p in (call_nd.params or []) {
+            _iv = self._codegen_expr(p);
+            if _iv is not None {
+                _iraw.append(_iv);
+            }
+        }
+        _icoerced: list = [];
+        for (_ii, _ia) in enumerate(_iraw) {
+            if _ii < len(_declared) {
+                _icoerced.append(self._coerce_type(_ia, _declared[_ii]));
+            } else {
+                _icoerced.append(_ia);
+            }
+        }
+        while len(_icoerced) < len(_declared) {
+            _icoerced.append(self._default_arg_fallback(_declared[len(_icoerced)]));
+        }
+        for _ia in _icoerced {
+            if isinstance(_ia.type, ir.PointerType) and self._is_owned(_ia) {
+                self._tailcall_skip(func_name, nd, "indirect owned argument");
+                return False;
+            }
+        }
+        _cv = self.builder.load(clos_alloca, name=f"tail.clos.{func_name}");
+        _fn_slot = self.builder.gep(
+            _cv, [ir.Constant(_i32, 0), ir.Constant(_i32, 0)], name="tail.icall.fn.slot"
+        );
+        _fn_i64 = self.builder.load(_fn_slot, name="tail.icall.fn.i64");
+        _env_slot = self.builder.gep(
+            _cv,
+            [ir.Constant(_i32, 0), ir.Constant(_i32, 1)],
+            name="tail.icall.env.slot"
+        );
+        _env = self.builder.load(_env_slot, name="tail.icall.env");
+        _env_null = self.builder.icmp_unsigned(
+            "==", _env, ir.Constant(_env.type, None), name="tail.icall.envnull"
+        );
+        _fast_bb = cur_fn.append_basic_block(name="tail.icall");
+        _slow_bb = cur_fn.append_basic_block(name="tail.icall.slow");
+        self.builder.cbranch(_env_null, _fast_bb, _slow_bb);
+        self.builder.position_at_end(_fast_bb);
+        for (pn, pa) in plan {
+            _pv = self.builder.load(pa, name=f"tail.cleanup.{pn}");
+            self._emit_rc_release_typed(_pv, op="scope_exit", loc="tailcall.icall");
+            self.builder.store(ir.Constant(pa.type.pointee, None), pa);
+        }
+        _raw_fn = self.builder.inttoptr(
+            _fn_i64, clos_raw_fnty.as_pointer(), name="tail.icall.raw"
+        );
+        if os.environ.get("JAC_TAILCALL_DEBUG", "") in ("1", "2") {
+            import sys as _tc_sys;
+            _tl = nd.loc.first_line if nd.loc else 0;
+            _tc_sys.stderr.write(
+                f"[tailcall] musttail-indirect {func_name} <- {cur_fn.name} "
+                    + f"at line {_tl} (env-null guarded, "
+                    + f"reordered_releases={len(plan)})\n"
+            );
+        }
+        if isinstance(clos_raw_fnty.return_type, ir.VoidType) {
+            self.builder.call(_raw_fn, _icoerced, tail="musttail");
+            self.builder.ret_void();
+        } else {
+            _tres = self.builder.call(
+                _raw_fn, _icoerced, tail="musttail", name=f"tcall.{func_name}"
+            );
+            self.builder.ret(_tres);
+        }
+        self.builder.position_at_end(_slow_bb);
+        _env_fn = self.builder.inttoptr(
+            _fn_i64, clos_fnty_env.as_pointer(), name="tail.icall.envfn"
+        );
+        _sres: (object | None) = None;
+        if isinstance(clos_fnty_env.return_type, ir.VoidType) {
+            self.builder.call(_env_fn, _icoerced + [_env]);
+        } else {
+            _sres = self.builder.call(
+                _env_fn, _icoerced + [_env], name=f"call.{func_name}"
+            );
+        }
+        self._emit_scope_cleanup(skip_var=None, loc="tailcall.icall.slow");
+        if isinstance(cur_fn.function_type.return_type, ir.VoidType) {
+            self.builder.ret_void();
+        } else {
+            self.builder.ret(_sres);
+        }
+        return True;
+    }
+    args = self._codegen_bound_args(call_nd, func, self_offset=0);
+    coerced: list[ir.Value] = [];
+    saw_owned = False;
+    for (i, a) in enumerate(args) {
+        _c = self._coerce_type(a, func.args[i].type) if i < len(func.args) else a;
+        if isinstance(_c.type, ir.PointerType) and self._is_owned(_c) {
+            saw_owned = True;
+        }
+        coerced.append(_c);
+    }
+    if saw_owned {
+        _res = self.builder.call(func, coerced, name=f"call.{func_name}");
+        self._release_owned_args(coerced, op="call_arg");
+        self._emit_scope_cleanup(skip_var=None, loc="tailcall.degrade");
+        if isinstance(cur_fn.function_type.return_type, ir.VoidType) {
+            self.builder.ret_void();
+        } else {
+            self.builder.ret(_res);
+        }
+        return True;
+    }
+
+    for (pn, pa) in plan {
+        _pv = self.builder.load(pa, name=f"tail.cleanup.{pn}");
+        self._emit_rc_release_typed(_pv, op="scope_exit", loc="tailcall.reorder");
+        self.builder.store(ir.Constant(pa.type.pointee, None), pa);
+    }
+    if os.environ.get("JAC_TAILCALL_DEBUG", "") in ("1", "2") {
+        import sys as _tc_sys;
+        _tl = nd.loc.first_line if nd.loc else 0;
+        _rr = f" (reordered_releases={len(plan)})" if len(plan) > 0 else "";
+        _tc_sys.stderr.write(
+            f"[tailcall] musttail {func_name} <- {cur_fn.name} at line {_tl}{_rr}\n"
+        );
+    }
+    if isinstance(cur_fn.function_type.return_type, ir.VoidType) {
+        self.builder.call(func, coerced, tail="musttail");
+        self.builder.ret_void();
+    } else {
+        _tres = self.builder.call(
+            func, coerced, tail="musttail", name=f"tcall.{func_name}"
+        );
+        self.builder.ret(_tres);
+    }
+    return True;
 }

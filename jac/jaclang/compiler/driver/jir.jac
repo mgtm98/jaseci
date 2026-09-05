@@ -394,7 +394,15 @@ def _full_env_fingerprint(source_path: str) -> str {
 
 def module_env_fingerprint(source_path: str) -> str {
     h = hashlib.sha256();
-    if is_stub_like_path(source_path) {
+    # Compiler-internal modules get the toolchain-only key: their bytecode does
+    # not depend on project/codegen env (client kind, placement pins, or the
+    # JAC_NATIVE_TARGET / opt-level env defaults folded into
+    # effective_codegen_fingerprint). Keying them on the full env caused
+    # perpetual cache churn: nacompile SETS os.environ["JAC_NATIVE_TARGET"]
+    # mid-run, so internal modules lazily compiled before vs after that
+    # mutation cached under two different fingerprints and invalidated each
+    # other on every build ("Setting up Jac for first use" on every run).
+    if is_stub_like_path(source_path) or is_compiler_source_path(source_path) {
         h.update(_toolchain_env_fingerprint().encode());
     } else {
         h.update(_full_env_fingerprint(source_path).encode());
@@ -752,8 +760,8 @@ def scrub_cache_dirs(root_dir: str) -> int {
     import glob as _glob;
     import shutil as _shutil;
     patterns = [
-        os.path.join(root_dir, "**", ".jac", "cache"),
-        os.path.join(root_dir, "**", ".jac_ir")
+        os.path.join(root_dir, "**", ".jac", "cache", "**", "native"),
+        os.path.join(root_dir, "**", ".jac_ir", "**", "native")
     ];
     removed = 0;
     seen: set[str] = set();

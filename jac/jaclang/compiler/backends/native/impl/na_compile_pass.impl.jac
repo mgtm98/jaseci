@@ -4,6 +4,43 @@ def _mod_functions(mod: ModuleRef) -> list[ValueRef] {
     return list(fns);
 }
 
+"""Emit a native-import cache-decision line when JAC_NA_CACHE_DEBUG is set.
+
+Each linked native dependency logs whether its compiled IR was served from
+cache (HIT), recompiled (MISS), or a cache entry was rejected as stale
+(STALE). Off by default; set JAC_NA_CACHE_DEBUG=1 to enable."""
+def _na_cache_debug(msg: str) -> None {
+    import os as _dbg_os;
+    if not _dbg_os.environ.get("JAC_NA_CACHE_DEBUG") {
+        return;
+    }
+    try {
+        import from jaclang.cli.console { console as _dbg_console }
+        _dbg_console.print(f"[JAC_NA_CACHE] {msg}", style="dim");
+    } except Exception {}
+}
+
+"""Explain why a native-import cache lookup missed, for JAC_NA_CACHE_DEBUG."""
+def _na_cache_miss_reason(cache_ir_path: str, cache_meta_path: str) -> str {
+    import os as _mr_os;
+    try {
+        import from jaclang.compiler.driver.jir { native_ir_cache_suspended }
+        if native_ir_cache_suspended() {
+            return "(IR cache suspended for this build)";
+        }
+    } except Exception {}
+    if not cache_ir_path or not cache_meta_path {
+        return "(no cache path resolved)";
+    }
+    if not _mr_os.path.exists(cache_ir_path) {
+        return "(no cached .ir_cache -- first build or scrubbed)";
+    }
+    if not _mr_os.path.exists(cache_meta_path) {
+        return "(no cached .ir_meta -- first build or scrubbed)";
+    }
+    return "(cache present but was invalidated)";
+}
+
 def _mod_globals(mod: ModuleRef) -> list[ValueRef] {
     gvs = mod.global_variables;
     assert isinstance(gvs, Iterator);
@@ -744,6 +781,11 @@ impl NativeCompilePass._compile_and_link_native_imports(
             and link_fingerprint_mismatches(
                 [(real_path, meta.options_fingerprint)], _link_fp
             ) {
+            _na_cache_debug(
+                f"STALE {_src_stem}: link-options fingerprint mismatch "
+                + f"(cached={meta.options_fingerprint or '(unstamped)'} "
+                + f"current={_link_fp}) -> E5027"
+            );
             self.emit(
                 E5027,
                 path=full_path,
@@ -764,6 +806,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
                 if _uv_cached_pending
                 else {};
             if _uv_cached_conflicts {
+                _na_cache_debug(
+                    f"STALE {_src_stem}: cached IR has live-call conflicts "
+                    + "with the current link set -> evicting + recompiling"
+                );
                 _cache_hit = False;
                 imported_llvm_str_raw = "";
                 meta = DepClibMeta();
@@ -776,6 +822,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
         }
 
         if _cache_hit {
+            _na_cache_debug(
+                f"HIT   {_src_stem}: reusing cached native IR "
+                + f"({os.path.basename(_cache_ir_path)})"
+            );
             import from jaclang.compiler.driver.na_coverage { na_coverage_replay }
             na_coverage_replay(real_path, meta.coverage);
             dep_base = os.path.dirname(full_path);
@@ -783,6 +833,10 @@ impl NativeCompilePass._compile_and_link_native_imports(
                 work_queue.append((_DepBinding(dep_mod_path), dep_base));
             }
         } else {
+            _na_cache_debug(
+                f"MISS  {_src_stem}: compiling native IR "
+                + _na_cache_miss_reason(_cache_ir_path, _cache_meta_path)
+            );
             imported_ir: (uni.Module | None) = None;
             import_options = _link_opts.clone_for_native_import();
             _na_units = self.prog.scratch.na_dep_units;
@@ -972,6 +1026,17 @@ impl NativeCompilePass._compile_and_link_native_imports(
                     }
                 }
             } except Exception {}
+            if os.path.exists(_cache_ir_path) and os.path.exists(_cache_meta_path) {
+                try {
+                    if imported_ir.gen.llvm_ir is not None {
+                        imported_ir.gen.llvm_ir.close();
+                    }
+                } except Exception {}
+                imported_ir.gen.llvm_ir = None;
+                try {
+                    self.prog.invalidate_module(real_path);
+                } except Exception {}
+            }
         }
 
         if not self.prog.options.aot_mode {

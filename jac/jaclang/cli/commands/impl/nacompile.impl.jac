@@ -347,6 +347,10 @@ impl nacompile(
     import from jaclang.compiler.driver.program { JacProgram }
     import from jaclang.compiler.driver.compile_options { CompileOptions }
 
+    if strict {
+        import from jaclang.compiler.driver.na_coverage { na_coverage_begin }
+        na_coverage_begin();
+    }
     try {
         prog = JacProgram();
         options = CompileOptions(
@@ -447,6 +451,143 @@ impl nacompile(
 
     llvm_ir_str = str(ir_module.gen.llvm_ir);
     if strict {
+        # (1) Whole-module exclusion. A native-pinned module whose source fails
+        # the native scan (usually an E0013 keyword collision) is silently
+        # dropped from the native closure BEFORE lowering — along with every
+        # module reachable only through it — and nothing records this. Walk the
+        # import graph from the root and fail on any error root, so the build
+        # either compiles everything pinned native or says exactly why not.
+        # Tolerant parses still yield each module's import list (imports parse
+        # before the error sites), so the BFS descends THROUGH broken modules
+        # and surfaces ALL error roots in one build instead of one per rebuild.
+        # NOTE: deliberately inline, not a helper def — adding a new top-level
+        # def to this impl file currently makes JcirBytecodeGen emit no
+        # bytecode for the module, silently (compile_ir returns no modules and
+        # no diags).
+        import from jaclang.compiler.frontend.parser { parse as _nx_parse }
+        import from jaclang.compiler.frontend.helpers { read_file_with_encoding }
+        import from jaclang.compiler.driver.bccache { discover_annex_files }
+        import from jaclang.compiler.driver.program { JacProgram as _NxProgram }
+        import from jaclang.compiler.placement.placement_solver {
+            scan_native_blockers
+        }
+        import from jaclang.compiler.placement.placement_pins { config_pin_for }
+        _nx_seen: dict[str, str] = {};
+        _nx_queue: list[str] = [os.path.abspath(filename)];
+        while _nx_queue {
+            _nx_p = _nx_queue.pop();
+            if _nx_p in _nx_seen {
+                continue;
+            }
+            _nx_files = [_nx_p] + discover_annex_files(_nx_p, '.impl.jac');
+            _nx_err = '';
+            _nx_deps: list[str] = [];
+            for _nx_f in _nx_files {
+                try {
+                    _nx_src = read_file_with_encoding(_nx_f);
+                } except Exception as e {
+                    if not _nx_err {
+                        _nx_err = f"unreadable: {e}";
+                    }
+                    continue;
+                }
+                _nx_prog = _NxProgram();
+                try {
+                    (_nx_mod, _nx_had_err) = _nx_parse(
+                        _nx_src, _nx_f, prog=_nx_prog
+                    );
+                } except Exception as e {
+                    if not _nx_err {
+                        _nx_err = f"{type(e).__name__}: {e}";
+                    }
+                    continue;
+                }
+                if _nx_had_err and not _nx_err {
+                    _nx_err = (
+                        _nx_prog.errors_had[0].pretty_print().split('\n')[0]
+                            if _nx_prog.errors_had
+                            else "parse error"
+                    );
+                }
+                try {
+                    (_nx_sv, _nx_fdeps) = scan_native_blockers(
+                        _nx_mod, os.path.dirname(_nx_p) or '.', allow_pub=True
+                    );
+                    _nx_deps.extend(_nx_fdeps);
+                    if _nx_sv and not _nx_err {
+                        _nx_err = f"native blocker: {_nx_sv}";
+                    }
+                } except Exception {}
+            }
+            _nx_seen[_nx_p] = _nx_err;
+            for _nx_d in _nx_deps {
+                if _nx_d not in _nx_seen {
+                    _nx_queue.append(_nx_d);
+                }
+            }
+        }
+        _err_roots: list = [];
+        _pinned_total = 0;
+        for (_nx_sp, _nx_se) in _nx_seen.items() {
+            try {
+                if config_pin_for(_nx_sp, '') != 'native' {
+                    continue;
+                }
+            } except Exception {
+                continue;
+            }
+            _pinned_total += 1;
+            if _nx_se {
+                _err_roots.append((_nx_sp, _nx_se));
+            }
+        }
+        _err_roots.sort();
+        if _err_roots {
+            _xlines: list[str] = [];
+            for (_x_path, _x_err) in _err_roots {
+                _xlines.append(
+                    f"  {os.path.relpath(_x_path)}" + "\n" + f"      {_x_err}"
+                );
+            }
+            console.error(
+                f"{len(_err_roots)} of {_pinned_total} native-pinned module(s) "
+                + "in the import graph fail to compile natively; they and every "
+                + "module reachable only through them were silently compiled in "
+                + "the server codespace instead (a self-contained binary cannot "
+                + "run them):\n"
+                + "\n".join(_xlines),
+                hint="Fix the reported error in each listed module — the other excluded modules are clean and re-enter the native closure once these are fixed."
+            );
+            return 1;
+        }
+        # (2) Per-function demotion recorded during lowering (na_coverage).
+        import from jaclang.compiler.driver.na_coverage {
+            native_demoted_modules as _demoted_mods
+        }
+        _mods = _demoted_mods();
+        if _mods {
+            _lines: list[str] = [];
+            for (_m_path, _m_outcome, _m_code, _m_detail) in _mods {
+                _m_rel = os.path.relpath(_m_path);
+                _m_tag = "ICE" if _m_outcome == "ice" else "demoted";
+                _lines.append(
+                    f"  {_m_rel} [{_m_tag}"
+                    + (f" {_m_code}" if _m_code else "")
+                    + "]"
+                    + (f": {_m_detail}" if _m_detail else "")
+                );
+            }
+            console.error(
+                f"{len(_mods)} module(s) preferred native but were demoted to "
+                + "the server codespace (a self-contained binary cannot run "
+                + "them, and every module reachable only through them is "
+                + "dropped from the native build too):\n"
+                + "\n".join(_lines),
+                hint="Fix the first error in each module (often an E0013 keyword collision or an unlowerable construct), or move it out of the native closure. Rerun with JAC_NA_DEBUG=1 for full lowering diagnostics."
+            );
+            return 1;
+        }
+        # (3) Per-function demotion markers left inside the emitted IR.
         import from jaclang.compiler.backends.native.na_compile_pass {
             native_demoted_ir_symbols as _demoted_syms
         }

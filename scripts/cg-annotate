@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""cg-annotate — callgrind post-processor that resolves Jac native symbols.
+
+The Jac native ELF linker compiles all functions with internal LLVM linkage,
+which strips them from the binary's symbol table.  Valgrind/callgrind then
+shows their addresses as plain hex (e.g. '0x00000000004ca100') instead of
+function names.
+
+When the binary is built with JAC_NATIVE_DEBUG=1, the linker writes a
+<binary>.symmap file alongside the binary containing:
+
+    function_name 0x<virtual_address>
+
+This script:
+  1. Reads the symmap to build an address → name lookup table.
+  2. Reads the raw callgrind output file.
+  3. Replaces every `fn=(ID) 0x<addr>` and `cfn=(ID) 0x<addr>` line with the
+     matching function name.
+  4. Writes a patched callgrind file to a temp path.
+  5. Runs `callgrind_annotate` on the patched file, forwarding any extra
+     arguments you pass.
+
+Usage
+-----
+    cg-annotate <callgrind.out> <binary.symmap> [callgrind_annotate options...]
+
+    # Typical workflow:
+    JAC_SYMMAP=1 make build           # builds bin/js_engine + bin/js_engine.symmap
+    valgrind --tool=callgrind \\
+        --callgrind-out-file=/tmp/cg.out \\
+        ./bin/js_engine bench/test_stress.js
+    scripts/cg-annotate /tmp/cg.out bin/js_engine.symmap --auto=no --threshold=99
+"""
+
+import re
+import sys
+import os
+import tempfile
+import subprocess
+import bisect
+
+def load_symmap(path: str) -> tuple[list[int], list[str]]:
+    """Return parallel sorted (addrs, names) lists for binary search."""
+    addrs: list[int] = []
+    names: list[str] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            name = parts[0]
+            try:
+                addr = int(parts[1], 16)
+            except ValueError:
+                continue
+            addrs.append(addr)
+            names.append(name)
+    # Sort by address
+    paired = sorted(zip(addrs, names))
+    if not paired:
+        return [], []
+    s_addrs, s_names = zip(*paired)
+    return list(s_addrs), list(s_names)
+
+def resolve(addr: int, addrs: list[int], names: list[str]) -> str | None:
+    """Return the name of the function that contains `addr` (floor match)."""
+    if not addrs:
+        return None
+    idx = bisect.bisect_right(addrs, addr) - 1
+    if idx < 0:
+        return None
+    return names[idx]
+
+# Matches: fn=(ID) 0x<hex>  or  cfn=(ID) 0x<hex>
+_FN_ADDR_RE = re.compile(r'^(c?fn=\(\d+\)) (0x[0-9a-fA-F]+)(.*)')
+
+def patch_callgrind(cg_path: str, addrs: list[int], names: list[str]) -> str:
+    """Patch the callgrind file in-place (written to a temp file). Returns temp path."""
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="cg_patched_", suffix=".out")
+    replaced = 0
+    with os.fdopen(tmp_fd, 'w') as out_f, open(cg_path) as in_f:
+        for line in in_f:
+            m = _FN_ADDR_RE.match(line)
+            if m:
+                fn_part = m.group(1)
+                hex_addr = m.group(2)
+                rest = m.group(3)
+                addr = int(hex_addr, 16)
+                real_name = resolve(addr, addrs, names)
+                if real_name:
+                    line = f"{fn_part} {real_name}{rest}\n"
+                    replaced += 1
+            out_f.write(line)
+    print(f"[cg-annotate] Resolved {replaced} address(es) using symmap.", file=sys.stderr)
+    return tmp_path
+
+def main() -> None:
+    if len(sys.argv) < 3:
+        print(__doc__)
+        sys.exit(1)
+
+    cg_path = sys.argv[1]
+    symmap_path = sys.argv[2]
+    extra_args = sys.argv[3:]
+
+    if not os.path.exists(cg_path):
+        print(f"error: callgrind file not found: {cg_path}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.exists(symmap_path):
+        print(f"error: symmap file not found: {symmap_path}", file=sys.stderr)
+        print(f"  Rebuild with: JAC_SYMMAP=1 make build", file=sys.stderr)
+        sys.exit(1)
+
+    addrs, names = load_symmap(symmap_path)
+    print(f"[cg-annotate] Loaded {len(names)} symbol(s) from {symmap_path}", file=sys.stderr)
+
+    tmp_path = patch_callgrind(cg_path, addrs, names)
+    try:
+        cmd = ["callgrind_annotate"] + extra_args + [tmp_path]
+        result = subprocess.run(cmd)
+        sys.exit(result.returncode)
+    finally:
+        os.unlink(tmp_path)
+
+if __name__ == "__main__":
+    main()

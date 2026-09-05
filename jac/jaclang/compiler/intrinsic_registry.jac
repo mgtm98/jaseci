@@ -1,7 +1,9 @@
 enum IntrinsicDispatch {
     RC_RUNTIME = "rc_runtime",
     FLOAT_BITS = "float_bits",
-    BITS_FLOAT = "bits_float"
+    BITS_FLOAT = "bits_float",
+    MEM_PEEK = "mem_peek",
+    MEM_POKE = "mem_poke"
 }
 
 obj IntrinsicEntry {
@@ -80,6 +82,59 @@ glob INTRINSIC_REGISTRY = IntrinsicRegistry(
                  param_specs=["i64"],
                  result_spec="f64",
                  dispatch=IntrinsicDispatch.BITS_FLOAT
+             ),
+             # Raw-memory loads/stores (native-only). __peek_uN(addr) reads an
+             # unsigned N-bit little-endian value at the byte address; __poke_uN
+             # (addr, val) writes one. No bounds or type checks — the escape
+             # hatch for FFI buffer access that str-reinterpret casts used to
+             # provide before string subscripts became length-checked (#8207).
+             "__peek_u8": IntrinsicEntry(
+                 name="__peek_u8",
+                 param_specs=["i64"],
+                 result_spec="i64",
+                 dispatch=IntrinsicDispatch.MEM_PEEK
+             ),
+             "__peek_u16": IntrinsicEntry(
+                 name="__peek_u16",
+                 param_specs=["i64"],
+                 result_spec="i64",
+                 dispatch=IntrinsicDispatch.MEM_PEEK
+             ),
+             "__peek_u32": IntrinsicEntry(
+                 name="__peek_u32",
+                 param_specs=["i64"],
+                 result_spec="i64",
+                 dispatch=IntrinsicDispatch.MEM_PEEK
+             ),
+             "__peek_u64": IntrinsicEntry(
+                 name="__peek_u64",
+                 param_specs=["i64"],
+                 result_spec="i64",
+                 dispatch=IntrinsicDispatch.MEM_PEEK
+             ),
+             "__poke_u8": IntrinsicEntry(
+                 name="__poke_u8",
+                 param_specs=["i64", "i64"],
+                 result_spec="none",
+                 dispatch=IntrinsicDispatch.MEM_POKE
+             ),
+             "__poke_u16": IntrinsicEntry(
+                 name="__poke_u16",
+                 param_specs=["i64", "i64"],
+                 result_spec="none",
+                 dispatch=IntrinsicDispatch.MEM_POKE
+             ),
+             "__poke_u32": IntrinsicEntry(
+                 name="__poke_u32",
+                 param_specs=["i64", "i64"],
+                 result_spec="none",
+                 dispatch=IntrinsicDispatch.MEM_POKE
+             ),
+             "__poke_u64": IntrinsicEntry(
+                 name="__poke_u64",
+                 param_specs=["i64", "i64"],
+                 result_spec="none",
+                 dispatch=IntrinsicDispatch.MEM_POKE
              )
          }
      );
