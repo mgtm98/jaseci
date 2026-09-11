@@ -33,9 +33,7 @@ def check_na_inline(label: str, code: str) -> JacProgram {
     prog.compile(
         file_path=os.path.join(FIXTURES, f"_idiom_{label}.jac"),
         use_str=code,
-        options=CompileOptions(
-            no_cgen=True, force_codespace="native", force_target_program=True
-        )
+        options=CompileOptions(no_cgen=True, force_codespace="native")
     );
     return prog;
 }
@@ -130,9 +128,12 @@ test "native_safe_sym treats non-ASCII letters as unsafe" {
     assert safe_sym_stem("naïve_mod") == "na_ve_mod";
 }
 
-test "native_safe_sym keeps the kernel modules unhashed" {
-    assert native_safe_sym("osp_kernel") == "osp_kernel";
-    assert native_safe_sym("fmt_kernel") == "fmt_kernel";
+test "native_safe_sym hashes the kernel modules like every other unit" {
+    # Every native module is a unit named by its module key; the toolchain
+    # units carry no fixed link names any more.
+    assert native_safe_sym("osp_kernel") != "osp_kernel";
+    assert native_safe_sym("osp_kernel").startswith("osp_kernel_");
+    assert native_safe_sym("fmt_kernel").startswith("fmt_kernel_");
 }
 
 test "native_safe_sym keeps distinct sources distinct after sanitizing" {
@@ -181,10 +182,7 @@ test "helpers.jac lowers when a native unit reaches it" {
     );
     prog = JacProgram();
     opts = CompileOptions(
-        aot_mode=True,
-        force_codespace='native',
-        force_target_program=True,
-        no_ir_cache=True
+        aot_mode=True, force_codespace='native'
     ).clone_for_native_import();
     na_coverage_begin();
     try {
@@ -379,8 +377,12 @@ test "version-condition comparisons match the operator table they replaced" {
 # mapping beside the new one, so every CI platform proves the pair agrees.
 test "native_target_os agrees with the platform.system mapping it replaced" {
     import platform;
-    import from jaclang.compiler.frontend.codeinfo { native_target_os }
-    prior = os.environ.pop("JAC_NATIVE_TARGET", None);
+    import from jaclang.compiler.frontend.codeinfo {
+        native_target_os,
+        set_native_target_override,
+        _native_target_ctx
+    }
+    prior = set_native_target_override("");
     try {
         sysname = platform.system();
         legacy = "linux";
@@ -394,29 +396,28 @@ test "native_target_os agrees with the platform.system mapping it replaced" {
             f"native_target_os() said {native_target_os()!r}"
         );
     } finally {
-        if prior is not None {
-            os.environ["JAC_NATIVE_TARGET"] = prior;
-        }
+        _native_target_ctx.set(prior);
     }
 }
 
-test "native_target_os still honors the JAC_NATIVE_TARGET override" {
-    import from jaclang.compiler.frontend.codeinfo { native_target_os }
-    prior = os.environ.pop("JAC_NATIVE_TARGET", None);
+test "native_target_os honors the native target override" {
+    import from jaclang.compiler.frontend.codeinfo {
+        native_target_os,
+        set_native_target_override,
+        _native_target_ctx
+    }
+    prior = set_native_target_override("");
     try {
         for (raw, want) in [
             ("aarch64-apple-darwin", "darwin"),
             ("x86_64-windows-msvc", "windows"),
             ("x86_64-unknown-linux-gnu", "linux")
         ] {
-            os.environ["JAC_NATIVE_TARGET"] = raw;
+            set_native_target_override(raw);
             assert native_target_os() == want , f"{raw} mapped wrong";
         }
     } finally {
-        os.environ.pop("JAC_NATIVE_TARGET", None);
-        if prior is not None {
-            os.environ["JAC_NATIVE_TARGET"] = prior;
-        }
+        _native_target_ctx.set(prior);
     }
 }
 

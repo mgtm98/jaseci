@@ -1,5 +1,5 @@
 import jaclang.runtime.osp_graph as _graph;
-import from dataclasses { field }
+import from jaclang.runtime.object_model { field }
 import from jaclang.runtime.archetype {
     Anchor,
     EdgeAnchor,
@@ -25,11 +25,8 @@ def _mem_or_ctx(mem: any) -> any {
     if mem is not None {
         return mem;
     }
-    import from jaclang.runtime.runtime { JacRuntime, _request_context }
-    ctx = _request_context.get();
-    if ctx is None {
-        ctx = JacRuntime.exec_ctx;
-    }
+    import from jaclang.runtime.runtime { JacRuntime }
+    ctx = JacRuntime.peek_context();
     return ctx.mem if ctx is not None else None;
 }
 

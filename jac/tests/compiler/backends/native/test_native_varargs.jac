@@ -29,7 +29,8 @@ import from tests.support {
     compile_native,
     get_func,
     has_error_code,
-    native_force_opts
+    native_force_opts,
+    unit_symbol
 }
 import jaclang;
 
@@ -52,7 +53,10 @@ granular demotion (epic #8201) is observable through the native layout."""
 def compile_na_inline_ir(label: str, code: str) -> tuple {
     path = os.path.join(FIXTURES, f"_varargs_{label}.jac");
     prog = JacProgram();
-    ir = prog.compile(file_path=path, use_str=code, options=native_force_opts());
+    options = native_force_opts();
+    options.no_ir_cache = True;
+    options.skip_native_engine = True;
+    ir = prog.compile(file_path=path, use_str=code, options=options);
     return (prog, ir, );
 }
 
@@ -78,7 +82,8 @@ def na_run(fixture: str) -> str {
             sys.executable,
             "-m",
             "jaclang",
-            "nacompile",
+            "build",
+            "--native",
             os.path.join(FIXTURES, fixture),
             "-o",
             out_bin
@@ -320,7 +325,12 @@ test "a pack of a generic archetype's erased T answers what CPython answers" {
 }
 
 test "a generic pack slot is a native list, not the bare erased pointer" {
-    (eng, ir) = compile_native("varargs_generic.jac");
+    prog = JacProgram();
+    options = native_force_opts();
+    options.no_ir_cache = True;
+    options.skip_native_engine = True;
+    ir = prog.compile(os.path.join(FIXTURES, "varargs_generic.jac"), options=options);
+    assert not prog.errors_had , str(prog.errors_had);
     layout = ir.gen.native_layout;
     assert layout is not None , "whole-module native compile aborted";
     assert "Cell.get" in layout.methods , (
@@ -333,7 +343,9 @@ test "a generic pack slot is a native list, not the bare erased pointer" {
         f"a pack after a fixed parameter must lower too: {sorted(layout.methods)}"
     );
     text = str(ir.gen.llvm_ir);
-    assert 'define i8* @"Cell.get"(%"Cell"* %"self", %"List.ptr"* %"fallback")'
+    assert f'define i8* @"{unit_symbol(
+        ir, "Cell.get"
+    )}"(%"Cell"* %"self", %"List.ptr"* %"fallback")'
         in text , (
         "the pack slot must lay out as the pointer-flavoured native list; a bare "
         "i8* there is the erased element leaking into the pack's own slot"
@@ -347,7 +359,8 @@ test "a generic pack at a by-value type argument is refused, not lowered" {
             sys.executable,
             "-m",
             "jaclang",
-            "nacompile",
+            "build",
+            "--native",
             os.path.join(FIXTURES, "varargs_generic_scalar.jac"),
             "-o",
             out_bin

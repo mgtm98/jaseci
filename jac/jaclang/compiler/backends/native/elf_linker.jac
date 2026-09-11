@@ -78,7 +78,7 @@ obj ElfLinker {
         soname: str = "";
 
     static def link(
-        obj_bytes: bytes,
+        objects: list[bytes],
         output_path: str,
         needed_libs: list[str] = [],
         crt_objects: list[bytes] = [],
@@ -91,6 +91,7 @@ obj ElfLinker {
     ) -> bool;
 
     def parse_object -> bool;
+    def _undefined_bindings -> dict[str, int];
     def build_executable -> bytes;
     def build_static_executable -> bytes;
     def build_shared_object -> bytes;

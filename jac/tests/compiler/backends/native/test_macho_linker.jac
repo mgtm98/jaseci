@@ -68,7 +68,7 @@ def link_dylib(triple: str) -> tuple {
     d = tempfile.mkdtemp();
     out = os.path.join(d, "libprobe.dylib");
     ok = MachOLinker.link(
-        obj_bytes=relobj,
+        objects=[relobj],
         output_path=out,
         needed_libs=["/usr/lib/libSystem.B.dylib"],
         symbol_lib_map={"malloc": "/usr/lib/libSystem.B.dylib"},
@@ -229,7 +229,7 @@ test "internal GOT slots are keyed by symbol, not by private symbol name" {
         d = tempfile.mkdtemp();
         out = os.path.join(d, "probe.dylib" if shared else "probe");
         ok = MachOLinker.link(
-            obj_bytes=main_obj,
+            objects=[main_obj],
             output_path=out,
             shared=shared,
             export_symbols=["jac_main_ptr", "jac_member_ptr"],
@@ -287,7 +287,7 @@ def absolute_text_relocs(relobj: bytes) -> int {
 }
 
 
-"""Link an executable the way `jac nacompile` does; return (object, image)."""
+"""Link an executable the way `jac build --native` does; return (object, image)."""
 def link_exec(triple: str) -> tuple {
     relobj = emit_large_object(
         literal_ir(triple, "exec-literal", "jac_exec_ptr"), triple
@@ -295,7 +295,7 @@ def link_exec(triple: str) -> tuple {
     d = tempfile.mkdtemp();
     out = os.path.join(d, "probe_exec");
     ok = MachOLinker.link(
-        obj_bytes=relobj,
+        objects=[relobj],
         output_path=out,
         needed_libs=["/usr/lib/libSystem.B.dylib"],
         shared=False

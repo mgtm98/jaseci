@@ -9,7 +9,7 @@ targets, called **codespaces**:
 |-----------|----------|----------------|---------|
 | **Server** | Inferred; the default, anchored by python imports, graph archetypes, `::py::` blocks, and typed context blocks; `[placement.pins]` override | Python AST → CPython bytecode | CPython |
 | **Client** | **Inferred** from client-only syntax (JSX, browser globals, string-path npm imports) and symbol references; `[placement.pins]` override or a `.jac` implementation-variant file | ESTree → JavaScript | Browsers / Node |
-| **Native** | **Inferred** -- whole modules by the placement solver's verdict under the native default codespace, elements from extern-decl (C-ABI FFI) imports and their users; `[placement.pins]` override, or forced module-wide by `jac nacompile` / `jac build --as native` / `CompileOptions(force_codespace='native')` | LLVM IR → object code → executable | Bare machine (Linux / macOS, x86_64 / arm64) |
+| **Native** | **Inferred** -- whole modules by the placement solver's verdict under the native default codespace, elements from extern-decl (C-ABI FFI) imports and their users; `[placement.pins]` override, or forced module-wide by `jac build <file> --native` / `CompileOptions(force_codespace='native')` | LLVM IR → object code → executable | Bare machine (Linux / macOS, x86_64 / arm64) |
 
 A single `.jac` file can mix all three codespaces; there is no placement
 syntax (the old `sv`/`cl`/`na` markers were deleted -- `jac fix placement`
@@ -201,9 +201,11 @@ light edge works on a view (`light_edge_view`).
 
 Every module parses through the staged front end: the lexer and parser in
 `compiler/frontend/parser/`, then the ir-gen schedule pass by pass. The
-native scope (`compiler/native_scope.jac`) names the compiler modules
-served from `libjac_compiler`; it is empty until a native pass can share
-the tree with a bytecode pass.
+native scope (`compiler/native_scope.jac`) names the compiler modules the
+kernel links; each is a native unit whose interface (`SEC_NIFACE`) and
+object (`SEC_NOBJ`, materialized on demand) live in its module JIR, and `libjac_compiler` is the
+link plan's artifact over them (`compiler/backends/native/link_plan.jac`),
+resolved at parse time by `kernel_resolve.jac`.
 
 ---
 
@@ -222,7 +224,7 @@ and two wrappers around it:
 | Helper | Triggered by | What it does |
 |--------|--------------|--------------|
 | `_coerce_client_module` | `.jac` extension | Marks the module's nodes `CodeContext.CLIENT` |
-| `_coerce_native_module` | Forced placement (`CompileOptions(force_codespace='native')` -- set by `jac nacompile` / `jac build --as native` -- or an AOT build under the native default codespace), else a passing placement-solver verdict | Marks the module's nodes `CodeContext.NATIVE` |
+| `_coerce_native_module` | Forced placement (`CompileOptions(force_codespace='native')` -- set by `jac build <file> --native` -- or an AOT build under the native default codespace), else a passing placement-solver verdict | Marks the module's nodes `CodeContext.NATIVE` |
 
 From this point on, every declaration carries a `CodeContext` enum value that
 downstream passes use to dispatch to the correct backend.
@@ -430,7 +432,7 @@ Two design decisions bound what "fully stamped" means:
   single lowering routines. A central table for them would mirror
   emission order rather than describe the program; the invariant
   (every value-consumption seam releases its owned temps) is enforced by
-  the leak-check gates (chess fixture under JAC_RC_DEBUG_CODEGEN, the GC
+  the leak-check gates (chess fixture under `[native] debug`, the GC
   suite) rather than by a second bookkeeping layer.
 
 ---
@@ -630,7 +632,7 @@ user-facing reference, [Primitives & Codespace Semantics](../reference/language/
 |-----------|--------|--------------|
 | `cl → sv` | HTTP `POST` to the walker / function endpoint exposed by `jac run` | `EsastGenPass` emits `fetch(...)` against the URL recorded in the binding |
 | `sv → cl` | None at runtime -- the client mounts its own DOM. The server only ships the bootstrap payload | `JcirGenPass` emits the static-file route for the bundle |
-| `sv → na` | In-process `ctypes.CFUNCTYPE` over the JIT'd function address (MCJIT); an AOT `--shared` build is loaded across the process boundary instead | `JcirGenPass` emits the ctypes stub; `NaIRGenPass` exposes the function with C ABI |
+| `sv → na` | In-process `ctypes.CFUNCTYPE` over the JIT'd function address (MCJIT); an AOT `--lib` build is loaded across the process boundary instead | `JcirGenPass` emits the ctypes stub; `NaIRGenPass` exposes the function with C ABI |
 | `na → sv` | Python callback wrapped in a `ctypes.CFUNCTYPE` and registered as a JIT symbol (`llvm.add_symbol`), so MCJIT resolves the native call back into CPython | `interop_bridge.register_py_callbacks`, alongside the `sv → na` stub |
 | `na → na` | Direct symbol reference resolved by the in-tree linker | `BoundaryAnalysisPass` records the import; `NativeCompilePass` emits the relocation |
 | `sv → sv` (cross-app) | A typed-async stub keyed by the provider **app name** when an import's target is owned by a different app; in-process when the provider app is colocated, HTTP `POST` when it runs as its own process | `JcirGenPass` emits a generated `async` `__jac_sv_client` stub (`call` / `spawn_walker`; un-awaited statement spawns become `_deferred`, the outbox); the manifest's app edges drive the built-in `scale` subsystem's boot order |
@@ -672,8 +674,10 @@ Each cache entry is a **JIR file** (Jac IR) with named sections defined in
 |---------|----------|
 | `SEC_BYTECODE` | Marshalled Python `CodeType` (server backend) |
 | `SEC_MTIR` | Meaning-Typed IR for `by llm` calls |
-| `SEC_LLVM_IR` | LLVM IR text (native backend) |
-| `SEC_NATIVE_OBJ` | Compiled bitcode with target triple (native backend) |
+| `SEC_NBITCODE` | The unit's LLVM bitcode under its native stamp (whole-program and JIT link modes) |
+| `SEC_NIFACE` | The unit's native interface: link symbols, class layouts, initializer, demoted symbols, C library needs; digest-prefixed |
+| `SEC_NOBJ` | The unit's relocatable object, materialized on demand from bitcode under its native stamp (incremental link mode) |
+| `SEC_NCTDEPS` | Native compile-time inputs, using the shared CTDEPS codec under a native stamp |
 | `SEC_INTEROP` | Serialised `InteropManifest` |
 | `SEC_MODKEY` / `SEC_ENVKEY` | Content key and environment fingerprint that gate every read |
 | `SEC_DEBUG_SRC` | Compressed source for traceback rendering |

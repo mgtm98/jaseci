@@ -1,56 +1,56 @@
-glob _NA_OSP_KERNEL_MOD: list = [];
-
-def _load_native_osp_kernel_module -> (uni.Module | None) {
-    if _NA_OSP_KERNEL_MOD {
-        return _NA_OSP_KERNEL_MOD[0];
-    }
-    import from jaclang.compiler.backends.common.kernel_units { osp_core_unit_path }
-    import from jaclang.compiler.driver.program { JacProgram }
-    mod = None;
-    try {
-        import from jaclang.compiler.driver.compile_options {
-            CompileOptions as _KernelOpts
-        }
-        prog = JacProgram();
-        mod = prog.compile(
-            osp_core_unit_path('na'),
-            options=_KernelOpts(
-                no_cgen=True,
-                symtab_ir_only=True,
-                aot_mode=True,
-                default_codespace='native',
-                force_codespace='native',
-                force_target_program=True
-            )
-        );
-    } except Exception {
-        mod = None;
-    }
-    if mod is not None {
-        _NA_OSP_KERNEL_MOD.append(mod);
-    }
-    return mod;
-}
-
 impl NaIRGenPass._register_osp_kernel_module -> None {
     if not self._osp_active() {
         return;
     }
-    kernel_mod = _load_native_osp_kernel_module();
-    if kernel_mod is None {
+    import from jaclang.compiler.frontend.codeinfo {
+        OSP_GRAPH_REL,
+        OSP_KERNEL_REL,
+        kernel_unit_path
+    }
+    kernel_mod = self._load_native_unit_module(kernel_unit_path(OSP_KERNEL_REL));
+    graph_mod = self._load_native_unit_module(kernel_unit_path(OSP_GRAPH_REL));
+    if kernel_mod is None or graph_mod is None {
         return;
     }
-    kernel_mod.gen.nogc_enforced = getattr(self.ir_in.gen, "nogc_enforced", False);
-    self._walk_imported_module_type_names(kernel_mod);
-    self._walk_imported_module_types(kernel_mod);
-    self._walk_imported_module_abilities(kernel_mod, with_fn_verdicts=False);
-    self._osp_kernel_mod = kernel_mod;
-
-    _manifest = self.ir_in.gen.interop_manifest if (self.ir_in?.gen) else None;
-    if (_manifest is not None)
-        and ("osp_kernel" not in _manifest.native_transitive_sources) {
-        _manifest.native_transitive_sources.append("osp_kernel");
+    for unit in (kernel_mod, graph_mod) {
+        unit.gen.nogc_enforced = getattr(self.ir_in.gen, "nogc_enforced", False);
+        self._walk_imported_module_type_names(unit);
     }
+    for unit in (kernel_mod, graph_mod) {
+        self._register_imported_hierarchy(unit);
+    }
+    for unit in (kernel_mod, graph_mod) {
+        self._walk_imported_module_types(unit);
+    }
+    for unit in (kernel_mod, graph_mod) {
+        self._walk_imported_module_abilities(unit, with_fn_verdicts=False);
+        if unit?.loc and unit.loc.mod_path {
+            self._note_native_dep(unit.loc.mod_path);
+        }
+    }
+    self._osp_kernel_mod = kernel_mod;
+    self._osp_graph_mod = graph_mod;
+}
+
+impl NaIRGenPass._osp_kernel_init_fns -> list[ir.Function] {
+    import from jaclang.compiler.frontend.codeinfo { native_glob_init_name }
+    out: list[ir.Function] = [];
+    for unit_mod in (self._osp_kernel_mod, self._osp_graph_mod) {
+        unit: any = unit_mod;
+        if unit is None or not (unit?.loc and unit.loc.mod_path) {
+            continue;
+        }
+        name = native_glob_init_name(unit.loc.mod_path);
+        fn = self.func_symtab.get(name);
+        if fn is None {
+            fn = ir.Function(
+                self.llvm_module, ir.FunctionType(ir.VoidType(), []), name=name
+            );
+            self.func_symtab[name] = fn;
+        }
+        out.append(fn);
+    }
+    return out;
 }
 
 impl NaIRGenPass._compute_osp_model(archetypes: list[uni.Archetype]) -> None {
@@ -116,7 +116,7 @@ impl NaIRGenPass._emit_osp_thunk(arch_name: str, method: uni.Ability) -> None {
     }
     jv = self.jacval_type;
 
-    _thunk_name = f"{full}.__ospthunk";
+    _thunk_name = self._symbol_for(f"{full}.__ospthunk");
     _imported = arch_name in self.imported_osp_archs;
     if _imported {
         _thunk_name = f"{_thunk_name}.x{self._osp_thunk_uid}";
@@ -125,9 +125,7 @@ impl NaIRGenPass._emit_osp_thunk(arch_name: str, method: uni.Ability) -> None {
     thunk = ir.Function(
         self.llvm_module, ir.FunctionType(jv, [jv, jv]), name=_thunk_name
     );
-    if _imported {
-        thunk.linkage = "internal";
-    }
+    thunk.linkage = "internal";
     thunk.args[0].name = "a";
     thunk.args[1].name = "b";
     _saved = self._builder;
@@ -209,9 +207,18 @@ impl NaIRGenPass._osp_collect_slots(arch_name: str, is_entry: bool) -> list {
     if _model is None {
         return slots;
     }
-    _src = _model.entry_slots(arch_name) if is_entry else _model.exit_slots(arch_name);
-    for _slot in _src {
-        thunk = self.osp_thunk_funcs.get(f"{arch_name}.{_slot.ability}");
+
+    merged: dict = {};
+    layout = self._arch_layout(arch_name);
+    order = layout.mro if layout is not None else [arch_name];
+    for owner in reversed(order) {
+        source = _model.entry_slots(owner) if is_entry else _model.exit_slots(owner);
+        for slot in source {
+            merged[slot.ability] = slot;
+        }
+    }
+    for _slot in merged.values() {
+        thunk = self.osp_thunk_funcs.get(f"{_slot.owner}.{_slot.ability}");
         if thunk is None {
             continue;
         }
@@ -506,27 +513,10 @@ impl NaIRGenPass._emit_osp_setup -> None {
     }
     self.builder.ret_void();
 
-    _kinited = self._osp_kernel_inited_gv;
-    if _kinited is None {
-        _kinited = ir.GlobalVariable(self.llvm_module, i8, name="__osp_kernel_inited");
-        _kinited.linkage = "weak";
-        _kinited.initializer = ir.Constant(i8, 0);
-        self._osp_kernel_inited_gv = _kinited;
-    }
     _inited = ir.GlobalVariable(self.llvm_module, i8, name="__osp_inited");
     _inited.linkage = "internal";
     _inited.initializer = ir.Constant(i8, 0);
-    _kgi = self.func_symtab.get("__jac_glob_init_osp_kernel");
-    if _kgi is None {
-        _kgi = ir.Function(
-            self.llvm_module,
-            ir.FunctionType(ir.VoidType(), []),
-            name="__jac_glob_init_osp_kernel"
-        );
-        self.func_symtab["__jac_glob_init_osp_kernel"] = _kgi;
-    }
-
-    self._osp_kernel_glob_init_fn = _kgi;
+    _kernel_inits = self._osp_kernel_init_fns();
     _ensure = ir.Function(
         self.llvm_module, ir.FunctionType(ir.VoidType(), []), name="__osp_ensure_init"
     );
@@ -540,7 +530,7 @@ impl NaIRGenPass._emit_osp_setup -> None {
             ir.FunctionType(ir.VoidType(), [i64]),
             name="__jac_region_died_hook"
         );
-        _hook.linkage = "linkonce_odr";
+        _hook.linkage = "weak";
         _hook.args[0].name = "rgn";
         _hb = ir.IRBuilder(_hook.append_basic_block("entry"));
         _hb.call(_ensure, []);
@@ -552,27 +542,16 @@ impl NaIRGenPass._emit_osp_setup -> None {
         _hb.call(_died_fn, [_died_arg]);
         _hb.ret_void();
         self.extern_funcs["__jac_region_died_hook"] = _hook;
+        self._record_export("__jac_region_died_hook", _hook.name, "abi");
     }
     _e_entry = _ensure.append_basic_block("entry");
-    _e_krun = _ensure.append_basic_block("kernel_run");
-    _e_setup_chk = _ensure.append_basic_block("setup_check");
     _e_srun = _ensure.append_basic_block("setup_run");
     _e_done = _ensure.append_basic_block("done");
 
-    _eb = ir.IRBuilder(_e_entry);
-    _eb.cbranch(
-        _eb.icmp_unsigned(
-            "!=", _eb.load(_kinited, name="osp.kinited"), ir.Constant(i8, 0)
-        ),
-        _e_setup_chk,
-        _e_krun
-    );
-    _kb = ir.IRBuilder(_e_krun);
-    _kb.store(ir.Constant(i8, 1), _kinited);
-    _kb.call(_kgi, []);
-    _kb.branch(_e_setup_chk);
-
-    _chk_b = ir.IRBuilder(_e_setup_chk);
+    _chk_b = ir.IRBuilder(_e_entry);
+    for _kgi in _kernel_inits {
+        _chk_b.call(_kgi, []);
+    }
     _chk_b.cbranch(
         _chk_b.icmp_unsigned(
             "!=", _chk_b.load(_inited, name="osp.inited"), ir.Constant(i8, 0)
@@ -704,7 +683,7 @@ impl NaIRGenPass._codegen_connect(nd: uni.BinaryExpr) -> (ir.Value | None) {
     _rgn_tgt: ir.Value = self.builder.call(
         _rgn_of_fn, [self._coerce_type(_tgt_i64, i64)], name="conn.rgn.tgt"
     );
-    self.builder.call(
+    connected = self.builder.call(
         osp_conn_fn,
         [
             _src_i64,
@@ -716,6 +695,21 @@ impl NaIRGenPass._codegen_connect(nd: uni.BinaryExpr) -> (ir.Value | None) {
             self._coerce_type(_rgn_tgt, _argtys[6])
         ]
     );
+    self._emit_runtime_raise(
+        self.builder.icmp_signed("==", connected, ir.Constant(connected.type, -1)),
+        "RuntimeError",
+        "cannot connect a destroyed node"
+    );
+    if co.capture_edges {
+        i8p = ir.IntType(8).as_pointer();
+        self._emit_list_helpers("ptr", i8p);
+        helpers = self.list_helpers["ptr"];
+        result = self.builder.call(helpers["new"], [], name="conn.edges");
+        self.builder.call(
+            helpers["append"], [result, self._coerce_type(edge_obj, i8p)]
+        );
+        return result;
+    }
     return tgt;
 }
 

@@ -12,6 +12,7 @@ import from tests.support { JAC_ROOT }
 import jaclang;
 import jaclang.compiler.frontend.unitree as uni;
 import from jaclang.compiler.driver.program { JacProgram }
+import from jaclang.compiler.driver.compile_options { CompileOptions }
 import from jaclang.compiler.driver.pass_driver { run_pass }
 
 glob FIXTURE_DIR = os.path.join(
@@ -21,7 +22,10 @@ glob FIXTURE_DIR = os.path.join(
 """Compile a codespace fixture; stamps only (no codegen) unless cgen=True."""
 def compile_fixture(name: str, cgen: bool = False) -> any {
     prog = JacProgram();
-    mod = prog.compile(os.path.join(FIXTURE_DIR, name), no_cgen=not cgen);
+    mod = prog.compile(
+        os.path.join(FIXTURE_DIR, name),
+        options=CompileOptions(no_cgen=not cgen, skip_native_engine=True)
+    );
     assert not prog.errors_had , f"{name}: {[str(e) for e in prog.errors_had]}";
     return mod;
 }
@@ -133,7 +137,7 @@ test "service-cut import placement is inferred while boundary fact stays" {
 test "plain client import of a server endpoint bridges over rpc" {
     mod = compile_fixture("infer_import_bridge_client.jac", cgen=True);
     js = mod.gen.js;
-    assert 'infer_import_bridge_service' not in js , (
+    assert 'from "./infer_import_bridge_service.js"' not in js , (
         "plain import of a server module must not emit a dead ES import; got:\n" + js
     );
     assert '__jacCallFunction("fetch_msg"' in js , (

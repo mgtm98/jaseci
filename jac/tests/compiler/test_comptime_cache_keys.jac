@@ -17,11 +17,13 @@ import os;
 import sys;
 import tempfile;
 import time;
-import from jaclang.compiler.driver.compile_options { CompileOptions }
 import from jaclang.compiler.driver.compiler { JacCompiler }
+import from jaclang.compiler.driver.jir { native_section_payload, SEC_NBITCODE }
+import jaclang.compiler.backends.native.llvm.binding as llvm;
 import from jaclang.compiler.driver.jir {
     SEC_CTDEPS,
     get_module_cache_path,
+    precompiled_jir_matches_source,
     read_section_bytes
 }
 import from jaclang.compiler.driver.program { JacProgram }
@@ -357,7 +359,7 @@ test "a bundle promoted into the module cache carries its comptime deps" {
 
 def _native_compile(path: str) {
     prog = JacProgram();
-    prog.compile(path, options=CompileOptions(force_target_program=True));
+    prog.compile(path);
     assert not prog.errors_had , (
         f"native compile of {path} failed: "
         f"{[a.pretty_print() for a in prog.errors_had]}"
@@ -365,23 +367,18 @@ def _native_compile(path: str) {
 }
 
 def _native_ir(path: str) -> str {
-    import from jaclang.compiler.driver.jir { get_native_cache_dir }
-    cache_dir = str(get_native_cache_dir(path));
-    stem = os.path.splitext(os.path.basename(path))[0];
-    text = "";
-    if os.path.isdir(cache_dir) {
-        for name in sorted(os.listdir(cache_dir)) {
-            if name.startswith(f"{stem}.") and name.endswith(".ir_cache") {
-                with open(os.path.join(cache_dir, name), "r") as fh {
-                    text += fh.read();
-                }
-            }
-        }
+    cache_path = get_module_cache_path(path);
+    if not cache_path.is_file() {
+        return "";
     }
-    return text;
+    payload = native_section_payload(
+        read_section_bytes(cache_path.read_bytes(), SEC_NBITCODE),
+        JacProgram().native_units().stamp_for()
+    );
+    return str(llvm.parse_bitcode(payload)) if payload is not None else "";
 }
 
-test "a native-placed fold is not served from a stale IR cache" {
+test "a native-placed fold is not served from stale JIR bitcode" {
     tmp = tempfile.mkdtemp();
     with _isolated(tmp) {
         _write(
@@ -409,14 +406,30 @@ test "a native-placed fold is not served from a stale IR cache" {
         );
         _native_compile(main_mod);
         cold = _native_ir(native);
-        assert cold , "the native lane wrote no IR cache for the pinned module";
+        assert cold , "the native lane wrote no JIR bitcode for the pinned module";
         assert "alpha" in cold , f"the cold native IR did not fold the producer";
         _write(producer, "comptime TAG: str = \"beta\";\n");
         _native_compile(main_mod);
         warm = _native_ir(native);
         assert "beta" in warm , (
-            "the native IR cache served a stale fold after its comptime "
-            "producer changed"
+            "the native JIR served a stale fold after its comptime " "producer changed"
         );
+    }
+}
+
+
+test "precompile reuse rejects changed producers before sealing" {
+    paths = _spec_pair("spec one");
+    with _isolated(paths["root"]) {
+        _folded(paths["consumer"]);
+        blob = precompile_unit(paths["consumer"], paths["root"]);
+        assert blob is not None;
+        assert precompiled_jir_matches_source(
+            blob, paths["consumer"], package_root=paths["root"]
+        );
+        _write(paths["producer"], "comptime SPEC: str = \"spec two\";\n");
+        assert not precompiled_jir_matches_source(
+            blob, paths["consumer"], package_root=paths["root"]
+        ) , "precompile would reuse and seal the old producer's value";
     }
 }

@@ -1,4 +1,4 @@
-import from dataclasses { field }
+import from jaclang.runtime.object_model { field }
 import from jaclang.compiler.frontend.unitree {
     Ability,
     ArchHas,
@@ -49,8 +49,11 @@ import from jaclang.compiler.frontend.codeinfo {
     InteropContext
 }
 import from jaclang.compiler.passes.uni_pass { UniPass }
+import type from jaclang.compiler.driver.program { JacProgram }
 
 walker BoundaryAnalysisPass(UniPass) {
+    has prog: JacProgram | None = None;
+    static has HOST_PASS: bool = True;
     has _func_defs: dict[(str, tuple[(InteropContext, Ability)])] = field(
         default_factory=`dict
     ),
@@ -96,6 +99,7 @@ walker BoundaryAnalysisPass(UniPass) {
         type_name: str, search_mods: list[Module]
     ) -> (Archetype | Enum | None);
 
+    can enter_atom_trailer with AtomTrailer entry;
     can enter_ability with Ability entry;
     can enter_func_call with FuncCall entry;
     def _extract_subscript_inner(expr: (UniNode | None)) -> str;

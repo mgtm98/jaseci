@@ -8,8 +8,8 @@ impl JacCompiler.selfhost.getter -> SelfHostCache {
     return cache;
 }
 
-impl JacCompiler.stub_catalog -> any {
-    if self.stub_catalog_disabled or self._stub_trees_served {
+impl JacCompiler.stub_catalog -> StubCatalog | None {
+    if self.stub_catalog_disabled {
         return None;
     }
     found = self._stub_catalog;
@@ -23,7 +23,7 @@ impl JacCompiler.stub_catalog -> any {
 }
 
 impl JacCompiler.note_stub_tree_served(path: str, program: JacProgram) -> None {
-    if self._stub_trees_served or self.selfhost.is_selfhost(program) {
+    if program._stub_trees_served {
         return;
     }
     if self.stub_catalog() is not None {
@@ -31,12 +31,12 @@ impl JacCompiler.note_stub_tree_served(path: str, program: JacProgram) -> None {
     }
     import from jaclang.compiler.driver.modresolver { _in_typeshed_tree }
     if _in_typeshed_tree(path) {
-        self._stub_trees_served = True;
+        program._stub_trees_served = True;
     }
 }
 
-impl JacCompiler.ensure_stub_catalog -> any {
-    if self.stub_catalog_disabled or self._stub_trees_served {
+impl JacCompiler.ensure_stub_catalog -> StubCatalog | None {
+    if self.stub_catalog_disabled {
         return None;
     }
     found = self.stub_catalog();
@@ -83,15 +83,15 @@ impl JacCompiler.get_native_interop_setup(
 
 impl JacCompiler.get_native_layout(
     full_target: str, target_program: JacProgram
-) -> (object | None) {
+) -> (NativeModuleLayout | None) {
     actual_program = self.selfhost.resolve(full_target, target_program);
-    _layout: any = None;
+    _layout: NativeModuleLayout | None = None;
     if (full_target in actual_program.hub.artifacts) {
         gen = actual_program.hub.artifacts[full_target];
-        _layout = gen?.native_layout;
+        _layout = gen.native_layout;
     } elif (full_target in actual_program.mod.hub) {
         mod = actual_program.mod.hub[full_target];
-        _layout = mod.gen?.native_layout;
+        _layout = mod.gen.native_layout;
     }
     if _layout is not None {
         JacCompiler._check_native_abi(_layout, full_target);
@@ -99,9 +99,11 @@ impl JacCompiler.get_native_layout(
     return _layout;
 }
 
-impl JacCompiler._check_native_abi(layout: any, full_target: str) -> None {
+impl JacCompiler._check_native_abi(
+    layout: NativeModuleLayout, full_target: str
+) -> None {
     import from jaclang.compiler.frontend.codeinfo { NATIVE_ABI_VERSION }
-    stamped = layout?.abi_version;
+    stamped = layout.abi_version;
     if stamped is not None and stamped != NATIVE_ABI_VERSION {
         import logging as _abi_log;
         _abi_log.getLogger(__name__).warning(
@@ -183,11 +185,12 @@ impl JacCompiler.get_bytecode(
             bc = secs.get(SEC_BYTECODE);
             if bc is not None {
                 self._restore_sections(full_target, actual_program, secs);
-                _had_native_secs = SEC_NATIVE_OBJ in secs or SEC_LLVM_IR in secs;
+                _had_native_secs = SEC_NBITCODE in secs or SEC_NOBJ in secs;
                 if (
                     _had_native_secs
                     and full_target not in actual_program.hub.artifacts
                     and not self.selfhost.is_selfhost(actual_program)
+                    and self._wants_native_engine(full_target, actual_program)
                 ) {
                     import logging as _bc_logging;
                     _bc_logging.getLogger(__name__).warning(
@@ -234,7 +237,9 @@ impl JacCompiler.get_bytecode(
         setup_progress.on_internal_compile(full_target);
         self.selfhost.enter_bytecode();
     }
-    options = CompileOptions();
+    options = CompileOptions(
+        skip_native_engine=not self._wants_native_engine(full_target, actual_program)
+    );
     result: (uni.Module | None) = None;
     try {
         result = self.compile(
@@ -268,125 +273,74 @@ impl JacCompiler.get_bytecode(
     }
 }
 
+impl JacCompiler._wants_native_engine(full_target: str, program: JacProgram) -> bool {
+    import from jaclang.compiler.driver.jir { is_compiler_source_path }
+    if is_compiler_source_path(full_target) {
+        return False;
+    }
+    opts = program.options;
+    if opts is None {
+        return True;
+    }
+    return not (opts.aot_mode or opts.skip_native_engine);
+}
+
 impl JacCompiler._load_native_from_cache(
     full_target: str,
     target_program: JacProgram,
-    cached_ir: str,
     cached_interop: (dict[str, any] | None)
 ) -> None {
-    try {
-        import jaclang.compiler.backends.native.llvm.binding as llvm;
-        llvm.initialize_native_target();
-        llvm.initialize_native_asmprinter();
-        import ctypes;
-        import ctypes.util;
-        libc_name = ctypes.util.find_library('c');
-        if libc_name {
-            llvm.load_library_permanently(libc_name);
-        }
-        libgc_name = ctypes.util.find_library('gc');
-        if libgc_name {
-            llvm.load_library_permanently(libgc_name);
-        } else {
-            libc = ctypes.CDLL(libc_name);
-            malloc_addr = ctypes.cast(libc.malloc, ctypes.c_void_p).value;
-            llvm.add_symbol('GC_malloc', malloc_addr);
-        }
-        llvm_mod = llvm.parse_assembly(cached_ir);
-        llvm_mod.verify();
-        target = llvm.Target.from_default_triple();
-        assert isinstance(target, llvm.Target);
-        target_machine = target.create_target_machine();
-        engine = llvm.create_mcjit_compiler(llvm_mod, target_machine);
-        assert isinstance(engine, llvm.ExecutionEngine);
-        import from jaclang.compiler.frontend.codeinfo {
-            CodeGenTarget,
-            install_native_static_init
-        }
-        gen = CodeGenTarget();
-        gen.native_engine = engine;
-        py_func_table: dict = {};
-        callbacks_list: list = [];
-        gen.interop_py_funcs = py_func_table;
-        gen._interop_callbacks = callbacks_list;
-        if cached_interop {
-            import from jaclang.runtime.interop_bridge { register_py_callbacks }
-            manifest = self._deserialize_interop_table(cached_interop);
-            gen.interop_manifest = manifest;
-            if manifest.native_imports {
-                register_py_callbacks(manifest, py_func_table, callbacks_list);
-            }
-        }
-        install_native_static_init(engine, gen.interop_manifest);
-        target_program.hub.artifacts[full_target] = gen;
-    } except Exception as e {
-        import logging;
-        logging.getLogger(__name__).debug(
-            f"Failed to load native module from cache: {e}"
+    """Stamp each import with the emitter's native-only verdict.
+
+    Whether an import resolves to a module the native lane owns, and
+    whether that module lives inside jaclang's own tree, are both
+    import-resolution questions: they need the hub, the placement pins
+    and the filesystem, which is the driver's ground and not a pass's.
+    The emitter used to ask for them through `self.prog`, the one
+    driver read left in a sealed pass. It now consumes a bool.
+    """;
+    import from jaclang.compiler.frontend.codeinfo { CodeGenTarget }
+    engine = self._sealed_native_engine(full_target);
+    if engine is None {
+        import from jaclang.compiler.backends.native.link_plan { jit_engine_for_cached }
+        engine = jit_engine_for_cached(
+            target_program, full_target, target_program.options or CompileOptions()
         );
     }
-}
-
-impl JacCompiler._load_native_from_bitcode(
-    full_target: str,
-    target_program: JacProgram,
-    section_data: bytes,
-    cached_interop: (dict[str, any] | None)
-) -> None {
-    import struct as _struct;
-    import jaclang.compiler.backends.native.llvm.binding as llvm;
-    llvm.initialize_native_target();
-    llvm.initialize_native_asmprinter();
-
-    if len(section_data) < 2 {
-        raise ValueError("SEC_NATIVE_OBJ section too short");
-    }
-    (triple_len, ) = _struct.unpack_from('<H', section_data, 0);
-    if len(section_data) < 2 + triple_len {
-        raise ValueError("SEC_NATIVE_OBJ triple truncated");
-    }
-    cached_triple = section_data[2:2 + triple_len].decode('utf-8');
-    current_triple = llvm.get_default_triple();
-    if cached_triple != current_triple {
-        raise ValueError(
-            f"Platform mismatch: cached={cached_triple}, current={current_triple}"
-        );
-    }
-    bitcode = section_data[2 + triple_len:];
-
-    import ctypes;
-    import ctypes.util;
-    libc_name = ctypes.util.find_library('c');
-    if libc_name {
-        llvm.load_library_permanently(libc_name);
-    }
-
-    llvm_mod = llvm.parse_bitcode(bitcode);
-    target = llvm.Target.from_default_triple();
-    assert isinstance(target, llvm.Target);
-    target_machine = target.create_target_machine();
-    engine = llvm.create_mcjit_compiler(llvm_mod, target_machine);
-    assert isinstance(engine, llvm.ExecutionEngine);
-    import from jaclang.compiler.frontend.codeinfo {
-        CodeGenTarget,
-        install_native_static_init
+    if engine is None {
+        return;
     }
     gen = CodeGenTarget();
-    gen.native_engine = engine;
+    engine_any: any = engine;
+    gen.native_engine = engine_any;
     py_func_table: dict = {};
     callbacks_list: list = [];
     gen.interop_py_funcs = py_func_table;
     gen._interop_callbacks = callbacks_list;
     if cached_interop {
-        import from jaclang.runtime.interop_bridge { register_py_callbacks }
         manifest = self._deserialize_interop_table(cached_interop);
         gen.interop_manifest = manifest;
-        if manifest.native_imports {
+        import from jaclang.runtime.native_library { SharedNativeEngine }
+        if manifest.native_imports and not isinstance(engine, SharedNativeEngine) {
+            import from jaclang.runtime.interop_bridge { register_py_callbacks }
             register_py_callbacks(manifest, py_func_table, callbacks_list);
         }
     }
-    install_native_static_init(engine, gen.interop_manifest);
     target_program.hub.artifacts[full_target] = gen;
+}
+
+impl JacCompiler._sealed_native_engine(full_target: str) -> (object | None) {
+    import from jaclang.jac0core { sealed as _sealed }
+    found = _sealed.image_for_path(full_target);
+    if found is None {
+        return None;
+    }
+    record = found.native_artifact();
+    if record is None {
+        return None;
+    }
+    import from jaclang.runtime.native_library { shared_engine_for }
+    return shared_engine_for(str(found.pkg_dir / record["path"]), record);
 }
 
 impl JacCompiler._restore_sections(
@@ -423,8 +377,8 @@ impl JacCompiler._restore_sections(
         } except Exception {}
     }
 
-    native_obj_bytes = secs.get(SEC_NATIVE_OBJ);
-    if native_obj_bytes is not None {
+    if (SEC_NBITCODE in secs or SEC_NOBJ in secs)
+        and self._wants_native_engine(full_target, actual_program) {
         try {
             import json;
             cached_interop: (dict[str, any] | None) = None;
@@ -432,28 +386,13 @@ impl JacCompiler._restore_sections(
             if interop_bytes is not None {
                 cached_interop = json.loads(interop_bytes.decode('utf-8'));
             }
-            self._load_native_from_bitcode(
-                full_target, actual_program, native_obj_bytes, cached_interop
+            self._load_native_from_cache(full_target, actual_program, cached_interop);
+        } except Exception as e {
+            import logging;
+            logging.getLogger(__name__).debug(
+                f"Failed to load native module from cache: {e}"
             );
-            return;
-        } except Exception {}
-    }
-
-    llvm_bytes = secs.get(SEC_LLVM_IR);
-    if llvm_bytes is not None {
-        try {
-            import zlib;
-            import json;
-            cached_ir = zlib.decompress(llvm_bytes).decode('utf-8');
-            cached_interop2: (dict[str, any] | None) = None;
-            interop_bytes2 = secs.get(SEC_INTEROP);
-            if interop_bytes2 is not None {
-                cached_interop2 = json.loads(interop_bytes2.decode('utf-8'));
-            }
-            self._load_native_from_cache(
-                full_target, actual_program, cached_ir, cached_interop2
-            );
-        } except Exception {}
+        }
     }
 }
 
@@ -502,8 +441,7 @@ impl JacCompiler._get_precompiled_jir_bytecode(
         PRECOMPILE_SENTINEL,
         SEC_CTDEPS,
         absolutize_ct_deps_section,
-        cache_mode,
-        ct_deps_fresh
+        cache_mode
     }
     import from jaclang.jac0core { sealed as _sealed }
     (rebuild_flag, no_precompile) = cache_mode();
@@ -534,8 +472,9 @@ impl JacCompiler._get_precompiled_jir_bytecode(
                     trusted = (
                         sealed_img is not None
                         or (
-                            precompiled_jir_matches_source(jir_data, norm_file)
-                            and ct_deps_fresh(jir_data, norm_root)
+                            precompiled_jir_matches_source(
+                                jir_data, norm_file, package_root=norm_root
+                            )
                         )
                     );
                     if trusted {
@@ -572,19 +511,26 @@ impl JacCompiler._build_interop_dict(result: uni.Module) -> dict {
     interop_data: dict = {'bindings': {}};
     for (name, binding) in manifest.bindings.items() {
         interop_data['bindings'][name] = {
+            'name': binding.name,
             'source_context': binding.source_context.value,
             'callers': [c.value for c in binding.callers],
             'ret_type': binding.ret_type,
             'param_types': binding.param_types,
             'param_names': binding.param_names,
             'source_module': binding.source_module,
-            'kind': binding.kind
+            'kind': binding.kind,
+            'provider_app': binding.provider_app,
+            'native_contract': binding.native_contract,
+            'endpoint_id': binding.endpoint_id
         };
     }
 
     interop_data['func_access'] = dict(manifest.func_access);
     interop_data['walker_access'] = dict(manifest.walker_access);
     interop_data['endpoint_effects'] = dict(manifest.endpoint_effects);
+    interop_data['native_host_imports'] = dict(manifest.native_host_imports);
+    interop_data['app_edges'] = list(manifest.app_edges);
+    interop_data['provider_routes'] = dict(manifest.provider_routes);
     return interop_data;
 }
 
@@ -600,20 +546,26 @@ impl JacCompiler._deserialize_interop_table(
     cached_bindings: dict[str, dict[str, any]] = cached_interop.get('bindings', {});
     for (name, data) in cached_bindings.items() {
         binding = InteropBinding(
-            name=name,
+            name=data['name'],
             source_context=InteropContext(data['source_context']),
             callers={InteropContext(c) for c in data.get('callers', [])},
             ret_type=data.get('ret_type', 'int'),
             param_types=data.get('param_types', []),
             param_names=data.get('param_names', []),
             source_module=data.get('source_module'),
-            kind=data.get('kind', 'function')
+            kind=data.get('kind', 'function'),
+            provider_app=data['provider_app'],
+            native_contract=data['native_contract'],
+            endpoint_id=data['endpoint_id']
         );
         manifest.bindings[name] = binding;
     }
     manifest.func_access.update(cached_interop.get('func_access', {}));
     manifest.walker_access.update(cached_interop.get('walker_access', {}));
     manifest.endpoint_effects.update(cached_interop.get('endpoint_effects', {}));
+    manifest.native_host_imports.update(cached_interop['native_host_imports']);
+    manifest.app_edges.extend(cached_interop['app_edges']);
+    manifest.provider_routes.update(cached_interop['provider_routes']);
     return manifest;
 }
 
@@ -647,7 +599,7 @@ impl JacCompiler.parse_str(
             raise ValueError(
                 f"{file_path}: the .na.jac marker was retired in 0.35 -- rename "
                 "the file to .jac; native placement is inferred (or forced by "
-                "'jac nacompile' / 'jac build --as native'). See 'jac guide "
+                "'jac build --native' / 'jac build --as native'). See 'jac guide "
                 "reference/language/native-pathway'."
             );
         }
@@ -664,11 +616,14 @@ impl JacCompiler.parse_str(
             parse_woven
         }
         codespace = '';
-        import from jaclang.compiler.frontend.codeinfo {
-            is_client_by_location as _cbl,
-            is_native_by_location as _nbl
+        import from jaclang.compiler.frontend.codeinfo { is_client_by_location as _cbl }
+        import from jaclang.compiler.placement.placement_facts {
+            native_only as _native_only,
+            native_unit as _native_unit
         }
-        if _nbl(file_path) {
+        _p_opts0 = target_program.options;
+        _native_unit_on = bool(_p_opts0 is not None and _p_opts0.native_unit);
+        if _native_only(file_path) {
             codespace = 'native';
         }
         if not codespace and _cbl(file_path) {
@@ -678,19 +633,13 @@ impl JacCompiler.parse_str(
             import from jaclang.compiler.placement.placement_pins {
                 effective_module_pin as _mod_pin
             }
-            _pinned_space = _mod_pin(file_path);
+            _pinned_space = _mod_pin(file_path, target_program);
             if _pinned_space in ('client', 'native') {
                 codespace = _pinned_space;
             }
         }
-        if not codespace {
-            import from jaclang.compiler.native_scope {
-                in_native_scope_path as _in_scope,
-                scope_lowering_active as _scope_on
-            }
-            if _scope_on() and _in_scope(file_path) {
-                codespace = 'native';
-            }
+        if not codespace and _native_unit(file_path, _native_unit_on, target_program) {
+            codespace = 'native';
         }
         if not codespace {
             _p_opts = target_program.options;
@@ -721,13 +670,26 @@ impl JacCompiler.parse_str(
             }
         }
         (mod, had_error) = parse_woven(
-            source_str, file_path, target_program, annex_sources(file_path)
+            source_str,
+            file_path,
+            target_program,
+            annex_sources(file_path),
+            early_context=(
+                codespace
+                or (
+                    'server'
+                        if _default_codespace_for(target_program) != 'native'
+                        else ''
+                )
+            )
         );
         if (codespace == 'client') {
             _coerce_client_module(mod);
         } elif (codespace == 'native') {
             _coerce_native_module(mod);
             na_coverage_record(mod.loc.mod_path, 'native');
+        } elif codespace == 'server' {
+            mod.set_code_context(CodeContext.SERVER);
         } else {
             run_codespace_infer = True;
         }
@@ -750,12 +712,10 @@ impl JacCompiler.parse_str(
     if run_codespace_infer {
         _opts = target_program.options;
         _analysis_only = _opts is not None and _opts.no_cgen;
-        import from jaclang.compiler.native_scope {
-            in_native_scope_path,
-            scope_lowering_active
-        }
+        _native_unit_opt = bool(_opts is not None and _opts.native_unit);
+        import from jaclang.compiler.native_scope { in_native_scope_path }
         _scope_native = (
-            scope_lowering_active() and in_native_scope_path(mod.loc.mod_path or '')
+            _native_unit_opt and in_native_scope_path(mod.loc.mod_path or '')
         );
         _native_eligible = (
             not _analysis_only
@@ -771,19 +731,23 @@ impl JacCompiler.parse_str(
             import from jaclang.compiler.placement.placement_solver {
                 native_default_verdict
             }
-            (_na_ok, _na_why) = native_default_verdict(mod);
+            (_na_ok, _na_why) = native_default_verdict(
+                mod, target_program, _native_unit_opt
+            );
             if _na_ok {
                 _coerce_native_module(mod);
                 mod.codespace_inferred = True;
                 na_coverage_record(mod.loc.mod_path, 'native');
             } elif _na_why == 'previously-demoted' {
                 import from jaclang.compiler.placement.placement_pins {
-                    _demoted_native_code
+                    native_demotion_code
                 }
                 na_coverage_record(
                     mod.loc.mod_path,
                     'demoted',
-                    _demoted_native_code(os.path.realpath(mod.loc.mod_path)),
+                    native_demotion_code(
+                        os.path.realpath(mod.loc.mod_path), target_program
+                    ),
                     _na_why
                 );
             } else {
@@ -821,22 +785,12 @@ impl JacCompiler.resolve_absorb_imports(
         }
         resolved = path_node.resolve_relative_path();
         module: (uni.Module | None) = None;
-        if (resolved in target_program.mod.hub) {
-            module = target_program.mod.hub[resolved];
-        } elif resolved.endswith('.pyi') {
-            try {
-                module = target_program.load_dependency_module(
-                    resolved, importer_path=mod.loc.mod_path
-                );
-            } except Exception {
-                module = None;
-            }
-        } else {
-            try {
-                module = target_program.compile(resolved, no_cgen=True);
-            } except Exception {
-                module = None;
-            }
+        try {
+            module = target_program.load_dependency_module(
+                resolved, importer_path=mod.loc.mod_path
+            );
+        } except Exception {
+            module = None;
         }
         imp.absorbed_mod = module;
     }
@@ -859,19 +813,14 @@ impl JacCompiler.stamp_access_check_facts(mod: uni.Module) -> None {
 impl JacCompiler.stamp_native_import_facts(
     mod: uni.Module, target_program: JacProgram
 ) -> None {
-    """Stamp each import with the emitter's native-only verdict.
-
-    Whether an import resolves to a module the native lane owns, and
-    whether that module lives inside jaclang's own tree, are both
-    import-resolution questions: they need the hub, the placement pins
-    and the filesystem, which is the driver's ground and not a pass's.
-    The emitter used to ask for them through `self.prog`, the one
-    driver read left in a sealed pass. It now consumes a bool.
-    """;
     import os;
+    import from jaclang.compiler.frontend.module_facts { ModuleFacts }
+    needs_native = mod.decided_codespace == 'native'
+        or ModuleFacts.has_native_context_stmts(mod);
     for imp in mod.get_all_sub_nodes(uni.Import) {
         target = native_only_import_target(imp, target_program);
-        imp.native_only_drop = target is not None
+        imp.native_only_drop = needs_native
+            and target is not None
             and (os.sep + 'jaclang' + os.sep) not in os.path.abspath(target);
     }
 }
@@ -1112,7 +1061,7 @@ impl JacCompiler.stamp_boundary_facts(
                 na_intent = (
                     native_ctx
                     or in_native_mod
-                    or import_declares_native_target(nd)
+                    or import_declares_native_target(nd, target_program)
                     or cl_na_edge
                 );
                 facts.native_from_path = resolve_native(module_name, na_intent);
@@ -1177,7 +1126,9 @@ impl JacCompiler.stamp_boundary_facts(
                 module_name = '.'.join(p.value for p in item.path);
                 if module_name {
                     na_intent = (
-                        native_ctx or in_native_mod or import_declares_native_target(nd)
+                        native_ctx
+                        or in_native_mod
+                        or import_declares_native_target(nd, target_program)
                     );
                     facts.native_absorb_path = resolve_native(module_name, na_intent);
                 }
@@ -1195,7 +1146,7 @@ impl JacCompiler.stamp_boundary_facts(
                         na_intent = (
                             native_ctx
                             or in_native_mod
-                            or import_declares_native_target(nd)
+                            or import_declares_native_target(nd, target_program)
                         );
                         item_path = resolve_native(whole_name, na_intent);
                         if item_path {
@@ -1214,196 +1165,179 @@ impl JacCompiler.compile(
     use_str: (str | None) = None,
     options: CompileOptions = CompileOptions()
 ) -> uni.Module {
-    import from jaclang.compiler.native_scope {
-        activate_scope_lowering,
-        deactivate_scope_lowering,
-        in_native_scope_path,
-        scope_lowering_active
-    }
-    compile_progress.notify(str(file_path));
-    _scope_armed = False;
-    if (
-        options.aot_mode
-        and options.default_codespace == 'native'
-        and self._reentrant_depth == 0
-        and in_native_scope_path(str(file_path))
-        and not scope_lowering_active()
-    ) {
-        activate_scope_lowering();
-        _scope_armed = True;
-    }
-    if self._reentrant_depth == 0 and not self.stub_catalog_disabled {
-        if not self.selfhost.is_selfhost(target_program) {
-            import from jaclang.compiler.types.stubcat.locate { StubCatalogUnavailable }
-            try {
-                self.ensure_stub_catalog();
-            } except StubCatalogUnavailable {}
+    with compile_progress.track(str(file_path)) {
+        if self._reentrant_depth == 0 and not self.stub_catalog_disabled {
+            if not self.selfhost.is_selfhost(target_program) {
+                import from jaclang.compiler.types.stubcat.locate {
+                    StubCatalogUnavailable
+                }
+                try {
+                    self.ensure_stub_catalog();
+                } except StubCatalogUnavailable {}
+            }
         }
-    }
-    import from pathlib { Path as _WrapPath }
-    import from jaclang.compiler.frontend.codeinfo {
-        get_effective_default_codespace_override,
-        set_effective_default_codespace
-    }
-    _prev_cs = get_effective_default_codespace_override();
-    _depth_prev = self._reentrant_depth;
-    self._reentrant_depth = _depth_prev + 1;
-    if _depth_prev == 0 {
-        self._closure_opts = options;
-    }
-    _gc_prev: (tuple | None) = None;
-    if _depth_prev == 0 and not os.environ.get('JAC_GC_NO_COMPILE_BOOST') {
-        import gc;
-        _gc_prev = gc.get_threshold();
-        if _gc_prev[0] >= COMPILE_GC_THRESHOLDS[0] {
-            _gc_prev = None;
-        } else {
-            gc.set_threshold(*COMPILE_GC_THRESHOLDS);
+        import from pathlib { Path as _WrapPath }
+        import from jaclang.compiler.frontend.codeinfo {
+            get_effective_default_codespace_override,
+            set_effective_default_codespace,
+            set_native_unit_compile,
+            reset_native_unit_compile
         }
-    }
-    _outer_opts: (CompileOptions | None) = None;
-    _outer_prog: (JacProgram | None) = None;
-    _scratch_prog: (JacProgram | None) = None;
-
-    import from jaclang.compiler.driver.jir {
-        native_ir_cache_set_suspended,
-        native_ir_cache_suspended
-    }
-    _na_cache_prev = native_ir_cache_suspended();
-    if options.no_ir_cache {
-        native_ir_cache_set_suspended(True);
-    }
-    try {
-        if options.force_target_program {
-            _wrap_prog = target_program;
-        } else {
-            _wrap_prog = self.selfhost.resolve(file_path, target_program);
+        _prev_cs = get_effective_default_codespace_override();
+        _native_unit_prev = set_native_unit_compile(bool(options.native_unit));
+        _depth_prev = self._reentrant_depth;
+        self._reentrant_depth = _depth_prev + 1;
+        if _depth_prev == 0 {
+            self._closure_opts = options;
         }
-
-        _scratch_prog = _wrap_prog;
-        _wrap_prog.scratch.compile_depth += 1;
-        if _depth_prev > 0 {
-            _outer_prog = _wrap_prog;
-            _outer_opts = _wrap_prog.options;
+        _gc_prev: (tuple | None) = None;
+        if _depth_prev == 0 and not os.environ.get('JAC_GC_NO_COMPILE_BOOST') {
+            import gc;
+            _gc_prev = gc.get_threshold();
+            if _gc_prev[0] >= COMPILE_GC_THRESHOLDS[0] {
+                _gc_prev = None;
+            } else {
+                gc.set_threshold(*COMPILE_GC_THRESHOLDS);
+            }
         }
-        _pre_errs = len(_wrap_prog.errors_had);
-        _pre_warns = len(_wrap_prog.warnings_had);
-        _mod: (uni.Module | None) = None;
-        _crash: (Exception | None) = None;
+        _outer_opts: (CompileOptions | None) = None;
+        _outer_prog: (JacProgram | None) = None;
+        _scratch_prog: (JacProgram | None) = None;
+        _retain_selfhost = self.selfhost.is_selfhost(target_program);
+        if _retain_selfhost {
+            self.selfhost.enter_execution();
+        }
         try {
-            _mod = self._compile_once(
+            _wrap_prog = target_program;
+
+            _scratch_prog = _wrap_prog;
+            _wrap_prog.scratch.compile_depth += 1;
+            if _depth_prev > 0 {
+                _outer_prog = _wrap_prog;
+                _outer_opts = _wrap_prog.options;
+            }
+            _pre_errs = len(_wrap_prog.errors_had);
+            _pre_warns = len(_wrap_prog.warnings_had);
+            _mod: (uni.Module | None) = None;
+            _crash: (Exception | None) = None;
+            try {
+                _mod = self._compile_once(
+                    file_path=file_path,
+                    target_program=target_program,
+                    use_str=use_str,
+                    options=options
+                );
+            } except Exception as _e {
+                _crash = _e;
+            }
+            if _crash is not None {
+                _re_entered = import_error_re_enters(_crash, file_path);
+                if _re_entered is not None {
+                    raise CompilerSourceError(
+                        f"compiling {file_path} re-entered it: a pass imported "
+                        f"'{_re_entered}' while Python was still executing that "
+                        "module, so the name is not bound yet. A module a pass "
+                        "reaches at run time belongs in the schedule's dependency "
+                        "list (IR_SCHED_DEPS in jaclang.compiler.driver.schedules), "
+                        "which the loader pre-imports and which puts any compile "
+                        "nested in its import on the bootstrap tier."
+                    ) from _crash;
+                }
+            }
+            _resolved = os.path.realpath(file_path);
+            _probe = _mod if _mod is not None else _wrap_prog.mod.hub.get(_resolved);
+            _inferred_native = (
+                not options.aot_mode
+                and not options.force_codespace
+                and _probe is not None
+                and _probe.decided_codespace == 'native'
+            );
+            _failed = _crash is not None or len(_wrap_prog.errors_had) > _pre_errs;
+            if not (_inferred_native and _failed) {
+                if _crash is not None {
+                    raise _crash;
+                }
+                assert _mod is not None;
+                return _mod;
+            }
+
+            _is_ice = _crash is not None and len(_wrap_prog.errors_had) == _pre_errs;
+            if _is_ice and os.environ.get('JAC_NATIVE_ICE_RAISE') {
+                raise _crash;
+            }
+            _first_err = (
+                _wrap_prog.errors_had[_pre_errs].pretty_print().split('\n')[0]
+                    if len(_wrap_prog.errors_had) > _pre_errs
+                    else f"{type(_crash).__name__}: {_crash}"
+            );
+            _demote_alerts = _wrap_prog.errors_had[_pre_errs:];
+            _demote_code = (
+                _demote_alerts[0].code.code
+                    if (_demote_alerts and _demote_alerts[0].code is not None)
+                    else type(_crash).__name__
+            );
+            na_coverage_record(
+                _resolved, 'ice' if _is_ice else 'demoted', _demote_code, _first_err
+            );
+            _wrap_prog.native_units().record_verdict(
+                _resolved, _demote_code, _first_err
+            );
+            del _wrap_prog.errors_had[_pre_errs:];
+            del _wrap_prog.warnings_had[_pre_warns:];
+            try {
+                _wrap_prog.invalidate_module(_resolved);
+            } except Exception {}
+            try {
+                import from jaclang.compiler.placement.placement_solver {
+                    invalidate_importers_es
+                }
+                for _stale_mod in invalidate_importers_es(_wrap_prog, _resolved) {
+                    _drop_demoted_native_bindings(_stale_mod, _resolved);
+                }
+            } except Exception as _reset_exc {
+                import logging as _reset_log;
+                _reset_log.getLogger(__name__).warning(
+                    f"native demotion of {_resolved} could not reset its importers "
+                    f"({_reset_exc}); stale client bindings may persist until a rebuild."
+                );
+            }
+            try {
+                import from jaclang.cli.console { console as _note_console }
+                (_note_msg, _note_style) = na_demotion_note(
+                    file_path, _first_err, _is_ice
+                );
+                _note_console.print(_note_msg, style=_note_style, file=sys.stderr);
+            } except Exception {}
+            return self._compile_once(
                 file_path=file_path,
                 target_program=target_program,
                 use_str=use_str,
                 options=options
             );
-        } except Exception as _e {
-            _crash = _e;
-        }
-        if _crash is not None {
-            _re_entered = import_error_re_enters(_crash, file_path);
-            if _re_entered is not None {
-                raise CompilerSourceError(
-                    f"compiling {file_path} re-entered it: a pass imported "
-                    f"'{_re_entered}' while Python was still executing that "
-                    "module, so the name is not bound yet. A module a pass "
-                    "reaches at run time belongs in the schedule's dependency "
-                    "list (IR_SCHED_DEPS in jaclang.compiler.driver.schedules), "
-                    "which the loader pre-imports and which puts any compile "
-                    "nested in its import on the bootstrap tier."
-                ) from _crash;
+        } finally {
+            reset_native_unit_compile(_native_unit_prev);
+            set_effective_default_codespace(_prev_cs);
+            self._reentrant_depth = _depth_prev;
+            if _depth_prev == 0 {
+                self._closure_opts = None;
             }
-        }
-        _resolved = os.path.realpath(file_path);
-        _probe = _mod if _mod is not None else _wrap_prog.mod.hub.get(_resolved);
-        _inferred_native = (
-            not options.aot_mode
-            and not options.force_codespace
-            and _probe is not None
-            and _probe.decided_codespace == 'native'
-        );
-        _failed = _crash is not None or len(_wrap_prog.errors_had) > _pre_errs;
-        if not (_inferred_native and _failed) {
-            if _crash is not None {
-                raise _crash;
+            if _outer_prog is not None and _outer_opts is not None {
+                _outer_prog.options = _outer_opts;
             }
-            assert _mod is not None;
-            return _mod;
-        }
-
-        _is_ice = _crash is not None and len(_wrap_prog.errors_had) == _pre_errs;
-        if _is_ice and os.environ.get('JAC_NATIVE_ICE_RAISE') {
-            raise _crash;
-        }
-        _first_err = (
-            _wrap_prog.errors_had[_pre_errs].pretty_print().split('\n')[0]
-                if len(_wrap_prog.errors_had) > _pre_errs
-                else f"{type(_crash).__name__}: {_crash}"
-        );
-        _demote_alerts = _wrap_prog.errors_had[_pre_errs:];
-        _demote_code = (
-            _demote_alerts[0].code.code
-                if (_demote_alerts and _demote_alerts[0].code is not None)
-                else type(_crash).__name__
-        );
-        na_coverage_record(
-            _resolved, 'ice' if _is_ice else 'demoted', _demote_code, _first_err
-        );
-        import from jaclang.compiler.placement.placement_pins { _mark_demoted_native }
-        _mark_demoted_native(_resolved, _demote_code);
-        del _wrap_prog.errors_had[_pre_errs:];
-        del _wrap_prog.warnings_had[_pre_warns:];
-        try {
-            _wrap_prog.invalidate_module(_resolved);
-        } except Exception {}
-        try {
-            import from jaclang.compiler.placement.placement_solver {
-                invalidate_importers_es
+            if _scratch_prog is not None {
+                _scratch_prog.scratch.compile_depth -= 1;
+                if _scratch_prog.scratch.compile_depth <= 0 {
+                    _scratch_prog.scratch.compile_depth = 0;
+                    self._release_compile_scratch(_scratch_prog);
+                }
             }
-            for _stale_mod in invalidate_importers_es(_wrap_prog, _resolved) {
-                _drop_demoted_native_bindings(_stale_mod, _resolved);
+            if _gc_prev is not None {
+                import gc;
+                gc.set_threshold(*_gc_prev);
             }
-        } except Exception as _reset_exc {
-            import logging as _reset_log;
-            _reset_log.getLogger(__name__).warning(
-                f"native demotion of {_resolved} could not reset its importers "
-                f"({_reset_exc}); stale client bindings may persist until a rebuild."
-            );
-        }
-        try {
-            import from jaclang.cli.console { console as _note_console }
-            (_note_msg, _note_style) = na_demotion_note(file_path, _first_err, _is_ice);
-            _note_console.print(_note_msg, style=_note_style, file=sys.stderr);
-        } except Exception {}
-        return self._compile_once(
-            file_path=file_path,
-            target_program=target_program,
-            use_str=use_str,
-            options=options
-        );
-    } finally {
-        if _scope_armed {
-            deactivate_scope_lowering();
-        }
-        native_ir_cache_set_suspended(_na_cache_prev);
-        set_effective_default_codespace(_prev_cs);
-        self._reentrant_depth = _depth_prev;
-        if _depth_prev == 0 {
-            self._closure_opts = None;
-        }
-        if _outer_prog is not None and _outer_opts is not None {
-            _outer_prog.options = _outer_opts;
-        }
-        if _scratch_prog is not None {
-            _scratch_prog.scratch.compile_depth -= 1;
-            if _scratch_prog.scratch.compile_depth <= 0 {
-                _scratch_prog.scratch.compile_depth = 0;
-                self._release_compile_scratch(_scratch_prog);
+            if _retain_selfhost {
+                self.selfhost.exit_execution();
             }
-        }
-        if _gc_prev is not None {
-            import gc;
-            gc.set_threshold(*_gc_prev);
         }
     }
 }
@@ -1447,21 +1381,7 @@ impl JacCompiler._persist_module_cache(
             );
         }
 
-        native_bc = result.gen.native_bitcode;
-        if native_bc is not None {
-            import struct as _struct;
-            import jaclang.compiler.backends.native.llvm.binding as _llvm;
-            triple_text = _llvm.get_default_triple();
-            assert isinstance(triple_text, str);
-            triple = triple_text.encode('utf-8');
-            hdr = _struct.pack('<H', len(triple)) + triple;
-            sections[SEC_NATIVE_OBJ] = hdr + native_bc;
-        } else {
-            llvm_ir = result.gen.llvm_ir;
-            if llvm_ir is not None {
-                sections[SEC_LLVM_IR] = zlib.compress(str(llvm_ir).encode('utf-8'), 6);
-            }
-        }
+        sections.update(self._native_sections(full_target, result, actual_program));
         interop_dict = self._build_interop_dict(result);
         if interop_dict {
             sections[SEC_INTEROP] = json.dumps(interop_dict).encode('utf-8');
@@ -1495,9 +1415,70 @@ impl JacCompiler._persist_module_cache(
     } except Exception {}
 }
 
+impl JacCompiler._native_sections(
+    full_target: str, result: uni.Module, actual_program: JacProgram
+) -> dict[int, bytes] {
+    sections: dict[int, bytes] = {};
+    gen = result.gen;
+    if gen.native_iface is None {
+        return sections;
+    }
+    import from jaclang.compiler.driver.jir { SEC_NDEPS, native_deps_section }
+    registry = actual_program.native_units();
+    stamp = registry.stamp_for(actual_program.options);
+    sections[SEC_NIFACE] = stamp.pack(gen.native_iface.to_bytes());
+    if gen.native_object is not None {
+        sections[SEC_NOBJ] = stamp.pack(gen.native_object);
+    }
+    if gen.native_bitcode is not None {
+        sections[SEC_NBITCODE] = stamp.pack(gen.native_bitcode);
+    }
+    dep_digests = registry.dep_digests(list(gen.native_deps or []));
+    sections[SEC_NDEPS] = stamp.pack(native_deps_section(dep_digests));
+    import from jaclang.compiler.driver.jir { SEC_NCTDEPS, ct_deps_section }
+    compile_deps = ct_deps_section(result.ct_file_deps, result.ct_body_deps);
+    sections[SEC_NCTDEPS] = stamp.pack(compile_deps);
+    registry.record(
+        full_target,
+        gen.native_iface,
+        actual_program.options,
+        dep_digests,
+        compile_deps=compile_deps
+    );
+    return sections;
+}
+
+impl JacCompiler._persist_native_unit(
+    full_target: str, result: uni.Module, actual_program: JacProgram
+) -> None {
+    if actual_program.iface_registry().verifying {
+        return;
+    }
+    if result is None or result.parse_failed or result.gen.native_iface is None {
+        return;
+    }
+    try {
+        sections = self._native_sections(full_target, result, actual_program);
+        interop_dict = self._build_interop_dict(result);
+        if interop_dict {
+            import json;
+            sections[SEC_INTEROP] = json.dumps(interop_dict).encode('utf-8');
+        }
+        try {
+            import from jaclang.compiler.placement.placement {
+                get_module_summary,
+                summary_to_bytes
+            }
+            sections[SEC_PLACEMENT] = summary_to_bytes(
+                get_module_summary(result, actual_program)
+            );
+        } except Exception {}
+        write_module_cache(full_target, None, extra_sections=sections);
+    } except Exception {}
+}
+
 impl JacCompiler._release_compile_scratch(target_program: JacProgram) -> None {
     try {
-        target_program.release_native_dep_units();
         target_program.release_check_caches();
     } except Exception {}
 }
@@ -1518,23 +1499,14 @@ impl JacCompiler._compile_once(
             );
         }
     }
-    if options.force_target_program {
-        actual_program = target_program;
-    } else {
-        actual_program = self.selfhost.resolve(file_path, target_program);
-    }
+    actual_program = target_program;
 
     _prev_opts = actual_program.options;
     if _prev_opts is not None
-        and not (
-            options.nogc_enforce_all
-            or options.nogc_cli_target
-            or options.nogc_enforce_modules
-        ) {
+        and not (options.nogc_enforce_all or options.memory_enforce) {
         options.nogc_enforce_all = _prev_opts.nogc_enforce_all;
-        options.nogc_cli_target = _prev_opts.nogc_cli_target;
-        options.nogc_enforce_modules = _prev_opts.nogc_enforce_modules;
-        options.nogc_grandfathered = _prev_opts.nogc_grandfathered;
+        options.memory_enforce = _prev_opts.memory_enforce;
+        options.memory_exempt = _prev_opts.memory_exempt;
     }
     if _prev_opts is not None and not options.default_codespace {
         options.default_codespace = _prev_opts.default_codespace;
@@ -1565,7 +1537,11 @@ impl JacCompiler._compile_once(
         }
     }
     if _iface_reg is None {
-        return self._compile_pipeline(file_path, actual_program, use_str, options);
+        _plain = self._compile_pipeline(file_path, actual_program, use_str, options);
+        if use_str is None {
+            self._persist_native_unit(_iface_target, _plain, actual_program);
+        }
+        return _plain;
     }
     _err_start = len(actual_program.errors_had);
     _warn_start = len(actual_program.warnings_had);
@@ -1578,6 +1554,7 @@ impl JacCompiler._compile_once(
                 _iface_target, _mod_out, options, _err_start, _warn_start
             );
         } except Exception {}
+        self._persist_native_unit(_iface_target, _mod_out, actual_program);
     } finally {
         _iface_reg.frame_pop();
     }
@@ -1668,9 +1645,11 @@ impl JacCompiler._compile_pipeline(
 
     if not options.symtab_ir_only and not had_blocking_errors {
         import from jaclang.compiler.placement.placement_solver {
-            solve_program_placement
+            solve_program_placement,
+            refresh_placement_module
         }
         try {
+            refresh_placement_module(mod_targ, actual_program);
             solve_program_placement(mod_targ, actual_program);
         } except Exception {}
     }
@@ -1746,7 +1725,7 @@ impl JacCompiler._compile_pipeline(
                 import from jaclang.compiler.passes.rc_facts_pass {
                     RcFactsPass as _PtyRcFacts
                 }
-                import from jaclang.compiler.backends.native {
+                import from jaclang.compiler.backends.native.na_ir_gen_pass {
                     NaIRGenPass as _PtyNaIRGen
                 }
                 _parity_passes = [_PtyRcFacts, _PtyNaIRGen];
@@ -1775,9 +1754,7 @@ impl JacCompiler._compile_pipeline(
         cb_worklist: list = [mod_targ];
         cb_paths: list[str] = [];
 
-        cb_opts = CompileOptions(
-            no_cgen=True, force_target_program=True, cancel_token=options.cancel_token
-        );
+        cb_opts = CompileOptions(no_cgen=True, cancel_token=options.cancel_token);
         cb_reg = actual_program.iface_registry();
         while cb_worklist or cb_paths {
             if cb_worklist {
@@ -1861,7 +1838,8 @@ impl JacCompiler._compile_pipeline(
         import from jaclang.compiler.frontend.module_facts { ModuleFacts }
         needs_native = is_native_mod or ModuleFacts.has_native_context_stmts(mod_targ);
 
-        if needs_native
+        if _full_head
+            and needs_native
             and not actual_program.analysis.analyses_run.provides(mod_targ, 'TypeOf') {
             self.run_schedule(
                 mod=mod_targ,
@@ -1876,7 +1854,9 @@ impl JacCompiler._compile_pipeline(
             passes=get_py_code_gen(
                 native=needs_native,
                 provided=actual_program.analysis.analyses_run.provided(mod_targ)
-            ),
+            )
+                if _full_head
+                else get_bootstrap_code_gen(),
             cancel_token=options.cancel_token
         );
         if mod_targ.decided_codespace == 'native' {
@@ -1894,7 +1874,7 @@ impl JacCompiler._compile_pipeline(
 impl JacCompiler.build(
     file_path: str, target_program: JacProgram, use_str: (str | None) = None
 ) -> uni.Module {
-    actual_program = self.selfhost.resolve(file_path, target_program);
+    actual_program = target_program;
     mod_targ = self.compile(
         file_path, actual_program, use_str, options=CompileOptions()
     );
@@ -2014,6 +1994,8 @@ impl JacCompiler._scrub_native_artifacts_on_error(
     gen.llvm_ir = None;
     gen.native_engine = None;
     gen.native_bitcode = None;
+    gen.native_object = None;
+    gen.native_iface = None;
     gen.native_layout = None;
     return True;
 }
@@ -2050,7 +2032,7 @@ impl JacCompiler._report_missing_native_ir(
     }
     from_pass: any = JcirGenPass;
     try {
-        import from jaclang.compiler.backends.native { NaIRGenPass }
+        import from jaclang.compiler.backends.native.na_ir_gen_pass { NaIRGenPass }
         from_pass = NaIRGenPass;
     } except Exception {}
     deliver_alerts(
@@ -2197,6 +2179,7 @@ impl JacCompiler.client_artifact_of(mod: uni.Module) -> (ClientArtifact | None) 
         native_import_sources=native_sources,
         source_map=segments,
         dep_digests=digests,
+        boundary_contracts=self._build_interop_dict(mod),
         framework=resolve_active_backend().name()
     );
 }
@@ -2262,8 +2245,12 @@ impl JacCompiler.get_client_artifact(
         }
         return built;
     }
-    held = actual_program.hub.client_artifacts.get(full_target);
-    if held is None {
+
+    has_live_tree = actual_program.find_module(full_target) is not None;
+    held = actual_program.hub.client_artifacts.get(full_target)
+        if not has_live_tree
+        else None;
+    if held is None and not has_live_tree {
         held = self._cached_client_artifact(full_target);
     }
     if held is not None {
@@ -2281,7 +2268,9 @@ impl JacCompiler.get_client_artifact(
     }
     mark = len(actual_program.errors_had);
     compiled = self.compile(
-        file_path=full_target, target_program=actual_program, options=CompileOptions()
+        file_path=full_target,
+        target_program=actual_program,
+        options=CompileOptions(no_cgen=True)
     );
     if len(actual_program.errors_had) > mark {
         return None;

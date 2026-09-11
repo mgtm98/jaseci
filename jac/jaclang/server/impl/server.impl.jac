@@ -1,5 +1,6 @@
 import asyncio;
-import dataclasses;
+import from jaclang.runtime.object_interop { fields as record_fields, is_record }
+import from jaclang.runtime.object_model { MISSING }
 import inspect;
 import json;
 import os;
@@ -455,7 +456,6 @@ impl ModuleIntrospector.load(force_reload: bool = False) -> None {
     self._walkers = self._collect_walkers();
 
     self._collect_cross_boundary_endpoints();
-    self._fill_endpoint_effect_defaults();
     self._invalidate_bundle();
 }
 
@@ -499,7 +499,7 @@ impl ModuleIntrospector._load_manifest -> None {
 
     aggregated: dict = {};
 
-    for hub in Jac.get_program()._search_hubs() {
+    for hub in Jac.get_program().execution_hubs() {
         for hub_mod in hub.values() {
             if hub_mod and hub_mod.gen.interop_manifest {
                 for (ekey, eeff) in hub_mod.gen.interop_manifest.endpoint_effects.items() {
@@ -733,7 +733,7 @@ impl ModuleIntrospector._collect_cross_boundary_endpoints -> None {
     func_access: dict[str, bool] = {};
     walker_access: dict[str, bool] = {};
 
-    for hub in Jac.get_program()._search_hubs() {
+    for hub in Jac.get_program().execution_hubs() {
         for mod in hub.values() {
             man = mod.gen.interop_manifest if (mod and mod.gen) else None;
             if not man {
@@ -856,27 +856,6 @@ impl ModuleIntrospector._collect_cross_boundary_endpoints -> None {
 }
 
 
-impl ModuleIntrospector._fill_endpoint_effect_defaults -> None {
-    if not self._client_manifest {
-        self._client_manifest = {};
-    }
-    effects = self._client_manifest.get('endpoint_effects', {});
-    for name in self._walkers.keys() {
-        key = f"walker:{name}";
-        if key not in effects {
-            effects[key] = {"is_writer": True, "touches": ["*"]};
-        }
-    }
-    for name in self._functions.keys() {
-        key = f"func:{name}";
-        if key not in effects {
-            effects[key] = {"is_writer": False, "touches": ["*"]};
-        }
-    }
-    self._client_manifest['endpoint_effects'] = effects;
-}
-
-
 impl ModuleIntrospector._collect_functions -> dict[str, Callable[(..., any)]] {
     if not self._module {
         return {};
@@ -937,7 +916,6 @@ impl ModuleIntrospector._check_module_freshness -> None {
         self._functions = self._collect_functions();
         self._walkers = self._collect_walkers();
         self._collect_cross_boundary_endpoints();
-        self._fill_endpoint_effect_defaults();
         self._invalidate_bundle();
         return;
     }
@@ -1052,7 +1030,7 @@ impl ModuleIntrospector.introspect_walker(
     walker_cls: type[WalkerArchetype]
 ) -> dict[str, any] {
     try {
-        sig = inspect.signature(walker_cls.init);
+        sig = inspect.signature(walker_cls);
         try {
             type_hints = get_type_hints(walker_cls.init);
         } except Exception {
@@ -1063,9 +1041,9 @@ impl ModuleIntrospector.introspect_walker(
     }
 
     factory_defaults: dict[str, any] = {};
-    if dataclasses.is_dataclass(walker_cls) {
-        for dc_field in dataclasses.fields(walker_cls) {
-            if dc_field.default_factory is dataclasses.MISSING {
+    if is_record(walker_cls) {
+        for dc_field in record_fields(walker_cls) {
+            if dc_field.default_factory is None {
                 continue;
             }
             try {
@@ -1077,7 +1055,8 @@ impl ModuleIntrospector.introspect_walker(
     }
     fields: dict[str, dict[str, any]] = {};
     for (name, param) in sig.parameters.items() {
-        if (name in ('self', 'args', 'kwargs')) {
+        if param.kind
+            in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD) {
             continue;
         }
 
@@ -1441,7 +1420,11 @@ impl JacAPIServer.add_shutdown_hook(fn: Callable[..., any]) -> None {
 
 impl JacAPIServer._install_middleware -> None {
     import from jaclang.server.middleware { jwt_middleware, request_context_middleware }
-    self.add_middleware(request_context_middleware());
+    self.add_middleware(
+        request_context_middleware(
+            base_path_dir=self.base_path or None, full_target_path=self.module_file
+        )
+    );
     self.add_middleware(jwt_middleware(self.user_manager));
 }
 

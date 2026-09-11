@@ -55,6 +55,20 @@ impl _SetupProgress.on_internal_compile(file_path: str) -> None {
     self._halt_at_limit();
 }
 
+impl _SetupProgress.on_kernel_build(lib_path: str) -> None {
+    if not self._banner_shown {
+        self._banner_shown = True;
+        atexit.register(self._atexit_handler);
+        sys.stderr.write(
+            '\nSetting up Jac for first use (compiling and caching compiler)...\n'
+        );
+    }
+    sys.stderr.write(
+        f"  Linking the native compiler kernel ({os.path.basename(lib_path)})...\n"
+    );
+    sys.stderr.flush();
+}
+
 impl _SetupProgress._precompile_limit -> int {
     raw = os.environ.get("JAC_PRECOMPILE_LIMIT");
     if not raw {
@@ -89,6 +103,7 @@ impl _SetupProgress.is_active.getter -> bool {
 
 impl CompileProgress.postinit -> None {
     self._listeners = [];
+    self._finished_listeners = [];
 }
 
 impl CompileProgress.notify(file_path: str) -> None {
@@ -98,11 +113,34 @@ impl CompileProgress.notify(file_path: str) -> None {
 }
 
 @contextmanager
-impl CompileProgress.listen(callback: Callable[[str], None]) -> Iterator[None] {
+impl CompileProgress.track(file_path: str) -> Iterator[None] {
+    finished = list(self._finished_listeners);
+    self.notify(file_path);
+    try {
+        yield None;
+    } finally {
+        for callback in finished {
+            if callback in self._finished_listeners {
+                callback(file_path);
+            }
+        }
+    }
+}
+
+@contextmanager
+impl CompileProgress.listen(
+    callback: Callable[[str], None], on_finished: Callable[[str], None] | None = None
+) -> Iterator[None] {
     self._listeners.append(callback);
+    if on_finished is not None {
+        self._finished_listeners.append(on_finished);
+    }
     try {
         yield None;
     } finally {
         self._listeners.remove(callback);
+        if on_finished is not None {
+            self._finished_listeners.remove(on_finished);
+        }
     }
 }

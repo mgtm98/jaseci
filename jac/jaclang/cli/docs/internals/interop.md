@@ -79,7 +79,7 @@ remaining rows.
 | 10 | **`na → cl`** | Marshalled | wasm imports the host `env` object | wasm scalars; host-provided externs | `WasmLinker` import table + cl host shim |
 | 11 | **`sv/na ↔ py`** | Free | Literal Python import / meta-path finder | Live CPython objects | `JcirGenPass` (`import`→`ast.Import`) + `meta_importer` |
 | 12 | **`na ↔ C`** | Marshalled (ABI) | System V AMD64 / AAPCS calling convention | C scalars & structs (by value or pointer) | `NaIRGenPass` clib marshaller |
-| 13 | **`na → C host`** | Marshalled (ABI) | `--shared` C-ABI export | Scalars by value; Jac objects as opaque handles | `nacompile` `_inject_shared_init` + platform linkers |
+| 13 | **`na → C host`** | Marshalled (ABI) | `--lib` C-ABI export | Scalars by value; Jac objects as opaque handles | the link plan's glue object (`backends/native/link_glue.jac`) + platform linkers |
 
 The rest of the document is one section per group of rows.
 
@@ -99,10 +99,12 @@ codespace simply reference each other directly:
   so resolution is the standard CPython import machinery.
 - **`cl → cl`** -- Client code becomes one JavaScript module graph; a `cl`
   function calling another is a direct JS call, bundled together by Vite.
-- **`na → na`** -- Two native modules link at the IR/object level. An import
-  is a direct symbol reference resolved by the in-tree linker
-  (`_compile_and_link_native_imports` in `NativeCompilePass`). The linker
-  rejects duplicate *owned* symbols with `E5026`.
+- **`na → na`** -- Two native modules are two native units. An import is a
+  direct symbol reference to the defining unit's module-qualified symbol
+  (recorded in its `SEC_NIFACE`), and the link plan
+  (`backends/native/link_plan.jac`) brings the unit's object into the
+  artifact. Two units defining one Jac name never collide; `E5026` remains
+  for two `:pub` exports of one name in one link.
 - **`sv ↔ py`** -- Because `sv` *is* the Python target, server code and
   imported Python share one interpreter, one `sys.modules`, and one object
   model. This is covered in full under [Python interop](#python-interop-row-11)
@@ -384,7 +386,7 @@ the C runtime owns their lifetime.
 
 ## `na → C host`: shared libraries (row 13)
 
-The inverse of FFI-in. `jac nacompile mathlib.jac --shared` packages a
+The inverse of FFI-in. `jac build --native mathlib.jac --lib` packages a
 native module as a C-ABI `.so` / `.dylib` / `.dll` that any host (a C
 program, or Python via `ctypes`) can load across a process/module boundary.
 
@@ -392,14 +394,14 @@ program, or Python via `ctypes`) can load across a process/module boundary.
   recorded into `gen._exported_symbols` (re-exported transitively from
   imported native modules). Methods are *not* exported (class-qualified
   symbol) -- wrap them in a `:pub` free function.
-- **Initialisation** -- `_inject_shared_init` emits `@__jac_shared_init`,
+- **Initialisation** -- the link plan's glue object defines `@__jac_shared_init`,
   hooked via ELF `DT_INIT_ARRAY` / Mach-O `__mod_init_func` / PE `DllMain`,
   so global initialisers run on load with no `jac_init()` call required.
 - **Object lifetime** -- Jac objects cross the ABI as **opaque `void*`
   handles**; the host must not dereference them. `@jac_retain` / `@jac_release`
   (public wrappers over the RC primitives) let the host manage their
   lifetime.
-- **Scalars** pass by value (`int → int64`, `float → double`). `--shared`
+- **Scalars** pass by value (`int → int64`, `float → double`). `--lib`
   forces PIC and skips `internalize` so the public symbols survive.
 
 ---
@@ -407,10 +409,10 @@ program, or Python via `ctypes`) can load across a process/module boundary.
 ## `na ↔ cl`: WebAssembly (rows 9, 10)
 
 Native code reaches the *client* by compiling to wasm.
-`jac nacompile --target wasm32` (and the client bundler's `_emit_na_wasm`,
+`jac build --native --target wasm32` (and the client bundler's `_emit_na_wasm`,
 which serves `/static/<stem>.wasm`) both route through
 `wasm_build.compile_to_wasm`: it sets the `wasm32-unknown-unknown` triple,
-compiles AOT, honors the project's `[gc]` settings (`default = "none"`
+compiles AOT, honors the project's `[memory]` settings (`profile = "nogc"`
 builds headerless and audits the IR for `__rc_*` machinery), runs `opt2`
 **without** `internalize` (so defined functions stay exported), and links
 with the pure-Jac `WasmLinker` (no wasm-ld/emscripten).
@@ -429,7 +431,7 @@ manifest records the target as NATIVE with a CLIENT caller
 discovery signal (the client build compiles the target module to
 `/static/<stem>.wasm`; the module never has to be imported anywhere else),
 and it binds each name to a generated stub: `exit_import` in `EsastGenPass`
-emits `const { init, frame } = __na_bind("arena", ["init", "frame"])`, where
+emits a `__na_bind` call carrying the serialized export and host contracts, where
 `__na_bind` (in `@jac/wasm_host`) lazily instantiates the module on first
 call and dispatches to its exports. Calls to the bound names type-check as
 async in client code (the same coroutine-wrapping that client calls to
@@ -439,7 +441,7 @@ executes the native module under CPython, which is what distinguishes it
 from a server-consumed import of the same native module (row 7's ctypes
 crossing). A module that declares app FFI
 registers its host implementations before the first call with
-`set_na_env("<stem>", shim, {"env": {...}})`; an FFI-free module needs no
+`bind_na_host(native_export, typed_host)`; an FFI-free module needs no
 setup at all.
 
 Underneath, the interop model is the standard wasm import/export contract:
@@ -617,7 +619,7 @@ serialise and cannot cross.
 
 For `na`, an additional hard limit applies: the **native capability
 boundary**. `native_capability_violations` (the single authority behind
-`E5090`, run identically at `jac check` and `jac nacompile`) rejects
+`E5090`, run identically at `jac check` and `jac build --native`) rejects
 constructs the native backend cannot lower -- non-allowlisted imports
 (allowlist: `sys`, `math`, `time`, `os`, `random`), structural match
 patterns, generators (`yield`), inline Python (`::py::`), `by llm()`, and a
@@ -676,7 +678,7 @@ picks the shell it builds. There is no separate CLI verb -- the core
 | Layer | Codespace / tech | Role |
 |-------|------------------|------|
 | UI | `cl` (Vite/React bundle) | `DesktopTarget` subclasses `WebTarget`; reuses the standard `.jac/client/dist/` bundle |
-| Host binary | `na` (LLVM, pure-Jac linker) | A generated `host.jac`, compiled by `jac nacompile`; records `libwebview.so` as `DT_NEEDED` with an `$ORIGIN` runpath |
+| Host binary | `na` (LLVM, pure-Jac linker) | A generated `host.jac`, compiled by `jac build --native`; records `libwebview.so` as `DT_NEEDED` with an `$ORIGIN` runpath |
 | Window | C FFI → `libwebview` | OS-native webview: WebKitGTK (Linux), WKWebView (macOS), WebView2 (Windows) |
 | Local runtime | C FFI → `libpython` | Embedded CPython runs `inprocess_dispatch` (walker/function invokes) **and** a stdlib loopback HTTP broker (bundle + SSO/session) |
 | Backend | `sv` in-process | Walker/function calls route through the embedded runtime via `__jac_invoke`; a remote `api_base` is optional for external backends |
@@ -735,7 +737,7 @@ RPC to the backend). It is the matrix in miniature.
 | `sv → cl` | `client/impl/{compiler,vite_bundler}.impl.jac`; `server/impl/server.impl.jac`; `backends/es/impl/jsx_processor.impl.jac` |
 | `sv ↔ na` | `runtime/interop_bridge.jac`; `backends/py/impl/jcir_gen_pass.impl.jac` (`_gen_native_interop_stubs`, `_generate_sv_to_sv_stubs`); `backends/native/impl/na_compile_pass.impl.jac` |
 | `na ↔ C` | `compiler/backends/native/{foreign,abi}.jac`; `backends/native/na_ir_gen_pass.impl/{clib_abi,clib_vtable}.impl.jac` |
-| `na → C host` | `cli/commands/impl/nacompile.impl.jac` (`_inject_shared_init`); `backends/native/impl/{elf,macho,pe}_linker.impl.jac` |
+| `na → C host` | `backends/native/link_plan.jac` + `link_glue.jac`; `backends/native/impl/{elf,macho,pe}_linker.impl.jac` |
 | `na ↔ cl` (wasm) | `backends/native/{wasm_build,wasm_linker}.jac`; `client/impl/compiler.impl.jac` |
 | Python interop | [`meta_importer.py`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/meta_importer.py); `_jac_finder.py` (launcher `BOOT_SRC`); `backends/py/impl/jcir_gen_pass.impl.jac` (`exit_import`, `exit_py_inline_code`) |
 | Marshalling | `data/impl/serializer.impl.jac`; `server/impl/{server,transport}.impl.jac` |

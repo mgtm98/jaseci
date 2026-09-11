@@ -34,10 +34,10 @@ SEED_PATHS: tuple[str, ...] = (
     "compiler/placement/",
     "compiler/backends/py/",
     "compiler/backends/common/ast_gen_base.jac",
-    "compiler/backends/common/kernel_units.jac",
     "compiler/backends/common/fmt_kernel.jac",
     "compiler/passes/annex_weave.jac",
     "compiler/passes/ast_validation_pass.jac",
+    "compiler/passes/graph_lowering_pass.jac",
     "compiler/passes/boundary_analysis_pass.jac",
     "compiler/passes/decl_impl_match_pass.jac",
     "compiler/passes/endpoint_effect_pass.jac",
@@ -45,12 +45,16 @@ SEED_PATHS: tuple[str, ...] = (
     "compiler/passes/sym_tab_build_pass.jac",
     "compiler/passes/transform.jac",
     "compiler/native_scope.jac",
+    "compiler/field_semantics.jac",
     "compiler/native_compiler.jac",
     "compiler/jc_unit.jac",
     "compiler/jc_materialize.jac",
     "compiler/passes/uni_pass.jac",
     "compiler/tools/treeprinter.jac",
     "runtime/runtime.jac",
+    "runtime/object_model.jac",
+    "runtime/object_interop.jac",
+    "runtime/region.jac",
     "runtime/archetype.jac",
     "runtime/constructs.jac",
     "runtime/graph_query.jac",
@@ -72,22 +76,27 @@ SEED_PATHS: tuple[str, ...] = (
     "project/tomlio.jac",
 )
 
-# Modules that live under a seed directory but belong to the native
-# toolchain tier: nacompile builds them into a shared library, and they
-# never execute as bytecode (extern `import from c` declarations have no
-# Python lowering). The jac0 sweep and the seed-manifest gate skip them;
-# tier stamping (is_seed_source) is unaffected, which also keeps them out
-# of the full-compiler seal sweep.
-NATIVE_ONLY_SEEDS: tuple[str, ...] = (
+# Modules with no bytecode meaning: they import C symbols (the kernel
+# roots and the fused-binary shims) or live under the native standard
+# library. The roster lives here, in the pure-Python tier, because the jac0
+# sweep and the seed-manifest gate must skip them before any .jac module can
+# load; `placement_facts.native_only` is the compiler's view of the same
+# data and the only predicate the driver, the seal and the link plan
+# consult. Tier stamping (is_seed_source) is unaffected.
+NATIVE_ONLY_REL: tuple[str, ...] = (
     "compiler/jc_unit.jac",
     "compiler/jc_materialize.jac",
+    "dist/fused/embed.jac",
+    "dist/fused/_libc.jac",
 )
+NATIVE_ONLY_DIR_REL: tuple[str, ...] = ("runtime/na_stdlib",)
 
 
-def is_native_only_seed(rel_path: str) -> bool:
-    """Whether a jaclang-package-relative POSIX path is a native-tier unit
-    that jac0 must not compile even though a seed directory covers it."""
-    return rel_path in NATIVE_ONLY_SEEDS
+def is_native_only(rel_path: str) -> bool:
+    """Whether a jaclang-package-relative POSIX path has no bytecode meaning."""
+    if rel_path in NATIVE_ONLY_REL:
+        return True
+    return any(rel_path.startswith(d + "/") for d in NATIVE_ONLY_DIR_REL)
 
 
 def seed_abs_entries(jaclang_dir: str) -> tuple[tuple[str, ...], frozenset[str]]:

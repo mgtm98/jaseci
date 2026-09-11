@@ -9,7 +9,7 @@ import re;
 import subprocess;
 import sys;
 import tempfile;
-import from tests.support { TESTS_DIR }
+import from tests.support { TESTS_DIR, unit_symbol }
 import from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.driver.compile_options { CompileOptions }
 
@@ -17,9 +17,9 @@ glob FIXTURE = os.path.join(
          TESTS_DIR, "compiler", "backends", "native", "fixtures", "str_slice_views.jac"
      ),
      MODE_FLAGS = {
-         "none": ["--enforce-nogc", "--gc", "none", "--assert-no-rc"],
-         "rc": ["--gc", "rc"],
-         "cycles": ["--gc", "cycles"]
+         "none": ["--memory", "nogc"],
+         "rc": ["--memory", "rc"],
+         "cycles": ["--memory", "managed"]
      };
 
 def _probe_fn_ir(gc_mode: str, enforce: bool) -> str {
@@ -32,7 +32,8 @@ def _probe_fn_ir(gc_mode: str, enforce: bool) -> str {
     );
     assert not prog.errors_had , [e.pretty_print() for e in prog.errors_had];
     text = str(ir.gen.llvm_ir);
-    m = re.search(r'define[^\n]*@"?probe"?\([^\n]*\n(.*?)\n\}', text, re.DOTALL);
+    sym = re.escape(unit_symbol(ir, "probe"));
+    m = re.search(r'define[^\n]*@"?' + sym + r'"?\([^\n]*\n(.*?)\n\}', text, re.DOTALL);
     assert m , "probe fn not found in IR";
     return m.group(1);
 }
@@ -57,7 +58,7 @@ test "slice-view output is byte-identical across gc modes" {
         for mode in ("none", "rc", "cycles") {
             out_bin = os.path.join(tmp, f"zc_{mode}");
             res = subprocess.run(
-                [sys.executable, "-m", "jaclang", "nacompile", FIXTURE]
+                [sys.executable, "-m", "jaclang", "build", "--native", FIXTURE]
                     + MODE_FLAGS[mode]
                     + ["-o", out_bin],
                 capture_output=True,

@@ -262,7 +262,7 @@ class JacMetaImporter(MetaPathFinder, Loader):
                 raise ImportError(
                     f"{retired}: the .na.jac marker was retired in 0.35 -- "
                     "rename the file to .jac; native placement is inferred "
-                    "(or forced by 'jac nacompile' / 'jac build --as native')."
+                    "(or forced by 'jac build --native')."
                 )
 
         return None
@@ -341,6 +341,17 @@ class JacMetaImporter(MetaPathFinder, Loader):
 
         from jaclang.runtime.runtime import JacRuntime as Jac
 
+        cache = Jac.get_compiler().selfhost
+        cache.enter_execution()
+        try:
+            self._exec_compiled_module(module, file_path)
+        finally:
+            cache.exit_execution()
+
+    def _exec_compiled_module(self, module: ModuleType, file_path: str) -> None:
+        from jaclang.runtime.runtime import JacRuntime as Jac
+
+        assert module.__spec__ is not None
         is_pkg = module.__spec__.submodule_search_locations is not None
 
         # Register module in JacRuntime's tracking (skip internal jaclang modules)
