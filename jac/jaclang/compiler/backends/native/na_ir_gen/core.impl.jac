@@ -1373,6 +1373,27 @@ impl NaIRGenCore._process_clib_imports(module: uni.Module) -> None {
                         raw = raw[1:-1];
                     }
 
+                    # An absolute path would be embedded verbatim as DT_NEEDED,
+                    # pinning the produced binary to the build host's filesystem
+                    # layout (it will only load where those exact paths exist).
+                    # Link via the soname instead so the dynamic loader resolves
+                    # it through its normal search path.
+                    if raw.startswith("/") {
+                        import sys as _cfn_sys;
+                        _soname = raw.rsplit("/", 1)[-1];
+                        if _soname and _soname != raw {
+                            if raw not in self._clib_abs_notes {
+                                self._clib_abs_notes.add(raw);
+                                _cfn_sys.stderr.write(
+                                    "note: clib import \"" + raw + "\" is an absolute path;"
+                                    + " linking via soname \"" + _soname + "\" so the binary"
+                                    + " is not pinned to this filesystem layout\n"
+                                );
+                            }
+                            raw = _soname;
+                        }
+                    }
+
                     self._clib_paths.append(raw);
                 } elif isinstance(path_part, uni.Name) {
                     _name_components.append(path_part.value);

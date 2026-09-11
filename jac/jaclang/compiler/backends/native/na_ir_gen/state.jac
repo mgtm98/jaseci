@@ -209,6 +209,7 @@ obj NaIRGenState(ModuleCodegenPass) {
         _stdlib_helpers_emitted: set[str] = set(),
         _global_origins: dict[str, str] = {},
         _clib_paths: list[str] = [],
+        _clib_abs_notes: set[str] = set(),
         _clib_symbol_lib: dict[str, str] = {},
         _native_emit_ctx_class: (type | None) = None,
         _lowered_type_cache: dict[str, ir.Type] = {},
