@@ -920,37 +920,39 @@ impl NaIRGenRefcount._emit_str_cmp_helper -> None {
     cmp_fn.args[1].name = "b";
     _c_entry = cmp_fn.append_basic_block("entry");
     _c_same = cmp_fn.append_basic_block("same");
-    _c_anull = cmp_fn.append_basic_block("check.a");
-    _c_alt = cmp_fn.append_basic_block("a.null");
-    _c_bnull = cmp_fn.append_basic_block("check.b");
-    _c_bgt = cmp_fn.append_basic_block("b.null");
     _c_body = cmp_fn.append_basic_block("body");
     b = ir.IRBuilder(_c_entry);
+    # A NULL char* (e.g. getenv() of an unset var) is the empty string, not a
+    # value ordered below "". Normalize both operands to a pointer to "\0"
+    # before comparing so NULL compares equal to "" — matching the length-aware
+    # __jac_str_cmp3 path (which treats NULL as length 0). Without this, an
+    # unset-getenv result would test `!= ""` as true.
+    _empty_gv = self._get_snprintf_fmt("");
+    _i32 = ir.IntType(32);
+    _empty_ptr = b.gep(
+        _empty_gv, [ir.Constant(_i32, 0), ir.Constant(_i32, 0)], name="sc.empty"
+    );
+    _a = b.select(
+        b.icmp_unsigned("==", cmp_fn.args[0], ir.Constant(i8_ptr, None), name="sc.an"),
+        _empty_ptr,
+        cmp_fn.args[0],
+        name="sc.a"
+    );
+    _bv = b.select(
+        b.icmp_unsigned("==", cmp_fn.args[1], ir.Constant(i8_ptr, None), name="sc.bn"),
+        _empty_ptr,
+        cmp_fn.args[1],
+        name="sc.b"
+    );
     b.cbranch(
-        b.icmp_unsigned("==", cmp_fn.args[0], cmp_fn.args[1], name="sc.same"),
+        b.icmp_unsigned("==", _a, _bv, name="sc.same"),
         _c_same,
-        _c_anull
+        _c_body
     );
     b = ir.IRBuilder(_c_same);
     b.ret(ir.Constant(i32, 0));
-    b = ir.IRBuilder(_c_anull);
-    b.cbranch(
-        b.icmp_unsigned("==", cmp_fn.args[0], ir.Constant(i8_ptr, None), name="sc.an"),
-        _c_alt,
-        _c_bnull
-    );
-    b = ir.IRBuilder(_c_alt);
-    b.ret(ir.Constant(i32, -1));
-    b = ir.IRBuilder(_c_bnull);
-    b.cbranch(
-        b.icmp_unsigned("==", cmp_fn.args[1], ir.Constant(i8_ptr, None), name="sc.bn"),
-        _c_bgt,
-        _c_body
-    );
-    b = ir.IRBuilder(_c_bgt);
-    b.ret(ir.Constant(i32, 1));
     b = ir.IRBuilder(_c_body);
-    b.ret(b.call(strcmp_fn, [cmp_fn.args[0], cmp_fn.args[1]], name="sc.cmp"));
+    b.ret(b.call(strcmp_fn, [_a, _bv], name="sc.cmp"));
     self.str_cmp_fn = cmp_fn;
 }
 
