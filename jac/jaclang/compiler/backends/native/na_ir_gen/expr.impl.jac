@@ -127,12 +127,27 @@ impl NaIRGenExpr._codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None) {
             }
         }
 
+        import from jaclang.compiler.passes.rc_facts_pass {
+            Ownership,
+            result_ownership
+        }
+        _res_owned = result_ownership(nd) == Ownership.OWNED;
+        if self._str_desc_ty is not None
+            and _result.type == self._str_desc_ty
+            and _res_owned {
+            # A str returned by-value as a JacStr descriptor (the return ABI for a
+            # user `def -> str`) owns its buffer, whose ownership is transferred to
+            # the caller. Left as a desc the value slips through every
+            # `isinstance(x.type, ir.PointerType)` ownership/release guard, so the
+            # buffer leaks; and when stored into a slot it is mistaken for a
+            # borrowed value and given an extra retain that never frees. Normalize
+            # to the owned i8* form so the uniform pointer RC logic runs uniformly.
+            self._mark_owned(_result);
+            _result = self._str_norm(_result);
+            _result.jac_loc = _jac_loc;
+        }
         if isinstance(_result.type, ir.PointerType) {
-            import from jaclang.compiler.passes.rc_facts_pass {
-                Ownership,
-                result_ownership
-            }
-            if result_ownership(nd) == Ownership.OWNED {
+            if _res_owned {
                 self._mark_owned(_result);
             }
         }
@@ -2045,9 +2060,26 @@ impl NaIRGenExpr._codegen_atom_trailer(nd: uni.AtomTrailer) -> (ir.Value | None)
                 }
                 obj_val = self._codegen_expr(nd.target);
                 if obj_val is not None {
-                    return self._read_field_or_refuse(
+                    _fr_res = self._read_field_or_refuse(
                         nd, obj_val, right_name, type_name
                     );
+                    # Release an OWNED call-result receiver temp after a plain
+                    # scalar field read. A named local gets a scope-exit release;
+                    # an inline `f(x).field` receiver did not, leaking +1 on the
+                    # returned heap object (e.g. js_is_proxy's
+                    # `_proxy_raw(idx).class_id`, which runs per object-literal
+                    # define and stuck every churned object at rc>=2 -> ~1.3KB
+                    # leaked per object). Gated on _is_owned (true for call
+                    # results, false for variable reads), a non-pointer result
+                    # (scalar copy -> no aliasing into the receiver), and a plain
+                    # data field (no accessor call that already owns the receiver).
+                    if (_fr_res is not None and self._is_owned(obj_val)
+                        and isinstance(obj_val.type, ir.PointerType)
+                        and not isinstance(_fr_res.type, ir.PointerType)
+                        and self._accessor_slot_of(type_name, right_name, "property") is None) {
+                        self._emit_rc_release_simple(obj_val, op="field_recv", loc="");
+                    }
+                    return _fr_res;
                 }
             }
         }
@@ -2060,9 +2092,17 @@ impl NaIRGenExpr._codegen_atom_trailer(nd: uni.AtomTrailer) -> (ir.Value | None)
                     type_name = self._infer_type_name(obj_val);
                 }
                 if type_name is not None {
-                    return self._read_field_or_refuse(
+                    _fr_res2 = self._read_field_or_refuse(
                         nd, obj_val, right_name, type_name
                     );
+                    # Same owned-call-result-receiver release as above (see note).
+                    if (_fr_res2 is not None and self._is_owned(obj_val)
+                        and isinstance(obj_val.type, ir.PointerType)
+                        and not isinstance(_fr_res2.type, ir.PointerType)
+                        and self._accessor_slot_of(type_name, right_name, "property") is None) {
+                        self._emit_rc_release_simple(obj_val, op="field_recv", loc="");
+                    }
+                    return _fr_res2;
                 }
             }
         }

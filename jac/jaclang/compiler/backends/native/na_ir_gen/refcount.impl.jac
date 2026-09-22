@@ -201,7 +201,10 @@ impl NaIRGenRefcount._emit_rc_helpers -> None {
 
     user = b.gep(raw, [ir.Constant(i64, HDR_TOTAL)], name="user");
 
-    self._emit_live_node_insert(b, _aid_old, user, _tag_raw);
+    # G0/RC-debug fix (a): the live-node insert is emitted in the flag-gated
+    # alloc-log block (see _emit_alloc_log_bb), NOT here on the unconditional
+    # path — so a non-traced run maintains no live-list. Insert + free-hook
+    # remove are gated together to keep the list consistent.
 
     ret_bb = alloc_fn.append_basic_block("ret");
 
@@ -618,7 +621,14 @@ impl NaIRGenRefcount._release_owned_args(
     call_args: list, op: str = "call_arg"
 ) -> None {
     for _arg in call_args {
-        if isinstance(_arg.type, ir.PointerType) and self._is_owned(_arg) {
+        # An owned str argument coerced to a JacStr descriptor by-value must also
+        # be released after the call; it is a caller-created temp whose ownership
+        # the borrowing callee never took. Left unreleased it slips through the
+        # `isinstance(_arg.type, ir.PointerType)` guard and leaks.
+        if (
+            isinstance(_arg.type, ir.PointerType)
+            or (self._str_desc_ty is not None and _arg.type == self._str_desc_ty)
+        ) and self._is_owned(_arg) {
             self._emit_rc_release_simple(_arg, op=op, loc="");
         }
     }

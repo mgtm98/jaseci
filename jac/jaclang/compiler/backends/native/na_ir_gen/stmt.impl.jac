@@ -447,9 +447,22 @@ impl NaIRGenStmt._emit_return_value(
 
             if (
                 skip_var is None
-                and isinstance(val.type, ir.PointerType)
+                and (
+                    isinstance(val.type, ir.PointerType)
+                    or (
+                        self._str_desc_ty is not None
+                        and val.type == self._str_desc_ty
+                    )
+                )
                 and not self._is_owned(val)
             ) {
+                # A borrowed str returned by-value as a JacStr descriptor (e.g.
+                # `return s` for a param `s`) must be retained so the caller
+                # receives a genuine owned reference; the caller treats every
+                # FuncCall result as OWNED and releases it, so without this retain
+                # the shared buffer's refcount is driven to zero while the callee's
+                # source still holds it (use-after-free). This mirrors the retain
+                # already emitted for borrowed pointer returns.
                 self._emit_rc_retain(
                     val,
                     op="return",

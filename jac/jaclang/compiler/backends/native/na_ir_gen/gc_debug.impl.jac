@@ -131,6 +131,13 @@ impl NaIRGenGcDebug._emit_alloc_log_bb(
         _fmt, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="alloc.fmt"
     );
     b.call(self._get_printf(), [_fmt_ptr, aid, user, size_arg, tag_raw, _op, _loc]);
+    # G0/RC-debug fix (a): the live-object-list insert lives HERE, inside the
+    # runtime-flag-gated block, not on the unconditional alloc path. Paired with
+    # gating the list *remove* in the free hook, this means a non-traced run
+    # (rc_debug flag off) maintains no live-list at all — so the O(n)-per-free
+    # removal cost (and the resulting O(n^2) startup hang) is only paid when
+    # tracing is actually enabled.
+    self._emit_live_node_insert(b, aid, user, tag_raw);
     b.branch(ret_bb);
     return log_bb;
 }
@@ -297,10 +304,13 @@ impl NaIRGenGcDebug._emit_raw_free_bbs(
     } else {
         log_raw_bb = func.append_basic_block("log_raw");
         dbg_flag3 = b.load(self.rc_debug_gv, name="rc.dbg3");
+        # G0/RC-debug fix (a): when the trace flag is OFF, skip the live-list
+        # remove entirely (go straight to the real free). The list is only
+        # maintained while tracing is on, so a non-traced free pays nothing.
         b.cbranch(
             b.icmp_unsigned("!=", dbg_flag3, ir.Constant(i8, 0), name="dbg.on3"),
             log_raw_bb,
-            live_rm_bb
+            actual_free_bb
         );
         b = ir.IRBuilder(log_raw_bb);
         _triple = str(self.llvm_module.triple or "").lower();
