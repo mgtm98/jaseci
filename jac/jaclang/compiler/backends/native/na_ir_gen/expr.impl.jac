@@ -132,6 +132,25 @@ impl NaIRGenExpr._codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None) {
             result_ownership
         }
         _res_owned = result_ownership(nd) == Ownership.OWNED;
+        if _res_owned and isinstance(nd, uni.FuncCall) {
+            # The facts pass calls EVERY FuncCall result OWNED, but a C (clib)
+            # function declared to return a scalar (`-> int` for memcpy/memmove/
+            # memset/malloc/mmap …) hands back a raw pointer, not an RC-managed
+            # Jac object. Stamping it owned made a discarded `memcpy(dst, src, n);`
+            # emit __rc_release_simple on the destination buffer — a header read
+            # at ptr-0x10/-0x1c that SIGSEGVs for io_alloc blocks in mmap'd chunks
+            # (Uint8Array.copyWithin ≥128KB, esbuild's stdout reader). A `str`
+            # return stays owned: the call path copies it through the membrane.
+            _fc_name = self._get_name(nd.target);
+            if _fc_name is not None and _fc_name in self.clib_extern_names {
+                import from jaclang.compiler.backends.native.foreign { declared_type_name }
+                _fc_sig = self._callee_sig_of(nd);
+                if _fc_sig is not None
+                    and declared_type_name(_fc_sig.return_type) in ("int", "float", "bool", "None") {
+                    _res_owned = False;
+                }
+            }
+        }
         if self._str_desc_ty is not None
             and _result.type == self._str_desc_ty
             and _res_owned {
@@ -674,6 +693,20 @@ impl NaIRGenExpr._codegen_binary(nd: uni.BinaryExpr) -> (ir.Value | None) {
             if self._is_owned(right) {
                 self._emit_rc_release_typed(
                     right, op="binop_rhs", loc=getattr(right, 'jac_loc', '')
+                );
+            }
+        } elif op == Tok.STAR_MUL and (_l_strish or _r_strish)
+            and (result.type == i8p or (_sdt is not None and result.type == _sdt)) {
+            # `s * n` builds a fresh buffer; an owned str operand (e.g. a concat
+            # temp) must be released like the PLUS case above, or it leaks.
+            if _l_strish and self._is_owned(left) {
+                self._emit_rc_release_typed(
+                    left, op="binop_rep_lhs", loc=getattr(left, 'jac_loc', '')
+                );
+            }
+            if _r_strish and self._is_owned(right) {
+                self._emit_rc_release_typed(
+                    right, op="binop_rep_rhs", loc=getattr(right, 'jac_loc', '')
                 );
             }
         } elif op in (Tok.PLUS, Tok.STAR_MUL) and self._is_owned(result) {

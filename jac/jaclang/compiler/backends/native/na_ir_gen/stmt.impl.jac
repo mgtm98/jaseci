@@ -2004,6 +2004,20 @@ impl NaIRGenStmt._codegen_assignment(nd: uni.Assignment) -> None {
                     name=(idx_target_name or "<expr>")
                 );
             }
+            # Release an OWNED call-result receiver after `f(x)[k] = v`: the
+            # store retains what it needs from the container, and a named
+            # local receiver gets its scope-exit release, but an inline call
+            # result (e.g. jac-bun's `self.ent_rw()[key] = ...`, hit once per
+            # property write) had nothing releasing its +1, pinning the
+            # container forever. Mirrors the `f(x).field` receiver release.
+            if (
+                _idx_stored
+                and target_val is not None
+                and self._is_owned(target_val)
+                and isinstance(target_val.type, ir.PointerType)
+            ) {
+                self._emit_rc_release_simple(target_val, op="subscript_recv", loc="");
+            }
             continue;
         }
         var_name = self._get_name(target_expr);
@@ -2492,6 +2506,27 @@ impl NaIRGenStmt._codegen_assignment(nd: uni.Assignment) -> None {
                         _osr_old = self.builder.load(alloca, name=f"{var_name}.old");
                         self._nogc_str_free_owned(_osr_old);
                     }
+                }
+                # Refcount mode: rebinding a str local mirrors the pointer-local
+                # branch above — retain a borrowed new value (a moved local or an
+                # owned temp such as a concat result needs no retain), then release
+                # the value being overwritten. Without this every `s = s + x`
+                # leaked the previous string (5.7GB for 20K×512 concats).
+                if not self._nogc_headerless()
+                    and not (
+                        self._gc_mode() == "none"
+                        and var_name in self.nogc_no_free_vars
+                    ) {
+                    _sd_loc = f"{os.path.basename(self.ir_in.loc.mod_path)}:{nd.loc.first_line
+                        if nd.loc
+                        else 0}";
+                    if not self._is_owned(value) and not _re_moved {
+                        self._emit_rc_retain(coerced, op="assign", loc=_sd_loc);
+                    } elif self._is_owned(value) {
+                        self.rc_ops_elided += 1;
+                    }
+                    _sd_old = self.builder.load(alloca, name=f"{var_name}.old");
+                    self._emit_rc_release_typed(_sd_old, op="overwrite", loc=_sd_loc);
                 }
             } elif (
                 self?.jacval_type

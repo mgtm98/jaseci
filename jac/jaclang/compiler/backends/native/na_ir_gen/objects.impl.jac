@@ -2835,6 +2835,20 @@ impl NaIRGenObjects._codegen_method_call(nd: uni.FuncCall) -> (ir.Value | None) 
                 if method_name == "insert" {
                     self._release_owned_args(_orig_args, op="list_method_arg");
                 }
+                # Release an OWNED call-result receiver after `f(x).append(v)`
+                # and friends: a named local receiver is released at scope exit,
+                # but an inline call result (jac-bun's `self.ko_rw().append(k)`,
+                # once per property write) had nothing dropping its +1, pinning
+                # the list forever. Only when the result cannot alias the
+                # receiver's storage (non-pointer / None result), mirroring the
+                # `f(x).field` receiver release.
+                if (
+                    self._is_owned(list_val)
+                    and isinstance(list_val.type, ir.PointerType)
+                    and not isinstance(result.type, ir.PointerType)
+                ) {
+                    self._emit_rc_release_simple(list_val, op="list_method_recv", loc="");
+                }
                 return result;
             }
         }
@@ -3919,6 +3933,13 @@ impl NaIRGenObjects._codegen_field_assign(
         and isinstance(ftype, ir.PointerType)
         and isinstance(ftype.pointee, ir.FunctionType)
     );
+    # Keep the pre-coercion RHS: wrapping a pointer into a `JacOpt` struct
+    # produces a fresh ir.Value that has lost the owned-mark, and the optional
+    # store below must transfer ownership of an owned temporary (a `{}`/`[]`
+    # literal or a call result) rather than retain it — otherwise the payload
+    # is pinned by one phantom reference forever (every lazily created
+    # `T | None` container in jac-bun leaked this way).
+    _fa_pre_value = value;
     if _is_clib_cb {
         value = self._clib_coerce_callback(value, ftype);
     } elif not (skip_narrow_coerce and value.type != ftype) {
@@ -3960,10 +3981,18 @@ impl NaIRGenObjects._codegen_field_assign(
         _fs_loc = f"{os.path.basename(self.ir_in.loc.mod_path)}:{target.loc.first_line
             if target.loc
             else 0}";
-        _fs_new_pv = self.builder.extract_value(
-            value, 1, name=f"field.{field_name}.newpv"
-        );
-        self._emit_take_ref(_fs_new_pv, op="field_set", loc=_fs_loc);
+        if (
+            isinstance(_fa_pre_value.type, ir.PointerType)
+            or self._opt_payload_of(_fa_pre_value.type) is not None
+        ) {
+            # Consumes an owned temporary's reference; retains a borrowed one.
+            self._emit_take_ref(_fa_pre_value, op="field_set", loc=_fs_loc);
+        } else {
+            _fs_new_pv = self.builder.extract_value(
+                value, 1, name=f"field.{field_name}.newpv"
+            );
+            self._emit_take_ref(_fs_new_pv, op="field_set", loc=_fs_loc);
+        }
         _fs_old = self.builder.load(field_ptr, name=f"field.{field_name}.old");
         _fs_old_pv = self.builder.extract_value(
             _fs_old, 1, name=f"field.{field_name}.oldpv"

@@ -2463,6 +2463,9 @@ impl NaIRGenTypes._emit_binary_op(
             self.builder.branch(loop_bb);
             self.builder.position_at_start(done_bb);
             self._str_finish(self.builder, buf, total);
+            # Fresh buffer: the caller owns it (same as the concat result above);
+            # without the mark a local store retained it and the copy leaked.
+            self._mark_owned(buf);
             return buf;
         }
     }

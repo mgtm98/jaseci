@@ -550,6 +550,7 @@ impl NaIRGenRefcount._rc_call_with_ctx(
 }
 
 impl NaIRGenRefcount._mark_owned(val: ir.Value) -> ir.Value {
+    if str(getattr(val, "name", "")).startswith("call.memcpy") { import traceback; traceback.print_stack(); }
     val.is_owned = True;
     return val;
 }
