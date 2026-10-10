@@ -62,8 +62,7 @@ llhttp_settings_t (llhttp_settings_s) callback offsets (fn pointers, 8 bytes eac
     on_chunk_complete       : 184
     on_reset                : 192
 
-LLHTTP_SO path: js_engine/lib/llhttp/lib/libllhttp.so  (local build, no system install needed)
-Run 'make install_deps' from js_engine/ to rebuild from source if the .so is missing.
+llhttp is compiled into libjs_native.so (native/build_native.zig).
 """
 
 # ── C library import ──────────────────────────────────────────────────────────

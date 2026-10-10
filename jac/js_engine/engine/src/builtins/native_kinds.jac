@@ -1264,8 +1264,8 @@ glob:pub NATIVE_KIND_CONSOLE_LOG: int = 1,
 
 # ── Sentinel: next available kind number ────────────────────────────────────────────
 # NOTE: NATIVE_KIND_TEMPORAL_DURATION_MAX (856) is declared out of sequence far
-# above; the previous sentinel value of 856 collided with it. Verify with
-# `make check_native_kinds` after adding kinds here.
+# above; the previous sentinel value of 856 collided with it. Check for a
+# collision after adding kinds here.
 #
 # Merge note: adel_fixes duplicated seal/isSealed/isFrozen, the Annex-B
 # __lookup*/__define* kinds, MARK_NON_CONSTRUCTOR, BIGINT_VALUEOF/TOLOCALESTRING,

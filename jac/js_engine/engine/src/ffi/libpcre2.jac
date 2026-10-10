@@ -17,9 +17,8 @@ PCRE2 compile-time option flags (32-bit bitmask passed to pcre2_compile_8):
 PCRE2_SIZE is size_t (uint64_t on x86-64).
 Pass PCRE2_ZERO_TERMINATED (-1 cast to size_t) to let PCRE2 find the NUL.
 
-Requires PCRE2 10.45+ at the system path for variable-length lookbehind support
-(pcre2_set_max_varlookbehind_8).  System PCRE2 10.42 does not have this symbol.
-Run `make install_deps` to build and install PCRE2 10.45 to the system library path.
+Variable-length lookbehind needs PCRE2 10.45+ (pcre2_set_max_varlookbehind_8);
+libjs_native.so carries the build.zig.zon-pinned PCRE2.
 
 Bun reference:
   JavaScriptCore/yarr/ — Bun uses JSC Yarr, but the public API is equivalent.

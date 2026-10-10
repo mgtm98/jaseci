@@ -57,6 +57,7 @@ jobs:
       native: ${{ steps.filter.outputs.native }}
       pack_smoke: ${{ steps.filter.outputs.pack_smoke }}
       site_journey: ${{ steps.filter.outputs.site_journey }}
+      js_engine: ${{ steps.filter.outputs.js_engine }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -77,6 +78,8 @@ jobs:
               - 'jac/jaclang/byllm/**'
             site_journey:
               - 'scripts/site-browse-journey.sh'
+            js_engine:
+              - 'jac/js_engine/**'
             pack_smoke:
               - 'scripts/ci_perf.jac'
               - 'scripts/ci_perf.test.jac'
@@ -380,6 +383,46 @@ jobs:
           include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
+
+  # test262 against the kit binary's engine (its `node`), at the test262 commit
+  # pinned in jac/js_engine/engine/tests/test262/test262.sha: fails on any test
+  # that does not pass and is not in known_failures.txt. A per-test timeout
+  # above the runner's default keeps a slower runner from turning passes into
+  # HANGs.
+  test262:
+    needs: [changes, build-kit]
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.js_engine == 'true' || needs.changes.outputs.native == 'true' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      JAC_NO_DEV_SOURCE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [language, built-ins]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/jac-kit
+      - name: Restore the test262 checkout
+        uses: actions/cache@v4
+        with:
+          path: jac/js_engine/engine/tests/test262/vendor
+          key: test262-${{ hashFiles('jac/js_engine/engine/tests/test262/test262.sha') }}
+      - name: Fetch test262 at the pinned commit
+        run: jac/js_engine/tools/fetch_test_deps.sh test262
+      - name: Run test262 ${{ matrix.suite }}
+        working-directory: jac/js_engine
+        run: >-
+          jac engine/tests/test262/run_test262.jac --gc
+          --timeout 30 --filter ${{ matrix.suite }}
+          --check-baseline engine/tests/test262/known_failures.txt
+      - name: Upload the run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test262-${{ matrix.suite }}-run-log
+          path: jac/js_engine/engine/tests/test262/.run_logs
+          retention-days: 7
+          if-no-files-found: ignore
 
   jac-check:
     needs: [changes, build-kit]
@@ -1882,6 +1925,7 @@ jobs:
     needs:
       - changes
       - build-kit
+      - test262
       - macos-native
       - jac-check
       - contribution-checks

@@ -4,9 +4,8 @@ resources, so the engine binary carries them and reads no files at run time:
     engine/src/pm/help/<name>.txt        help output (bun's, verbatim)
     engine/src/pm/data/default-trusted.txt  bun's default trusted dependencies
 
-The .txt files stay the source of truth; the Makefile regenerates the module
-when one changes, and `make check-pm-resources` fails if the committed module
-is stale. Run from js_engine/:
+The .txt files stay the source of truth; rerun this after editing one and
+commit the regenerated module. Run from js_engine/:
 
     jac tools/gen_pm_resources.jac [OUT]   (default engine/src/pm/resources_gen.jac)
 

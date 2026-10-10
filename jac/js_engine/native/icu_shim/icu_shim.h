@@ -1,7 +1,7 @@
 /*
  * icu_shim.h — Stable unversioned ICU wrapper for js_engine Intl.
  *
- * Compiled as lib/libicu_shim.so.  All string I/O is UTF-8 at the boundary;
+ * Compiled into libjs_native.so.  All string I/O is UTF-8 at the boundary;
  * UTF-16 conversion is handled internally.
  */
 

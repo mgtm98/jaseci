@@ -1,10 +1,9 @@
 /*
  * napi_shim.c — Node-API (NAPI) ABI surface for js_engine
  *
- * Compiled as lib/libnapi_shim.so (shared library, RTLD_GLOBAL).
- * Loaded by Jac native via `import from "lib/libnapi_shim.so" { ... }` which
- * calls llvm.load_library_permanently(RTLD_GLOBAL), making every napi_* symbol
- * globally visible to subsequently dlopen'd .node addons.
+ * Compiled into libjs_native.so, which the engine library links and the
+ * launcher loads RTLD_GLOBAL, so every napi_* symbol is globally visible to
+ * subsequently dlopen'd .node addons.
  *
  * Architecture (Phase N1):
  *   - N1 stubs (ops 1–33) pack their C arguments into a stack-allocated
@@ -20,7 +19,7 @@
  *   - _napi_set_dispatch / _napi_get_pending_init / _napi_invoke_register:
  *     unchanged from Phase 0.
  *   - _napi_argv_i64 / _napi_write_*: new N1 helpers exported from the .so
- *     so Jac can call them via `import from "lib/libnapi_shim.so"`.
+ *     so Jac can call them via `import from "libjs_native.so"`.
  *   Op-ID constants are defined in napi/src/napi_dispatch.na.jac and must
  *   stay in sync with the enum below.
  */

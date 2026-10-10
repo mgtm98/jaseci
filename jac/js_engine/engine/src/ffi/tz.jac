@@ -1,6 +1,6 @@
 """IANA timezone shim FFI bindings for js_engine Temporal.
 
-Thin wrapper over lib/libtz_shim.so (TZif v1/v2/v3 parser).
+Thin wrapper over the TZif v1/v2/v3 parser in libjs_native.so.
 Other modules should import from this file rather than the .so directly.
 
   import from engine.src.ffi.tz {

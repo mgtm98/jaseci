@@ -67,7 +67,7 @@ def:pub _load_napi_addon(vm_napi_env_ptr: int, path: str) -> JSValue {
 
     # Step 2: dlopen the addon.
     # RTLD_LOCAL: keep the addon's own symbols private (the napi_* symbols it
-    # needs are visible globally via libnapi_shim.so loaded with RTLD_GLOBAL).
+    # needs are visible globally via libjs_native.so loaded with RTLD_GLOBAL).
     handle: int = dlopen(path, RTLD_NOW | RTLD_LOCAL);
     if handle == 0 {
         err_msg: str = dlerror();

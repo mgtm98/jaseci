@@ -554,7 +554,7 @@ with entry {
 
     # RC leak-trace mode: when JS_ENGINE_LEAKS_TEST is set (and the engine was
     # built with JAC_RC_DEBUG_CODEGEN so the trace is compiled in), turn on the
-    # runtime retain/release/free logging. `make rc_leaks_test` sets both.
+    # runtime retain/release/free logging.
     if getenv("JS_ENGINE_LEAKS_TEST") != None {
         __rc_debug_enable();
     }

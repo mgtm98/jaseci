@@ -1,6 +1,6 @@
 """ICU shim FFI bindings for js_engine Intl.
 
-Thin wrapper over lib/libicu_shim.so.  Other modules should import from
+Thin wrapper over the ICU shim in libjs_native.so.  Other modules should import from
 this file rather than the .so directly.
 
   import from engine.src.ffi.libicu {

@@ -1,7 +1,7 @@
 """Wasmtime C API FFI bindings for js_engine (Phase 0 — see docs/wasm.md).
 
-Links the vendored Bytecode Alliance Wasmtime C API (lib/libwasmtime.so,
-pinned v48.0.2) and exposes the *minimal* compile → instantiate → call-export
+Links the Bytecode Alliance Wasmtime C API (libwasmtime.so beside the engine,
+pinned v48.0.2 in build.zig.zon) and exposes the *minimal* compile → instantiate → call-export
 path needed to prove the link works. No JS `WebAssembly` surface yet; that
 arrives in Phase 2.
 

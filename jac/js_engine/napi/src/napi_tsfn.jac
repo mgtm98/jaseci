@@ -1,6 +1,6 @@
 """TSFN (Threadsafe Function) bridge — Jac-side implementation.
 
-Only imports from "lib/libnapi_shim.so".  No engine modules, no libuv FFI
+Only imports from "libjs_native.so" (the C shim).  No engine modules, no libuv FFI
 imports here — mixing those with shim FFI imports poisons the Jac type
 checker for any file that transitively imports this module.
 

@@ -1,7 +1,7 @@
 /**
  * intl.js — Minimal ECMA-402 Intl foundation backed by globalThis.__icu.
  *
- * The native bridge (libicu_shim.so) is wired onto __icu by js_intl_wire_global.
+ * The native bridge (the ICU shim in libjs_native.so) is wired onto __icu by js_intl_wire_global.
  * This file installs globalThis.Intl with the major constructors.
  */
 

@@ -1,6 +1,6 @@
 """NAPI dispatch — main entry point called by the C shim.
 
-The C shim (lib/libnapi_shim.so) calls back into Jac via a function pointer
+The C shim (in libjs_native.so) calls back into Jac via a function pointer
 set by _napi_set_dispatch(fn_ptr).  This module provides:
 
   1. Import of _napi_set_dispatch from the shim (to register the callback).
