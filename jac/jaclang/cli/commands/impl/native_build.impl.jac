@@ -173,6 +173,7 @@ impl native_build(
         plan = build_link_plan(
             prog, [os.path.abspath(filename)], options, mode=link_mode
         );
+        plan.library_api = lib;
     } except LinkPlanError as e {
         console.print(str(e));
         _restore_target(_prev_target);

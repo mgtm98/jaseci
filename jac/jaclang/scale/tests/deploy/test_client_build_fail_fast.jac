@@ -221,7 +221,7 @@ test "a transient install failure is retried and the deploy succeeds" {
     try {
         project_dir = _web_app_project(tmp);
         (script, counter) = _counting_jac(
-            tmp, 1, "js_engine install failed after 12.0s"
+            tmp, 1, "Dependency installation failed after 12.0s"
         );
         os.environ["JAC_EXECUTABLE"] = script;
         _builder(project_dir)._build_client_bundle(project_dir);

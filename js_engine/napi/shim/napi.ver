@@ -1,7 +1,0 @@
-{
-  global:
-    napi_*;
-    node_api_*;
-    _napi_*;
-  local: *;
-};

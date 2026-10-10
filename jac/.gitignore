@@ -77,9 +77,9 @@ zig-out/
 /dist/
 .pbs-build/
 .python-build/
-# js_engine runtime staged for the payload (built from js_engine/, never
-# committed). See build.zig.
-jaclang/client/_js_engine/
+# Zig's unpacked build.zig.zon dependencies (the JavaScript engine's foreign
+# sources).
+zig-pkg/
 
 # Vendored typeshed stdlib stubs are fetched at the pinned commit by the
 # payload tool's fetch-typeshed subcommand (zig build fetch-typeshed), not
@@ -87,8 +87,10 @@ jaclang/client/_js_engine/
 # the stubs are tracked.
 jaclang/vendor/typeshed/stdlib
 .llvm-build/
-# CI staging dir for a cache-restored prebuilt shim (setup-jac -Dshim-bin).
+# CI staging dirs for a cache-restored prebuilt shim and engine (setup-jac
+# -Dshim-bin, -Djs-engine-dir).
 .shim-build/
+.js-engine-build/
 # Persistent JIR precompile cache: mkpayload seeds site/_precompiled from it
 # and writes the refreshed tree back (see build.zig --precompiled-cache).
 .precompiled-build/

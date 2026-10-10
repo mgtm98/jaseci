@@ -20,12 +20,6 @@ def _as_any(v: any) -> any {
     return v;
 }
 
-"""Skip unless the Vite/js_engine client toolchain is available."""
-def _require_client_integration {
-    import from jaclang.testing.requires { require_tool }
-    require_tool("js_engine");
-}
-
 def _get_free_port -> int {
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s {
         s.bind(("", 0));
@@ -106,7 +100,6 @@ def _stop_server(proc: Popen) {
 }
 
 test "preact backend bundles client page with preact hooks" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         project = Path(tmpdir) / "preact_bundle";
         _write_preact_project(project);
@@ -151,7 +144,6 @@ test "preact backend bundles client page with preact hooks" {
 }
 
 test "preact counter increments in browser" {
-    _require_client_integration();
     try {
         import from playwright.sync_api { sync_playwright }
     } except ImportError {

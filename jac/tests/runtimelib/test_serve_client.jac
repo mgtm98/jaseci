@@ -30,18 +30,6 @@ def _as_any(v: any) -> any {
     return v;
 }
 
-"""Skip a test unless client integration is explicitly enabled.
-
-Rendering a client page now runs the real Vite/js_engine pipeline (js_engine + npm install
-+ vite build), so these are integration tests rather than fast unit tests. They
-run only when JAC_CLIENT_INTEGRATION is set (and are covered by jac-client's own
-suite); core CI skips them.
-"""
-def _require_client_integration {
-    import from jaclang.testing.requires { require_tool }
-    require_tool("js_engine");
-}
-
 def fixture_abs_path(filename: str) -> str {
     return str((Path(FIXTURES) / filename).resolve());
 }
@@ -1212,7 +1200,6 @@ test "serve mixed access levels" {
 # TestClientRendering (2 tests)
 # =============================================================================
 test "serve render client page returns html" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         client = make_client_app_client(tmpdir);
         client.register_user("tester", "pass");
@@ -1252,7 +1239,6 @@ test "serve render unknown page returns error" {
 # TestFullstackClientApp (1 test)
 # =============================================================================
 test "serve client page html and bundle" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         client = make_fullstack_app_client(tmpdir);
         response = client.get("/cl/app");
@@ -1622,7 +1608,6 @@ test "serve mixed local and imported function access" {
 # TestSPACatchAll (7 tests)
 # =============================================================================
 test "serve spa catchall serves html for clean urls" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         response = spa.get("/about");
@@ -1637,7 +1622,6 @@ test "serve spa catchall serves html for clean urls" {
 }
 
 test "serve spa catchall root serves html" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         response = spa.get("/");
@@ -1650,7 +1634,6 @@ test "serve spa catchall root serves html" {
 }
 
 test "serve spa catchall nested path" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         response = spa.get("/dashboard/settings");
@@ -1677,7 +1660,6 @@ test "serve spa catchall api paths unaffected" {
 }
 
 test "serve spa catchall cl route still works" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         response = spa.get("/cl/client_page");
@@ -2261,38 +2243,21 @@ test "stdlib server answers health endpoints" {
     }
 }
 
-"""A missing js_engine is an environmental precondition, cheap to re-check - the
-bundle layer must retry it on every request (so fetching js_engine fixes serving
-without a restart), while genuine build failures stay memoized."""
-test "ensure_bundle retries a missing-js_engine failure and a build error alike" {
+"""A client build failure must not be memoized: the bundle layer retries it on
+every request, so a fixed build serves without a restart."""
+test "ensure_bundle retries a build error" {
     import from unittest.mock { MagicMock }
     import from jaclang.server.server { ModuleIntrospector }
-    import from jaclang.client.client_bundle { ClientBundleError, MissingJsEngineError }
+    import from jaclang.client.client_bundle { ClientBundleError }
     intro = ModuleIntrospector("serve_api", FIXTURES);
     intro._module = types.ModuleType("serve_api");
     intro._module.__file__ = fixture_abs_path("serve_api.jac");
-    engine_missing = MagicMock();
-    engine_missing.build.side_effect = MissingJsEngineError(
-        "js_engine is not available"
-    );
-    intro._bundle_builder = engine_missing;
+    broken = MagicMock();
+    broken.build.side_effect = RuntimeError("vite exploded");
+    intro._bundle_builder = broken;
     for _ in range(2) {
         try {
             intro.ensure_bundle();
-            assert False , "ensure_bundle should raise while js_engine is missing";
-        } except ClientBundleError {}
-    }
-    assert engine_missing.build.call_count == 2 , "missing js_engine must be re-checked on every call, not memoized";
-
-    intro2 = ModuleIntrospector("serve_api", FIXTURES);
-    intro2._module = types.ModuleType("serve_api");
-    intro2._module.__file__ = fixture_abs_path("serve_api.jac");
-    broken = MagicMock();
-    broken.build.side_effect = RuntimeError("vite exploded");
-    intro2._bundle_builder = broken;
-    for _ in range(2) {
-        try {
-            intro2.ensure_bundle();
             assert False , "ensure_bundle should raise for a broken build";
         } except ClientBundleError {}
     }
@@ -2434,7 +2399,7 @@ process.exit(failed ? 1 : 0);
 """The stdlib server serves /graph, /graph/data and /docs, and the /graph login
 modal signs in against it (#8951)."""
 test "stdlib server serves graph visualizer and docs" {
-    import from jaclang.client.js_engine { get_js_engine }
+    import from jaclang.client.js_engine { node_executable }
     import from jaclang.server.settings { ServeSettings }
     import from .react_jsdom_harness { REACT_JSDOM_DEPS, npm_install, run_harness }
 
@@ -2460,9 +2425,7 @@ test "stdlib server serves graph visualizer and docs" {
         paths = spec.json()["paths"];
         assert "/walker/leave_note" in paths , "openapi should list the module's walkers";
         assert "/user/login" in paths , "openapi should list auth endpoints";
-        _require_client_integration();
-        js_engine = get_js_engine();
-        assert js_engine is not None , "js_engine is on PATH but get_js_engine() could not locate it";
+        js_engine = node_executable();
         registered = client.register_user("graph_viewer", "pw12345678");
         assert registered.ok , f"register failed: {registered.text}";
         client.server.settings = ServeSettings.load(
@@ -2561,7 +2524,6 @@ def pin_routes(spa: JacTestClient) {
 }
 
 test "serve spa fallback 404s unknown paths but still serves the app html" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         pin_routes(spa);
@@ -2579,7 +2541,6 @@ test "serve spa fallback 404s unknown paths but still serves the app html" {
 }
 
 test "serve spa fallback keeps 200 for known page routes" {
-    _require_client_integration();
     with TemporaryDirectory() as tmpdir {
         spa = make_spa_client(tmpdir);
         pin_routes(spa);

@@ -59,7 +59,7 @@ is left intact while Jac selects its managed JDK. `ANDROID_HOME` (or
 Selected build paths are passed to child processes rather than changing the
 shell's environment. js_engine remains bundled with Jac and handles JavaScript package installation.
 Native build subprocesses receive managed Node.js 22: Expo autolinking uses Node
-argument semantics that a renamed js_engine executable does not reproduce.
+argument semantics that the bundled engine does not reproduce.
 
 ## Android licenses
 

@@ -3,8 +3,6 @@ import from types { ModuleType }
 
 class ClientBundleError(RuntimeError) {}
 
-class MissingJsEngineError(ClientBundleError) {}
-
 obj ClientBundle {
     has module_name: str,
         code: str,

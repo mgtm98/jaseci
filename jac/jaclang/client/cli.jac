@@ -363,12 +363,8 @@ def run_npm_add(packages: list[str], dev: bool, install_global: bool = False) ->
 }
 
 def run_npm_add_global(packages: list[str], dev: bool) -> int {
-    import subprocess;
     import from jaclang.cli.console { console }
-    import from jaclang.client.js_engine {
-        get_js_engine,
-        js_engine_unavailable_message
-    }
+    import from jaclang.client.js_engine { run_pm }
     import from jaclang.project.tool_paths { node_root }
 
     if not packages {
@@ -376,11 +372,6 @@ def run_npm_add_global(packages: list[str], dev: bool) -> int {
             "Provide at least one npm package to install globally.",
             hint="e.g. 'jac install --npm --global eslint'"
         );
-        return 1;
-    }
-    js_engine = get_js_engine();
-    if js_engine is None {
-        console.error(js_engine_unavailable_message());
         return 1;
     }
     dest = node_root("global");
@@ -392,16 +383,13 @@ def run_npm_add_global(packages: list[str], dev: bool) -> int {
             '{\n  "name": "jac-global-tools",\n  "private": true\n}\n', encoding="utf-8"
         );
     }
-    cmd: list[str] = [js_engine, "add"];
-    if dev {
-        cmd.append("--dev");
-    }
-    cmd.extend(packages);
     console.print(
         f"\n📦 Installing {len(packages)} npm tool(s) globally into {dest}", style="bold"
     );
-    result = subprocess.run(cmd, cwd=str(dest));
-    if result.returncode != 0 {
+    (returncode, _) = run_pm(
+        ["add"] + (["--dev"] if dev else []) + packages, str(dest)
+    );
+    if returncode != 0 {
         console.error("Global npm install failed.");
         return 1;
     }

@@ -234,8 +234,9 @@ The pipeline lives in `client/`:
    each module's `mod.gen.js`, plus compiles the client runtime.
 2. **Entry** -- writes an `_entry.js` with the `createRoot(...).render(...)`
    mount.
-3. **Bundle** -- `ViteBundler.build` resolves js_engine (bundled in the `jac` binary),
-   runs `js_engine install` then `js_engine x vite build` with `@vitejs/plugin-react`,
+3. **Bundle** -- `ViteBundler.build` installs dependencies through js_engine's
+   package manager in-process, then runs Vite's own entry under the `jac`
+   binary's `node` (`node <vite.js> build`) with `@vitejs/plugin-react`,
    producing a content-hashed `client.<hash>.js` (+ `styles.css`).
 4. **Serve** -- the Python server serves the JS from memory at
    `GET /static/client.js`; other assets from `.jac/client/dist/`.

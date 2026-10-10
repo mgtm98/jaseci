@@ -1,9 +1,8 @@
-import subprocess;
 import hashlib;
 import json;
 import from pathlib { Path }
 import from jaclang.cli.console { console }
-import from jaclang.client { get_js_engine }
+import from jaclang.client.js_engine { node_executable, run_pm }
 
 def resolve_node_tool_entry(project_dir: Path, tool: str) -> (Path | None) {
     shim = project_dir / "node_modules" / ".bin" / tool;
@@ -14,7 +13,6 @@ def resolve_node_tool_entry(project_dir: Path, tool: str) -> (Path | None) {
 }
 
 def resolve_node_tool(project_dir: Path, tool: str) -> list[str] {
-    js_engine = _require_js_engine();
     `entry = resolve_node_tool_entry(project_dir, tool);
     if `entry is None {
         raise RuntimeError(
@@ -23,23 +21,7 @@ def resolve_node_tool(project_dir: Path, tool: str) -> list[str] {
             "dependencies first; project tools must resolve from the local node_modules."
         );
     }
-    return [js_engine, str(`entry)];
-}
-
-def resolve_package_manager -> str {
-    return _require_js_engine();
-}
-
-def _require_js_engine -> str {
-    js_engine_path = get_js_engine();
-    if js_engine_path is None {
-        raise RuntimeError(
-            "Bundled js_engine is missing. Shipped jac binaries include it (a "
-            "missing copy indicates a broken build); for a source checkout "
-            "run `make` in js_engine/, or set JAC_JS_ENGINE to a js_engine binary."
-        );
-    }
-    return js_engine_path;
+    return [node_executable(), str(`entry)];
 }
 
 def run_manifest_install(project_dir: Path) {
@@ -64,9 +46,13 @@ def run_manifest_install(project_dir: Path) {
         if current {
             return;
         }
-        cmd = [resolve_package_manager(), "install"];
         console.print(f"Synchronizing dependencies in {project_dir.name}...");
-        subprocess.run(cmd, cwd=project_dir, check=True, capture_output=False);
+        (returncode, _) = run_pm(["install"], str(project_dir));
+        if returncode != 0 {
+            raise RuntimeError(
+                f"Installing the JavaScript dependencies in {project_dir} failed"
+            );
+        }
         stamp.write_text(manifest_signature(project_dir));
     }
 }

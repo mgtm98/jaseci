@@ -3,11 +3,11 @@ import subprocess;
 import shutil;
 import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.backends.es.backends.solid { SolidBackend }
 import from tests.compiler.backends.es.codegen_helpers { es_js_with_backend }
-import from .react_jsdom_harness { npm_install, require_client_integration }
+import from .react_jsdom_harness { npm_install }
 import from jaclang.compiler.backends.es.jac_runtime_js {
     point_jac_prelude_at,
     write_jac_prelude_file
@@ -36,11 +36,7 @@ console.log('PASS Solid closure-local cleanup');
 """;
 
 test "solid returned cleanup runs on invalidation and disposal" {
-    require_client_integration("Solid lifecycle cleanup");
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required");
-    }
+    js_engine = node_executable();
     fixture = Path(__file__).parent.parent
         / "compiler"
         / "backends"

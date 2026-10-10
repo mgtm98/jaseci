@@ -1895,7 +1895,7 @@ A mobile app is a **mobUI** app: one source tree that compiles to both native (A
 
 **Prerequisites:**
 
-- Node.js is **not** required -- all JS tooling (installs, Expo/Metro, Vite) runs on the js_engine runtime bundled with the `jac` binary (`JAC_JS_ENGINE` overrides which js_engine is used)
+- Node.js is **not** required -- all JS tooling (installs, Expo/Metro, Vite) runs on the js_engine runtime bundled with the `jac` binary
 - **Android**: JDK 21 and Android SDK are provisioned automatically; SDK license acceptance is required
 - **iOS** (macOS only): Xcode and its Command Line Tools; Jac provisions Ruby and CocoaPods
 
@@ -2347,7 +2347,7 @@ def:pub Footer() -> JsxElement {
 
 ### Prerequisites
 
-jac-client uses js_engine, the JavaScript runtime written in Jac, for package management and JavaScript bundling. A js_engine runtime ships inside the `jac` binary for package management and bundling. Native build subprocesses use managed Node.js 22 for Expo/React Native compatibility; no manual Node.js/npm installation is needed. Set `JAC_JS_ENGINE` to substitute a specific js_engine binary.
+jac-client uses js_engine, the JavaScript runtime written in Jac that ships inside the `jac` binary, for package management and JavaScript bundling. Native build subprocesses use managed Node.js 22 for Expo/React Native compatibility; no manual Node.js/npm installation is needed.
 
 ### Start Server
 

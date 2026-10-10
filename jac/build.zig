@@ -32,6 +32,7 @@ const std = @import("std");
 // Pinned toolchain inputs (Python, LLVM slices), read from bootstrap/pins.json --
 // the single source of truth shared with the Jac payload tool.
 const pins = @import("bootstrap/pins.zig");
+const js_native = @import("js_engine/native/build_native.zig");
 
 // Where `zig build fetch-llvm` extracts the pinned LLVM -- one dir per platform.
 // Used as the default -Dllvm-dir for the jacllvm shim. Returns null for
@@ -316,6 +317,21 @@ pub fn build(b: *std.Build) void {
     b.step("stub", "Build just the launcher stub (no payload)")
         .dependOn(&b.addInstallBinFile(stub, "jac").step);
 
+    // --- the JavaScript engine (js_engine/), the runtime's js/ directory ----
+    // -Djs-engine-dir bundles a PREBUILT engine (the zig-out/js of an earlier
+    // build), skipping its build the way -Dshim-bin skips the shim's: CI
+    // reuses one across changes that cannot reach it, keyed on its inputs.
+    // Invalidation is then the caller's; a plain `zig build` always builds it.
+    const js_engine: ?std.Build.LazyPath = if (b.option([]const u8, "js-engine-dir", "Prebuilt JavaScript engine directory to bundle (an earlier zig-out/js)")) |d|
+        .{ .cwd_relative = if (std.fs.path.isAbsolute(d)) d else b.pathFromRoot(d) }
+    else
+        addJsEngine(b, tool, target, python_tree, fetch_target, jacllvm);
+    if (js_engine) |dir| {
+        const install_js = b.addInstallDirectory(.{ .source_dir = dir, .install_dir = .prefix, .install_subdir = "js" });
+        b.getInstallStep().dependOn(&install_js.step);
+        b.step("js-engine", "Build just the JavaScript engine (zig-out/js)").dependOn(&install_js.step);
+    }
+
     // --- runtime payload: -Dpayload override, else mkpayload ---------------
     // The stub catalog (pre-resolved typeshed types) is a second mkpayload
     // output that `pack` places as its own page-aligned region of the binary;
@@ -391,18 +407,8 @@ pub fn build(b: *std.Build) void {
             if (debug_src) mk.addArg("--debug-src");
         }
 
-        // js_engine runtime: bundle a staged engine tree (`make dist` in
-        // ../js_engine) inside the client package via --js-engine. The engine
-        // is compiled by a jac binary, so it cannot be built here; without the
-        // option the payload ships no JavaScript runtime. In linked-source/dev
-        // mode get_js_engine() resolves the checkout's js_engine/bin instead.
-        if (b.option([]const u8, "js-engine", "Staged js_engine tree to bundle (output of `make dist` in js_engine/)")) |d| {
-            if (link_dir == null) {
-                const engine_dir = if (std.fs.path.isAbsolute(d)) d else b.pathFromRoot(d);
-                mk.addArg(b.fmt("--js-engine={s}", .{engine_dir}));
-                mk.addFileInput(.{ .cwd_relative = b.fmt("{s}/bin/js_engine", .{engine_dir}) });
-            }
-        }
+        // The JavaScript engine: the runtime's js/ directory, in every build.
+        if (js_engine) |dir| mk.addPrefixedDirectoryArg("--js-engine=", dir);
 
         // Linux: harvest a static-musl runtime for the target and bundle it so
         // the shipped binary can fully static-link Linux executables against
@@ -473,6 +479,86 @@ pub fn build(b: *std.Build) void {
         pack.addFileArg(region);
     }
     b.getInstallStep().dependOn(&b.addInstallBinFile(jac, "jac").step);
+}
+
+/// The JavaScript engine as the runtime tree's `js/` directory: the in-checkout
+/// compiler links js_engine/ into `libjs_engine.so` (OpenSSL, zlib and zstd
+/// static from the target's C floor archives), next to the Zig-built foreign
+/// libraries and the builtins bytecode pack. Null where the engine has no port.
+fn addJsEngine(
+    b: *std.Build,
+    tool: JacTool,
+    target: std.Build.ResolvedTarget,
+    python_tree: []const u8,
+    fetch_target: *std.Build.Step,
+    jacllvm: ?Shim,
+) ?std.Build.LazyPath {
+    // Regex, http parsing and compression are runtime hot paths, so the
+    // foreign libraries are optimized for speed whatever the binary's mode.
+    const native = js_native.addJsNative(b, target, .ReleaseFast) orelse return null;
+
+    const engine = jsEngineNative(b, tool, python_tree, fetch_target, jacllvm, &.{"--lib"}, "main.jac", "libjs_engine.so");
+    const compiler = jsEngineNative(b, tool, python_tree, fetch_target, jacllvm, &.{}, "js_compiler.jac", "js_compiler");
+    // The compiler links the engine's libraries through $ORIGIN, so it runs
+    // from a directory beside them.
+    const tool_dir = b.addWriteFiles();
+    const js_compiler = tool_dir.addCopyFile(compiler, "js_compiler");
+    _ = tool_dir.addCopyFile(native.native, "libjs_native.so");
+    _ = tool_dir.addCopyFile(native.wasmtime, "libwasmtime.so");
+    const pack = std.Build.Step.Run.create(b, "compile the JavaScript builtins");
+    pack.addFileArg(js_compiler);
+    pack.addDirectoryArg(b.path(BUILTINS_JS));
+    const builtins = pack.addOutputFileArg("builtins.jsbc");
+    {
+        const io = b.graph.io;
+        var dir = b.build_root.handle.openDir(io, BUILTINS_JS, .{ .iterate = true }) catch |err|
+            std.debug.panic("js_engine: cannot open {s}: {s}", .{ BUILTINS_JS, @errorName(err) });
+        defer dir.close(io);
+        var walker = dir.walk(b.allocator) catch @panic("OOM");
+        defer walker.deinit();
+        while (walker.next(io) catch @panic("js_engine: builtins walk failed")) |entry| {
+            if (entry.kind != .file or !std.mem.endsWith(u8, entry.path, ".js")) continue;
+            pack.addArg(b.dupe(entry.path));
+            pack.addFileInput(b.path(b.fmt("{s}/{s}", .{ BUILTINS_JS, entry.path })));
+        }
+    }
+
+    const dir = b.addWriteFiles();
+    _ = dir.addCopyFile(engine, "libjs_engine.so");
+    _ = dir.addCopyFile(native.native, "libjs_native.so");
+    _ = dir.addCopyFile(native.wasmtime, "libwasmtime.so");
+    _ = dir.addCopyFile(builtins, "builtins.jsbc");
+    return dir.getDirectory();
+}
+
+const BUILTINS_JS = "js_engine/engine/src/builtins/js";
+
+/// `jac build --native` of a js_engine/ root, run from js_engine/ so its own
+/// jac.toml (memory profile, native placement, opt level) applies.
+fn jsEngineNative(
+    b: *std.Build,
+    tool: JacTool,
+    python_tree: []const u8,
+    fetch_target: *std.Build.Step,
+    jacllvm: ?Shim,
+    flags: []const []const u8,
+    root_file: []const u8,
+    out_name: []const u8,
+) std.Build.LazyPath {
+    const run = tool.run("jac", &.{ "build", "--native" });
+    run.addArgs(flags);
+    run.setEnvironmentVariable("JAC_NATIVE_FLOOR_DIR", b.fmt("{s}/build/lib", .{python_tree}));
+    run.addFileArg(b.path(b.fmt("js_engine/engine/src/{s}", .{root_file})));
+    run.addArg("-o");
+    const out = run.addOutputFileArg(out_name);
+    run.setCwd(b.path("js_engine"));
+    run.step.dependOn(fetch_target);
+    if (jacllvm) |shim| run.step.dependOn(shim.place);
+    addTreeInputs(b, run, "jaclang");
+    addTreeInputs(b, run, "js_engine/engine/src");
+    addTreeInputs(b, run, "js_engine/napi/src");
+    run.addFileInput(b.path("js_engine/jac.toml"));
+    return out;
 }
 
 /// Register every bundled source file under `sub_path` as a content-hashed input

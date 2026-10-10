@@ -1,0 +1,14 @@
+{
+  global:
+    napi_*;
+    node_api_*;
+    _napi_*;
+    tz_*;
+    icu_*;
+    uv_*;
+    pcre2_*;
+    nghttp2_*;
+    llhttp_*;
+    Brotli*;
+  local: *;
+};

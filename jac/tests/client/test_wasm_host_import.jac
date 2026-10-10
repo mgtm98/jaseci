@@ -19,7 +19,7 @@ import os;
 import tempfile;
 import from subprocess { run }
 
-import from .test_helpers { copy_fixture, get_env_with_js_engine, get_jac_command }
+import from .test_helpers { copy_fixture, get_jac_command }
 
 """A fullstack client importing @jac/wasm_host builds and ships a dist.
 
@@ -32,7 +32,7 @@ test "fullstack client importing @jac/wasm_host builds" {
     with tempfile.TemporaryDirectory() as temp_dir {
         project_dir = copy_fixture("wasm_host_app", temp_dir);
         jac_cmd = get_jac_command();
-        env = get_env_with_js_engine();
+        env = os.environ.copy();
         add_result = run(
             [*jac_cmd, "install", "--npm"],
             cwd=project_dir,

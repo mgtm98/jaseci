@@ -1,5 +1,0 @@
-{
-  global:
-    icu_*;
-  local: *;
-};

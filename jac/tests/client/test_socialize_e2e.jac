@@ -31,7 +31,6 @@ import from urllib.error { HTTPError }
 import from urllib.request { urlopen }
 
 import from .test_helpers {
-    get_env_with_js_engine,
     get_jac_command,
     request_endpoint,
     start_app_server,
@@ -139,7 +138,7 @@ def _setup_site_project(temp_dir: any) -> tuple[any, ...] {
     }
 
     jac_cmd = get_jac_command();
-    env = get_env_with_js_engine();
+    env = os.environ.copy();
 
     add_result = run(
         [*jac_cmd, "install", "--npm"],

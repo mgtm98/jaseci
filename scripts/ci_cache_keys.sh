@@ -58,11 +58,11 @@ python_tree cpython | emit python_cpython
 } | emit python_jacpython
 tree jac/jaclang | emit payload
 tree jac/jaclang jac/build.zig jac/build.zig.zon jac/launcher jac/bootstrap \
-  jac/native jac/_jac_finder.py jac/sitecustomize.py jac/examples/jaclang_org \
+  jac/native jac/js_engine jac/_jac_finder.py jac/sitecustomize.py jac/examples/jaclang_org \
   jac/examples/tiny_jacyac \
   jac.toml jac/jac.toml | emit binary
 tree jac/launcher jac/bootstrap jac/build.zig jac/build.zig.zon jac/native \
-  jac/jaclang/compiler/backends/native/wasm_rt |
+  jac/js_engine jac/jaclang/compiler/backends/native/wasm_rt |
   emit layers
 # The kernel's stage-0 compiler as the committed pin names it: a pinned commit,
 # or "self" when this checkout's compiler builds its own kernel (also when the

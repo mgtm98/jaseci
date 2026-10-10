@@ -22,11 +22,10 @@ import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
 
 import from jaclang.compiler.backends.es.backends.react { ReactBackend }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from .react_jsdom_harness {
     npm_install,
     compile_page,
-    require_client_integration,
     run_harness,
     write_runtime
 }
@@ -112,11 +111,7 @@ process.exit(failures.length ? 1 : 0);
 """;
 
 test "react state semantics: all four contract faces hold live in jsdom" {
-    require_client_integration("React state-semantics");
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     component_js = compile_page(
         os.path.join(FIXTURES, "state_semantics_component.jac"), ReactBackend()

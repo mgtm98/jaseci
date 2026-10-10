@@ -34,7 +34,7 @@ import from jaclang.client.client_surface { with_runtime_globals }
 import from tests.runtimelib.react_jsdom_harness { write_runtime_support }
 import from jaclang.client.runtime_source { resolve_client_runtime_cl_path }
 import from jaclang.compiler.backends.es.jac_runtime_js { point_jac_prelude_at }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from jaclang.client.solid_entry { build_pages_solid_entry_script }
 
 glob FIXTURES = str(Path(__file__).parent / "fixtures"),
@@ -786,12 +786,6 @@ console.log(`\\n${failures.length ? "FAILED" : "OK"}: ${failures.length} failure
 process.exit(failures.length ? 1 : 0);
 """;
 
-"""Skip unless the js_engine/npm client toolchain is present (mirrors preact e2e)."""
-def _require_client_integration {
-    import from jaclang.testing.requires { require_tool }
-    require_tool("js_engine");
-}
-
 """Compile a `.jac` to JS with the Solid backend; type errors are non-fatal."""
 def _compile_solid(path: str) -> str {
     prog = JacProgram();
@@ -831,11 +825,7 @@ def _compile_page(path: str, backend: any) -> str {
 }
 
 test "solid counter mounts and reacts in jsdom" {
-    _require_client_integration();
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = SolidBackend();
     # Compiler emits bare `__jacJsx(...)` and expects the bundler to prepend the
@@ -906,11 +896,7 @@ test "solid native control flow (<For>/<Show>) renders + reacts in jsdom (Branch
     # compile through `babel-preset-solid` and render as native `<For>`/`<Show>`
     # (not just emit plausible JSX strings — the unit tests pin the strings, this
     # pins the runtime behaviour). Same opt-in + toolchain as the counter test.
-    _require_client_integration();
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = SolidBackend();
     component_js = with_runtime_globals(
@@ -980,11 +966,7 @@ test "solid file-based routing mounts, navigates, and guards in jsdom" {
     # when a `jac_token` is present. The manual-routing entry covers the guard
     # shapes the generated entry never writes: an `element=` parent route and a
     # layout wrapping `<Outlet/>`. Same opt-in + toolchain as the counter test.
-    _require_client_integration();
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = SolidBackend();
     rdir = os.path.join(FIXTURES, "solid_routing");
@@ -1124,11 +1106,7 @@ test "solid JacForm renders and validates in jsdom (TanStack Form end-to-end)" {
     # clicked option checked, and the full submit flow (dirty → enabled →
     # onSubmit fires) is verified end-to-end. Same opt-in + toolchain as the
     # counter test.
-    _require_client_integration();
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = SolidBackend();
     component_js = _wire_jac_runtime(
@@ -1197,11 +1175,7 @@ test "solid P2 jsdom matrix: dynamic prop, ref e2e, and callback prop" {
     # 2.3 Callback prop: a plain function passed as a component prop fires exactly
     #     once on click — Solid does NOT call it as a reactive accessor.
     # All three share one js_engine install (same _DEPS) for faster CI.
-    _require_client_integration();
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = SolidBackend();
     runtime_path = resolve_client_runtime_cl_path("solid");

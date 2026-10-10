@@ -131,9 +131,6 @@ Answers to common questions about Jac, organized by topic. Click a category to e
         return {"id": jid(task), "title": task.title, "done": task.done};
         ```
 
-    ??? question "`jac create --kind web-static` fails or asks about js_engine."
-        The `web-static` kind requires js_engine, the JavaScript runtime bundled in the `jac` binary, for frontend bundling. In a source checkout, build it with `make` in `js_engine/` or point `JAC_JS_ENGINE` at a js_engine binary.
-
 ??? "Debugging & Support"
 
     ??? question "Where's the best place to get help?"

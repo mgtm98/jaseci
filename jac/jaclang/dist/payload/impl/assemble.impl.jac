@@ -79,6 +79,9 @@ impl mk_payload(python_dir: str, repo_root: str, out: str, opts: MkPayloadOpts) 
     );
 
     stage_tree(python_dir, site, stage, opts.musl_dir, opts.wasm_libc_dir);
+    if opts.js_engine_dir is not None {
+        stage_js_engine(opts.js_engine_dir, stage);
+    }
 
     precompile_pyc(py, stage);
 
@@ -169,23 +172,6 @@ impl assemble_site(repo_root: str, site: str, opts: MkPayloadOpts) {
             f"mkpayload: bundled {so} but no shim at {dst}; the JIR seal and the"
             " shipped binary both locate it by that exact path."
         );
-    }
-
-    _bundle_js_engine(site, opts);
-}
-
-impl _bundle_js_engine(site: str, opts: MkPayloadOpts) {
-    src = opts.js_engine_dir;
-    if src is not None {
-        if not file_exists(os.path.join(src, "bin", "js_engine")) {
-            raise PayloadDie(
-                f"mkpayload: --js-engine={src} holds no bin/js_engine; stage it"
-                " with `make dist` in js_engine/."
-            );
-        }
-        dst = os.path.join(site, "jaclang", "client", "_js_engine");
-        log(f"==> bundling js_engine runtime ({src})");
-        copy_tree(src, dst, skip_none);
     }
 }
 
@@ -546,6 +532,14 @@ impl stage_musl(musl_dir: str, stage: str) {
     log(f"==> staged {staged} musl runtime artifact(s) -> python/floor/{osarch}/musl");
 }
 
+impl stage_js_engine(js_engine_dir: str, stage: str) {
+    if not file_exists(os.path.join(js_engine_dir, "libjs_engine.so")) {
+        die(f"js-engine staging: no libjs_engine.so in {js_engine_dir}");
+    }
+    log(f"==> staging the JavaScript engine ({js_engine_dir})");
+    copy_tree(js_engine_dir, os.path.join(stage, "js"), skip_none);
+}
+
 impl stage_wasm_libc(wasm_libc_dir: str, stage: str) {
     dst = os.path.join(stage, "python", "floor", "wasm32", "libc");
     make_dirs(dst);
@@ -639,9 +633,6 @@ impl find_libpython(lib_dir: str) -> FoundLib {
 impl is_volatile_path(p: str) -> bool {
     if p.startswith("site/jaclang") {
         if "compiler/backends/native/llvm" in p {
-            return False;
-        }
-        if "client/_js_engine" in p {
             return False;
         }
         return True;

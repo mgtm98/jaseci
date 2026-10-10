@@ -38,12 +38,6 @@ glob REACT_JSDOM_DEPS: dict[str, str] = {
          ** OPTIONAL_RUNTIME_DEPS
      };
 
-"""Skip unless the client toolchain is present (JAC_TEST_STRICT escalates)."""
-def require_client_integration(suite: str) {
-    import from jaclang.testing.requires { require_tool }
-    require_tool("js_engine");
-}
-
 """Compile a `.jac` to JS with the React backend; type errors are non-fatal.
 
 `type_check=True` so typed builtin calls (e.g. `len(list)`) lower to their JS

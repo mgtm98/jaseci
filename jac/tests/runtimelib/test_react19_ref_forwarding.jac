@@ -22,13 +22,12 @@ import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
 
 import from jaclang.cli.shadcn.shadcn_handler { load_registry }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from jaclang.compiler.backends.es.backends.react { ReactBackend }
 import from .react_jsdom_harness {
     REACT_JSDOM_DEPS,
     npm_install,
     compile_page,
-    require_client_integration,
     run_harness,
     write_runtime
 }
@@ -154,11 +153,7 @@ process.exit(failures.length ? 1 : 0);
 """;
 
 test "a compiled component is a ref target, live in jsdom" {
-    require_client_integration("React 19 ref-as-prop");
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
     component_js = compile_page(
         os.path.join(FIXTURES, "react19_ref_components.jac"), ReactBackend()
     );

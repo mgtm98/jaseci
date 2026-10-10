@@ -164,7 +164,6 @@ impl skip_jaclang(p: str) -> bool {
         or "_precompiled" in p
         or "vendor/typeshed/stubs" in p
         or "libjacllvm." in p
-        or "client/_js_engine" in p
         or p.endswith(".pyc")
     );
 }

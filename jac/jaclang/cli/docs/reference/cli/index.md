@@ -1479,7 +1479,7 @@ jac x --node vite build       # the project's npm copy
 jac x --list
 ```
 
-> **No system Python or Node required.** Python tools run in-process under the `jac` binary's bundled interpreter; npm tools run via the `js_engine` runtime bundled in the `jac` binary (or the one named by `JAC_JS_ENGINE`), which executes the `node_modules/.bin` shims directly. Arguments after the tool name -- including flags like `--help` -- pass straight through, and the tool's exit code becomes `jac x`'s exit code.
+> **No system Python or Node required.** Python tools run in-process under the `jac` binary's bundled interpreter; npm tools run under the `jac` binary's own `node` (its bundled `js_engine` runtime), which executes the `node_modules/.bin` shims directly. Arguments after the tool name -- including flags like `--help` -- pass straight through, and the tool's exit code becomes `jac x`'s exit code.
 
 ---
 

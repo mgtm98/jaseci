@@ -105,12 +105,7 @@ def populate(stage: str) {
         "site/jaclang/compiler/backends/native/llvm/libjacllvm.so",
         b"fake-shim-bytes"
     );
-    wf(
-        stage,
-        "site/jaclang/client/_js_engine/bin/js_engine",
-        b"fake-engine-bytes",
-        0o755
-    );
+    wf(stage, "js/libjs_engine.so", b"fake-engine-bytes", 0o755);
     wf(stage, "site/jaclang/mod.py", b"version = 1\n");
     wf(stage, "site/_jac_finder.py", b"finder\n");
     os.makedirs(os.path.join(stage, "site", "empty_dir"), exist_ok=True);
@@ -311,7 +306,7 @@ test "tar_stage is byte-identical across two stagings and carries no host metada
         }
         assert "python/lib/marker.txt" in names;
         assert "site/jaclang/compiler/backends/native/llvm/libjacllvm.so" in names;
-        assert "site/jaclang/client/_js_engine/bin/js_engine" in names;
+        assert "js/libjs_engine.so" in names;
         assert "site/empty_dir" in names;
         assert "site/jaclang/mod.py" not in names;
         assert "site/_jac_finder.py" not in names;
@@ -338,8 +333,8 @@ test "is_volatile_path routes the compiler tree and site shims to the jac frame"
         ("site/jaclang-0.36.1.dist-info/METADATA", True),
         ("site/jaclang/compiler/backends/native/llvm/libjacllvm.so", False),
         ("site/jaclang/compiler/backends/native/llvm", False),
-        ("site/jaclang/client/_js_engine/bin/js_engine", False),
-        ("site/jaclang/client/_js_engine", False),
+        ("js/libjs_engine.so", False),
+        ("js", False),
         ("site/_jac_finder.py", True),
         ("site/sitecustomize.py", True),
         ("site/jac_linked_source", True),

@@ -121,6 +121,20 @@ runs:
         path: jac/jaclang/compiler/backends/native/llvm/libjacllvm.*
         key: jac-shim-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/native/**', 'jac/build.zig', 'jac/bootstrap/pins.json') }}
 
+    # The JavaScript engine (zig-out/js: libjs_engine.so, the Zig-built native
+    # libraries and the builtins pack) is the other expensive artifact -- a
+    # whole-program native link of js_engine/, plus ICU -- and depends on
+    # js_engine/**, its build.zig.zon sources and the native backend, not on the
+    # rest of jaclang. Reused like the shim: the build passes the restored tree
+    # via -Djs-engine-dir. The engine builds on Linux x86_64 only.
+    - name: Restore cached JavaScript engine
+      id: js-engine-cache
+      if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux' && runner.arch == 'X64'
+      uses: actions/cache/restore@v4
+      with:
+        path: jac/zig-out/js
+        key: jac-js-engine-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/js_engine/**', 'jac/build.zig', 'jac/build.zig.zon', 'jac/jaclang/compiler/backends/native/**') }}
+
     # The native (na) backend statically links a pinned LLVM into the LLVMPY_*
     # shim, so `zig build` needs that LLVM extracted first (there is no llvmlite
     # wheel anymore). Cache the pruned ~0.5 GB tree, keyed on the single-sourced
@@ -262,6 +276,14 @@ runs:
           cp jaclang/compiler/backends/native/llvm/libjacllvm.* .shim-build/
           SHIM_ARG=(-Dshim-bin=".shim-build/$(ls .shim-build | head -1)")
         fi
+        # Staged outside zig-out/js for the same reason as the shim: the build
+        # installs -Djs-engine-dir back into zig-out/js.
+        JS_ENGINE_ARG=()
+        if [ "${{ steps.js-engine-cache.outputs.cache-hit }}" = "true" ]; then
+          rm -rf .js-engine-build
+          cp -r zig-out/js .js-engine-build
+          JS_ENGINE_ARG=(-Djs-engine-dir=.js-engine-build)
+        fi
         TARGET_ARG=()
         case "$RUNNER_OS/$RUNNER_ARCH" in
           Linux/X64) TARGET_ARG=(-Dtarget=x86_64-linux-gnu.2.17) ;;
@@ -274,7 +296,7 @@ runs:
         set -o pipefail
         LOG="$(mktemp)"
         for attempt in 1 2 3; do
-          if zig build "${TARGET_ARG[@]}" "${SHIM_ARG[@]}" --summary all 2>&1 | tee "$LOG"; then
+          if zig build "${TARGET_ARG[@]}" "${SHIM_ARG[@]}" "${JS_ENGINE_ARG[@]}" --summary all 2>&1 | tee "$LOG"; then
             exit 0
           fi
           if grep -qE 'Seal aborted|Seal incomplete|seal-finalize failed' "$LOG"; then
@@ -323,6 +345,17 @@ runs:
       with:
         path: jac/jaclang/compiler/backends/native/llvm/libjacllvm.*
         key: jac-shim-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/native/**', 'jac/build.zig', 'jac/bootstrap/pins.json') }}
+
+    - name: Save JavaScript engine cache (trusted refs only)
+      if: >-
+        github.ref == 'refs/heads/main' &&
+        steps.cache.outputs.cache-hit != 'true' &&
+        runner.os == 'Linux' && runner.arch == 'X64' &&
+        steps.js-engine-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: jac/zig-out/js
+        key: jac-js-engine-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('jac/js_engine/**', 'jac/build.zig', 'jac/build.zig.zon', 'jac/jaclang/compiler/backends/native/**') }}
 
     - name: Save LLVM cache (trusted refs only)
       if: >-

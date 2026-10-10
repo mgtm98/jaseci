@@ -428,14 +428,7 @@ impl _run_harness(
     timeout: float,
     source_path: (str | None) = None
 ) -> list[ClTestResult] {
-    import from jaclang.client.js_engine { get_js_engine }
-
-    js_engine = get_js_engine();
-    if js_engine is None {
-        raise RuntimeError(
-            "js_engine is required to run client (cl) tests but could not be located."
-        );
-    }
+    import from jaclang.client.js_engine { node_executable }
 
     work_dir = Path(tempfile.mkdtemp(prefix="jac_cl_test_"));
     try {
@@ -511,7 +504,7 @@ impl _run_harness(
         harness_path.write_text(harness, encoding="utf-8");
 
         proc = subprocess.run(
-            [js_engine, "run", str(harness_path)],
+            [node_executable(), str(harness_path)],
             cwd=str(work_dir),
             capture_output=True,
             text=True,

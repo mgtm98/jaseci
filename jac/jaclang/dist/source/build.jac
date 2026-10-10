@@ -1,7 +1,6 @@
 import json;
 import os;
 import shlex;
-import shutil;
 import subprocess;
 import from pathlib { Path }
 
@@ -79,14 +78,8 @@ def build(base: Path) {
             build_native_product(directory, application['native']);
         }
         if application.get('client_dist') {
-            js_engine = shutil.which('js_engine');
-            if js_engine {
-                subprocess.run([js_engine, 'install'], cwd=directory, check=True);
-                subprocess.run([js_engine, 'run', 'build'], cwd=directory, check=True);
-            } else {
-                subprocess.run(['npm', 'install'], cwd=directory, check=True);
-                subprocess.run(['npm', 'run', 'build'], cwd=directory, check=True);
-            }
+            subprocess.run(['npm', 'install'], cwd=directory, check=True);
+            subprocess.run(['npm', 'run', 'build'], cwd=directory, check=True);
             records = json.loads(
                 (directory / 'client' / 'native.json').read_text(encoding='utf-8')
             );

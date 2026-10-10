@@ -24,11 +24,10 @@ import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
 
 import from jaclang.compiler.backends.es.backends.react { ReactBackend }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from .react_jsdom_harness {
     npm_install,
     compile_page,
-    require_client_integration,
     run_harness,
     write_runtime
 }
@@ -147,11 +146,7 @@ def _run_scenarios(js_engine: str, work: Path, scenarios: list[any], label: str)
 }
 
 test "react AuthGuard renders children, child routes, and nothing -- in jsdom" {
-    require_client_integration("React AuthGuard");
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required but could not be located/installed");
-    }
+    js_engine = node_executable();
 
     backend = ReactBackend();
     component_js = compile_page(

@@ -13,6 +13,9 @@ Dispatch, before any Python bring-up:
   * a trailing `.jab` overlay (a `jac build --as binary` app) exports its
     [offset, len] so the CPython boot can mount the app image out of this
     binary, and the app then owns ALL of argv;
+  * node mode: invoked as `node` (the runtime's `js/bin/node` link, or any
+    `node` on PATH that resolves here), run the bundled JavaScript engine
+    in-process -- no CPython at all;
   * worker mode: re-invoked as a Python interpreter (multiprocessing re-spawns
     `sys.executable` with `-u -c ...`), behave exactly like `python`;
   * otherwise boot the jaclang CLI.
@@ -20,8 +23,13 @@ Dispatch, before any Python bring-up:
 
 import os;
 import sys;
-import from jaclang.dist.fused.bringup { open_runtime }
-import from jaclang.dist.fused.materialize { overlay_for_path, stubcat_for_path }
+import from jaclang.dist.fused.embed { open_tree }
+import from jaclang.dist.fused.materialize {
+    materialize,
+    overlay_for_path,
+    stubcat_for_path
+}
+import from jaclang.dist.fused.js_engine { is_node_name, link_node, run_node }
 import from jaclang.dist.fused.report { die }
 import from _exec_native { executable_path }
 
@@ -63,6 +71,11 @@ with entry {
     if exe_path == "" {
         die("cannot resolve executable path");
     }
+    rt = materialize(exe_path);
+    link_node(rt, exe_path);
+    if is_node_name(sys.argv[0]) {
+        sys.`exit(run_node(rt, sys.argv));
+    }
 
     # An overlay means this is an app binary: export its coordinates for
     # cli_boot's _run_bundled_app. A plain jac CLEARS any inherited
@@ -92,7 +105,7 @@ with entry {
         os.environ.pop("JAC_STUBCAT_LEN", "");
     }
 
-    emb = open_runtime(exe_path);
+    emb = open_tree(rt, exe_path);
 
     argv = sys.argv;
     worker = len(argv) > 1 and is_python_first_arg(argv[1]);

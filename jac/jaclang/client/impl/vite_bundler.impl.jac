@@ -1,23 +1,12 @@
 import threading;
 import from jaclang.cli.console { console }
-import from jaclang.client { get_js_engine }
-import from jaclang.client.js_engine { js_engine_unavailable_message }
-import from jaclang.client.client_bundle { ClientBundleError, MissingJsEngineError }
-
-
-def _require_js_engine -> str {
-    js_engine = get_js_engine();
-    if not js_engine {
-        raise MissingJsEngineError(js_engine_unavailable_message()) from None;
-    }
-    return js_engine;
-}
+import from jaclang.client.js_engine { node_executable, run_pm }
+import from jaclang.client.client_bundle { ClientBundleError }
 
 
 def _build_vite_command(build_dir: Path, args: list[str]) -> list[str] {
     import from jaclang.client.targets.node_tooling_common { resolve_node_tool_entry }
 
-    js_engine = _require_js_engine();
     `entry = resolve_node_tool_entry(build_dir, 'vite');
     if `entry is None {
         raise ClientBundleError(
@@ -26,7 +15,7 @@ def _build_vite_command(build_dir: Path, args: list[str]) -> list[str] {
             "vite means that install did not complete."
         ) from None;
     }
-    return [js_engine, str(`entry)] + args;
+    return [node_executable(), str(`entry)] + args;
 }
 
 impl ViteBundler._get_client_dir(self: ViteBundler) -> Path {
@@ -224,8 +213,6 @@ impl ViteBundler.install_packages(
 ) -> None {
     import time;
     import shutil;
-    import subprocess;
-    js_engine = _require_js_engine();
     build_dir = install_dir if install_dir is not None else self._get_client_dir();
     node_modules = build_dir / 'node_modules';
 
@@ -258,22 +245,17 @@ impl ViteBundler.install_packages(
     try {
         console.print("\n  ⏳ Installing dependencies...\n");
         start_time = time.time();
-        result = subprocess.run(
-            [js_engine, 'install'],
-            cwd=build_dir,
-            check=False,
-            text=True,
-            capture_output=capture_output
+        (returncode, output) = run_pm(
+            ['install'], str(build_dir), capture=capture_output
         );
         elapsed = time.time() - start_time;
-        if result.returncode != 0 {
+        if returncode != 0 {
             if capture_output {
-                error_output = result.stderr or result.stdout;
                 raise ClientBundleError(
-                    f"Dependency installation failed after {elapsed:.1f}s\n\n{error_output}\nCommand: js_engine install"
+                    f"Dependency installation failed after {elapsed:.1f}s\n\n{output}"
                 ) from None;
             }
-            console.error(f"\n  ✖ js_engine install failed after {elapsed:.1f}s");
+            console.error(f"\n  ✖ Dependency installation failed after {elapsed:.1f}s");
             raise ClientBundleError("Failed to install dependencies") from None;
         }
         console.print(f"\n  ✔ Dependencies installed ({elapsed:.1f}s)");
@@ -292,41 +274,6 @@ impl ViteBundler.install_packages(
             build_npmrc.unlink();
         }
     }
-}
-
-impl ViteBundler.add_packages(
-    self: ViteBundler,
-    packages: list[str],
-    install_dir: Optional[Path] = None,
-    dev: bool = False
-) -> None {
-    import json;
-    import subprocess;
-    import from jaclang.client { get_js_engine }
-    target_dir = install_dir if install_dir is not None else self.project_dir;
-    pkg_json = target_dir / 'package.json';
-    if not pkg_json.exists() {
-        pkg_data = {
-            'name': 'jac-mobile-app',
-            'version': '1.0.0',
-            'private': True,
-            'type': 'module'
-        };
-        pkg_json.write_text(json.dumps(pkg_data, indent=2), encoding='utf-8');
-        console.print("  ✔ Created package.json");
-    }
-
-    js_engine = get_js_engine();
-    if js_engine is None {
-        raise RuntimeError("js_engine unavailable: cannot install client dependencies");
-    }
-    cmd = [js_engine, 'add'];
-    if dev {
-        cmd.append('--dev');
-    }
-    cmd.extend(packages);
-    console.print(f"  Installing: {' '.join(packages)}");
-    subprocess.run(cmd, cwd=target_dir, check=True, capture_output=False);
 }
 
 impl ViteBundler._format_config_object(
@@ -1074,8 +1021,6 @@ impl ViteBundler.build(self: ViteBundler, entry_file: Optional[Path] = None) -> 
     import time;
     import from jaclang.client { ensure_client_deps }
 
-    js_engine = _require_js_engine();
-
     if not ensure_client_deps(self.config_loader) {
         raise ClientBundleError(
             'Client dependencies not configured. Add [dependencies.npm] to jac.toml '
@@ -1102,7 +1047,7 @@ impl ViteBundler.build(self: ViteBundler, entry_file: Optional[Path] = None) -> 
             build_dir, ['build', '--config', str(config_rel)]
         );
     } else {
-        command = [js_engine, 'run', 'build'];
+        command = [node_executable(), 'run', 'build'];
     }
 
     console.print("\n  ⏳ Building client bundle...\n");
@@ -1327,11 +1272,7 @@ impl ViteBundler.start_dev_server(
     import sys;
     import time;
     import threading;
-    import from jaclang.client { get_js_engine }
 
-    if get_js_engine() is None {
-        raise ClientBundleError(js_engine_unavailable_message()) from None;
-    }
     build_dir = self._get_client_dir();
     self._ensure_dev_index_html(build_dir);
     self._ensure_dev_dependencies(build_dir);

@@ -2,11 +2,10 @@
 import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
 import from jaclang.compiler.backends.es.backends.react { ReactBackend }
-import from jaclang.client.js_engine { get_js_engine }
+import from jaclang.client.js_engine { node_executable }
 import from .react_jsdom_harness {
     npm_install,
     compile_page,
-    require_client_integration,
     run_harness,
     write_runtime
 }
@@ -55,11 +54,7 @@ dom.window.close();
 """;
 
 test "returned lifecycle cleanup releases the correct resource" {
-    require_client_integration("React lifecycle cleanup");
-    js_engine = get_js_engine();
-    if js_engine is None {
-        testskip("js_engine is required");
-    }
+    js_engine = node_executable();
     fixture = Path(__file__).parent.parent
         / "compiler"
         / "backends"
